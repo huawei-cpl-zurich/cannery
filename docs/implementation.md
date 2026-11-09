@@ -172,3 +172,14 @@ See [Design](design.md) and [Roadmap](roadmap.md).
 - Hardware tests: protected self-hosted A3/A5 runners or manually triggered internal benchmarks; never permit arbitrary PR code on privileged host runners.
 - Threat model: untrusted Python and compilers, zip-slip, SSRF from Git URLs, artifact bombs, token leakage, cache poisoning, and abuse of benchmark resources.
 - Configure time/memory/disk quotas, network isolation, max case count and artifact retention. Keep observability, backups and role-gated admin workflows.
+
+
+## External Git intake and commit-only revisions
+
+Model a reusable `repository_connections` record (owner, provider, canonical URL, authentication secret reference, permitted namespace/paths), alongside an optional per-implementation `source_binding` that captures repo identity, subdirectory, entrypoint, device, language and frozen spec ID. Store full Git SHAs in immutable `submissions`; never store a branch/tag as a reproducibility key.
+
+An authenticated `POST /api/v1/submissions/{id}/revisions` accepts `{"commit":"<full-sha>"}` and is equivalent to a full submission with every source/target field inherited from `id`. The API checks author permissions, fetches the new commit in a restricted Git intake process, snapshots the bound source path, hashes the files, stores the immutable snapshot in private HF storage, creates a **new** submission with `parent_submission_id`, and schedules validation.
+
+The new commit must be a valid object in the configured repository; it is not required to be a descendant unless a namespace policy asks for a linear history. A commit-only revision cannot change the frozen spec version, path, language, device or entrypoint. Those changes create an explicitly configured new implementation track. Restrict Git network targets and credentials, cap repository size, and support scoped GitHub App / GitLab deploy credentials for private repositories. Future webhook-triggered revisions should use the same intake API and idempotency keys.
+
+A spec's pinned Git commit can also change, but any semantic change to its frozen YAML, reference, case generator or environment lock requires a new immutable **spec version**; it cannot be applied as a submission revision.
