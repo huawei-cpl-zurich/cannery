@@ -6,7 +6,7 @@ See [Architecture](architecture.md) for services, data movement and storage; [Us
 
 ## 1. Scope and boundaries
 
-CANNery accepts **only Git-backed specification and implementation code**. Registration requires an external Git remote, full SHA and path; implementation revisions can supply only a new commit using a saved source binding. The server retains accepted commits in a **bare Git mirror**. It does not ingest local source archives or upload source bundles to Hugging Face.
+CANNery accepts **only Git-backed specification and implementation code**. Registration requires an external Git remote, full SHA and path; implementation revisions can supply only a new commit using a saved source binding. The server imports accepted source subtrees into **per-kernel Git snapshot repositories**. It does not ingest local source archives or upload source bundles to Hugging Face.
 
 An implementation must declare a **reproducible build plan**. A capability-matched worker builds binary candidates during admission, then runs correctness against the frozen PyTorch spec and benchmarks. Generated binaries, manifests and detailed logs land in **private HF repositories**; metadata, Git identities, scores, states and artifact pointers land in PostgreSQL.
 
@@ -21,7 +21,7 @@ Initial supported adapters: **Ascend C** and **CATLASS DSL**. Future adapters: *
 | CLI | Typer, Rich, httpx | Git-only commands, inspection, build/validate/report status |
 | Database | PostgreSQL, SQLAlchemy 2, Alembic, psycopg | Canonical metadata, immutable states, publication |
 | Dispatch | Redis + Dramatiq | Jobs carry IDs only, PostgreSQL authoritative |
-| Git operations | system `git` via controlled subprocess | Bare mirrors, `git fetch`, full-SHA verification, restricted URLs; prefer Git CLI over reimplementing Git |
+| Git operations | system `git` via controlled subprocess | Restricted temporary Git fetch, selected-path import, internal snapshot commit, full-SHA verification, restricted URLs; prefer Git CLI over reimplementing Git |
 | Git credentials | corporate secret manager / deploy token | Referenced by ID; never place secrets in manifests |
 | HF binary store | `huggingface_hub` | Pinned revisions, private repositories, checksum verification |
 | Alternative binary store | boto3 (later) | Storage abstraction; preserve HF-compatible publication path |
@@ -41,7 +41,7 @@ src/cannery/
   web/                   Jinja2 + HTMX
   cli/                   Typer
   registry/              kernel, immutable spec, submission, publication
-  git_intake/            external Git fetch, bare mirror, pinned refs, provenance
+  git_intake/            external Git fetch, selected-path snapshot commits, provenance
   build/                 adapters/ascendc.py and adapters/catlass.py
   benchmark/             reference correctness, timing, tolerance profiles
   scheduler/             worker capability matching and device leases
@@ -52,13 +52,13 @@ src/cannery/
   telemetry/             logs, progress, ETA, audit
 ```
 
-Deployment units: reverse proxy, FastAPI web/API, scheduler, Redis, PostgreSQL, Git intake/mirror, A3 worker, A5 worker. The source mirror is a separate persistent data volume. Workers use isolated execution containers; the main API process never imports arbitrary submitted Python.
+Deployment units: reverse proxy, FastAPI web/API, scheduler, Redis, PostgreSQL, Git intake / Git snapshot repositories, A3 worker, A5 worker. Per-kernel Git snapshot repositories use a small backed-up persistent volume. Workers use isolated execution containers; the main API process never imports arbitrary submitted Python.
 
 ## 4. Data model
 
 - `kernels`: namespace/name, owner, descriptive attributes.
 - `git_repositories`: canonical remote, credential secret reference, tenant access and allowed scope.
-- `git_commits`: repo, full SHA, mirror ref, fetched/verified state, tree hash.
+- `git_commits`: repo, full SHA, internal snapshot commit SHA, upstream SHA, source path, original tree hash and imported content digest.
 - `spec_versions`: immutable spec version, Git repo/commit/path, frozen spec file digests, suite/environment lock digest.
 - `source_bindings`: repo, path, entrypoint, immutable spec ID, device, language and build adapter.
 - `submissions`: binding, commit, parent submission, author, source tree digest, admission status.
@@ -70,7 +70,7 @@ Deployment units: reverse proxy, FastAPI web/API, scheduler, Redis, PostgreSQL, 
 - `publications`: submission, pinned HF release mapping, publisher, visibility and timestamps.
 - `jobs`/`workers`/`device_leases`: durable execution state, capabilities, capacity and failure recovery.
 
-Use DB constraints to enforce immutability, a unique spec version per kernel, and immutable source binding/commit on submissions. Treat Git source tree hashes as useful verification, not an alternative to retaining the full Git commit.
+Use DB constraints to enforce immutability, a unique spec version per kernel, and immutable source binding/commit on submissions. Treat Git source tree hashes as useful verification, supplementary to retaining the imported selected files in a Git snapshot commit.
 
 ## 5. Git-only registration and submission
 
@@ -91,13 +91,13 @@ GET /api/v1/leaderboard?device=a5&tolerance_profile=...
 GET /api/v1/leaderboard/history?device=a5&...
 POST /api/v1/artifacts/resolve
 GET /api/v1/admin/workers
-GET /api/v1/admin/git-mirror
+GET /api/v1/admin/git-snapshots
 GET /api/v1/admin/storage
 ```
 
 No upload-init or local archive paths. CLI: `cannery register --repo ... --commit ... --path ...`, `cannery submit ... --repo ... --commit ... --path ...`, `cannery revise <id> --commit <SHA>`.
 
-Git intake: authorize remote and namespace, validate full SHA and path, fetch the commit with resource/time/network policy, mirror its reachable objects, create a protected retained ref, check out selected path in safe restricted sandbox, read strict YAML manifests and hash files. No arbitrary Git hooks or privileged build scripts. Reject admission if the commit cannot be mirrored.
+Git intake: authorize remote and namespace, validate full SHA and path, fetch the commit with resource/time/network policy, copy only selected Git-tree files plus declared dependencies into a per-kernel internal Git repo as a new immutable snapshot commit, store upstream-to-internal SHA mapping, and check out only that snapshot in the sandbox, read strict YAML manifests and hash files. No arbitrary Git hooks or privileged build scripts. Reject admission if the commit cannot be mirrored.
 
 A changed PyTorch spec YAML/reference/cases creates `spec-v2`; it does not mutate an accepted `spec-v1`. An implementation-only SHA change creates a new submission inheriting frozen fields. Optionally deduplicate identical built binary hashes while retaining separate submission records.
 
@@ -148,7 +148,7 @@ Every kernel spec is an author-provided, frozen **PyTorch reference** plus case 
 
 Benchmark only passing candidates. Record synchronized device timing, warmup, median/p95 microseconds and baseline microseconds for each required case. `geomean_speedup = exp(mean(log(baseline_us/kernel_us)))`. Match device, suite, tolerance, and environment; do not compare A3 and A5. A completed and explicitly published result can enter Global Best. Display best-over-time as a single cumulative step curve with language-colored new-record markers.
 
-The user only sees validation stage, logs and empirical ETA (or insufficient data), not worker identities or storage architecture. Admin-only pages handle workers, mirror, queue and storage.
+The user only sees validation stage, logs and empirical ETA (or insufficient data), not worker identities or storage architecture. Admin-only pages handle workers, Git snapshots, queue and storage.
 
 ## 8. Artifact publication and Hugging Face
 
@@ -158,8 +158,12 @@ Upload and verify HF files *before* making the PostgreSQL release globally disco
 
 ## 9. Testing and operational concerns
 
-CPU CI tests Git intake with a local bare remote, protected refs and commit-only revisions, YAML validation, adapter preflight, fake binary artifacts, PostgreSQL/Redis/MockHF integration and fault recovery. Hardware tests use protected internal runners on A3 and A5 and verify real build/export, correctness and timing. Run untrusted code only in isolated NPU workers with resource/network limits. Git mirror and PG must be backed up; HF generated binaries are independently versioned. Use Prometheus/OpenTelemetry for scheduler/builder telemetry, with admin access.
+CPU CI tests Git intake with a local upstream Git fixture, per-kernel snapshot commits and protected refs and commit-only revisions, YAML validation, adapter preflight, fake binary artifacts, PostgreSQL/Redis/MockHF integration and fault recovery. Hardware tests use protected internal runners on A3 and A5 and verify real build/export, correctness and timing. Run untrusted code only in isolated NPU workers with resource/network limits. Git snapshot repositories and PG must be backed up; HF generated binaries are independently versioned. Use Prometheus/OpenTelemetry for scheduler/builder telemetry, with admin access.
 
 ## 10. PoC engineering risk
 
 The **CATLASS binary export contract** is the biggest early technical unknown: whether every supported specialization can be compiled and redistributed in a loader-compatible form. Prioritize a proof of compilation→artifact→load→execute before implementing broad language coverage. Ascend C package ABI and torch_npu interop are the second critical test. Both need explicit A3/A5 validation with pinned toolchains.
+
+### Subtree importer implementation contract
+
+Use a transient constrained Git fetch to resolve the external full SHA, then safely export selected paths into a clean **per-kernel internal Git repository** as a new commit. Store both upstream and internal commit SHAs in PostgreSQL, with declared dependency paths and content digests. The internal commit lineage represents *accepted CANNery revisions*, not full upstream directory history. The build worker checks out the internal snapshot; admission never executes Git hooks. Git blob deduplication bounds incremental storage, but fetched upstream objects may temporarily occupy more disk. See [Architecture](architecture.md#git-subtree-snapshot-policy).
