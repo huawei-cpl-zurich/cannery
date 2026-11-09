@@ -2,7 +2,7 @@
 
 Status: PoC design | Updated: 2026-11-09
 
-**Current source/build policy:** user-authored code is exclusively Git-backed; accepted full commits are retained in an internal bare Git mirror. CANNery builds binary candidates during admission and stores **generated binaries** (not source snapshots) in private Hugging Face repositories. The PoC supports Ascend C and CATLASS DSL; Triton-Ascend and PyPTO follow later. See [Architecture](architecture.md), [Implementation](implementation.md), and [User Story](user-story.md).
+**Current source/build policy:** user-authored code is exclusively Git-backed; selected source trees are retained as immutable commits in internal per-kernel Git snapshot repositories. CANNery builds binary candidates during admission and stores **generated binaries** (not source snapshots) in private Hugging Face repositories. The PoC supports Ascend C and CATLASS DSL; Triton-Ascend and PyPTO follow later. See [Architecture](architecture.md), [Implementation](implementation.md), and [User Story](user-story.md).
 
 For detailed service architecture and data movement, see [Architecture](architecture.md). For UI/programmatic submission and Hugging Face consumption examples, see [User Story](user-story.md).
 
@@ -16,7 +16,7 @@ The PoC supports:
 - Capability-advertising build, validation, and benchmark workers.
 - Author-defined PyTorch reference functions and cases; no fixed CANNBench specification catalog.
 - Two workflows: **register a new kernel** and **submit to an existing kernel**.
-- Frozen PyTorch specifications and kernel source exclusively in Git, pinned by full SHA and retained in an internal bare Git mirror.
+- Frozen PyTorch specifications and kernel source exclusively in Git, pinned by full SHA and retained as internal per-kernel Git snapshots.
 - Per-case latency in **microseconds**, geometric-mean speedups, and tolerance-aware filtering.
 - Global **validated + explicitly published** results, distinct from private/author submissions.
 - Git-based source checkout and HF-distributed **system-built** binaries with auto-detected compatibility and explicit override.
@@ -126,7 +126,7 @@ cannery submit team/fa_xxx --spec-version 1 --device a5 --lang catlass \
   --commit <full-sha> --path attention/fa_xxx/
 ```
 
-On intake, resolve Git refs server-side, retain the accepted commit in the internal bare Git mirror, verify the selected tree and manifest, then schedule a **mandatory build**. Record Git URL, resolved full commit, path, tree digest, build adapter, author and implementation lineage. **No local source uploads or HF source archives.** Generated binary candidates and build evidence are uploaded to HF storage.
+On intake, resolve Git refs server-side, import the selected folder and declared build dependencies as a new immutable internal Git snapshot commit, verify the selected tree and manifest, then schedule a **mandatory build**. Record Git URL, resolved full commit, path, tree digest, build adapter, author and implementation lineage. **No local source uploads or HF source archives.** Generated binary candidates and build evidence are uploaded to HF storage.
 
 ## 6. Correctness, tolerance and scoring
 
@@ -202,15 +202,15 @@ CLI (Typer) / Web (Jinja2 + HTMX)
 
 Worker capability documents cover A3/A5, installed CANN, torch_npu, CATLASS, supported operations (build, test, bench), accelerator count and capacity. Dispatch checks capability constraints and acquires an exclusive per-device lease for timing. Workers heartbeat and upload isolated run artifacts/results.
 
-Artifact storage interface supports private Hugging Face repositories for generated binaries and benchmark evidence, with S3-compatible binary storage as a later alternative. Source remains in external Git plus a retained bare Git mirror. PostgreSQL stores the authoritative index; Redis is a job transport rather than source of truth. Binary variants include ABI/runtime constraints. Download resolution probes local capabilities by default; `--no-detect` permits explicit device/language selection but does not waive server-side execution compatibility checks. Offer a pinned Git source link when no compatible binary exists.
+Artifact storage interface supports private Hugging Face repositories for generated binaries and benchmark evidence, with S3-compatible binary storage as a later alternative. Source remains in external Git plus per-kernel internal Git snapshot repositories. PostgreSQL stores the authoritative index; Redis is a job transport rather than source of truth. Binary variants include ABI/runtime constraints. Download resolution probes local capabilities by default; `--no-detect` permits explicit device/language selection but does not waive server-side execution compatibility checks. Offer a pinned Git source link when no compatible binary exists.
 
 ## 10. PoC resource envelope
 
-For 5–15 internal users and hundreds of daily tasks: control plane VM ~8 vCPU, 32 GB RAM, ~100–200 GB SSD plus a separate 100–200 GB persistent Git mirror volume; one dedicated A3 worker and one dedicated A5 worker; optionally a CPU builder (~8–16 vCPU, 32–64 GB RAM). PostgreSQL 20–50 GB initially, local logs/cache 50–100 GB, private HF artifact allowance 100–500 GB depending on binary retention. Docker Compose for the control plane, isolated worker services on device hosts. Add backup/restore, quotas, credential rotation and storage retention before production.
+For 5–15 internal users and hundreds of daily tasks: control plane VM ~8 vCPU, 32 GB RAM, ~100–200 GB SSD plus an initial 20–50 GB persistent Git snapshot volume, scaled by imported source size; one dedicated A3 worker and one dedicated A5 worker; optionally a CPU builder (~8–16 vCPU, 32–64 GB RAM). PostgreSQL 20–50 GB initially, local logs/cache 50–100 GB, private HF artifact allowance 100–500 GB depending on binary retention. Docker Compose for the control plane, isolated worker services on device hosts. Add backup/restore, quotas, credential rotation and storage retention before production.
 
 ## 11. Security and provenance
 
-Untrusted author Python/compilers must run in sandboxed containers with restricted mounts, network egress, CPU/memory/time limits and no shared production credentials. Never execute user code in the FastAPI process. Retain accepted Git commits in a bare mirror, verify hashes, sign or attest official releases, scope HF tokens per worker/service, and distinguish private candidate builds from trusted global publications.
+Untrusted author Python/compilers must run in sandboxed containers with restricted mounts, network egress, CPU/memory/time limits and no shared production credentials. Never execute user code in the FastAPI process. Retain selected files as internal Git snapshot commits, verify hashes, sign or attest official releases, scope HF tokens per worker/service, and distinguish private candidate builds from trusted global publications.
 
 ## 12. PoC acceptance story
 
@@ -221,11 +221,11 @@ See [Implementation](implementation.md) and [Roadmap](roadmap.md).
 
 ## External Git revisions
 
-Both new spec registration and implementation submission support sources in GitHub, GitLab, and self-hosted Git repositories, including private remotes with scoped credentials. CANNery retains accepted commit objects in its **internal bare Git mirror** and hashes source trees. It does **not** copy author source to Hugging Face.
+Both new spec registration and implementation submission support sources in GitHub, GitLab, and self-hosted Git repositories, including private remotes with scoped credentials. CANNery retains **only the selected source files and declared dependencies** as immutable commits in internal Git snapshot repositories and hashes source trees. It does **not** copy author source to Hugging Face.
 
 After an implementation's initial Git-backed submission, the normal iteration is **New revision → update commit SHA only**. The repository, path, entrypoint, frozen spec, device and language are inherited. Each commit becomes a **new immutable submission** with its own provenance, content digest, validation and benchmark history. Users can use the website, `cannery revise <submission-id> --commit <sha>`, or a REST revision endpoint. Editing the specification's Git commit produces a **new spec version** if the canonical spec changes; it never mutates an existing frozen spec.
 
-External Git is the development source of truth; an internal bare Git mirror preserves accepted commits, and Hugging Face stores compiled binaries and release artifacts. A deleted or changed upstream repository does not break accepted revisions as long as the mirrored Git objects are retained.
+External Git is the development source of truth; internal per-kernel Git snapshots preserve accepted source files and submission history, and Hugging Face stores compiled binaries and release artifacts. A deleted or changed upstream repository does not break accepted revisions as long as the imported internal Git snapshot is retained.
 
 ## Binary admission requirements
 
