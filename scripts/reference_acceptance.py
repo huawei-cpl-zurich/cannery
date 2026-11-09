@@ -57,7 +57,15 @@ from pathlib import Path
 def reference(x):
     assert 'CANNERY_DATABASE_URL' not in os.environ
     assert 'CANNERY_HF_TOKEN' not in os.environ
+    assert os.getuid() == 10001
     assert not Path('/var/run/docker.sock').exists()
+    try:
+        fd = os.open('/proc/1/fd/1', os.O_WRONLY)
+    except PermissionError:
+        pass
+    else:
+        os.close(fd)
+        raise AssertionError('supervisor stdout is accessible')
     try:
         Path('/etc/cannery-escape').write_text('bad')
     except OSError:
@@ -76,6 +84,13 @@ def reference(x):
 """)
         run_smoke(validate_spec(isolated, "spec"), isolated, "spec", image=IMAGE)
         bad = [
+            files(
+                b"""import os
+os.write(1, b'{"python":"3.12","torch":"2.6.0+cpu","cases":3}\\n')
+os._exit(0)
+""",
+                cases=b"def generate_cases(): return []",
+            ),
             files(b"def reference(x): return x", cases=b"def generate_cases(): return []"),
             files(b"def reference(x): return x", torch="0.0.0"),
             files(b"def reference(x):\n while True: pass\n"),
