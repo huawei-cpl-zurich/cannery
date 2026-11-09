@@ -1,155 +1,118 @@
 # CANNery — PoC Roadmap
 
-Status: proposed vertical slices | 2026-11-09
+Status: updated for Git-only sources and mandatory binary build · 2026-11-09
 
-The roadmap prioritizes a **working user journey at every milestone**. Each slice includes API, CLI, minimal UI, storage, and tests. Hardware availability and runtime integration are the largest uncertainties; durations are estimates for planning, not commitments.
+Build a working user journey with thin end-to-end slices. **No non-Git source intake.** Every implementation commit contains a supported build contract, and binary artifacts are produced by our workers before validation and published from private HF storage. **Initial adapters: Ascend C and CATLASS DSL only**; Triton-Ascend and PyPTO are future phases.
 
-## Summary
+## Milestone overview
 
-| Milestone | User-visible outcome | Critical dependencies | Indicative effort |
-|---|---|---|---|
-| 0. Foundation | Local server, CLI, website shell, CI | Existing repositories | 3–5 engineering days |
-| 1. Frozen spec registration | Register and inspect a PyTorch operator | Sandbox for reference/cases, artifact store | 1–2 weeks |
-| 2. Immutable submissions | Submit local/Git implementation and see status | Snapshotting, RBAC, database | 1–2 weeks |
-| 3. End-to-end A5 validation | Real kernel compiled and checked against PyTorch | A5 worker, CANN, runtime | 2–3 weeks |
-| 4. Benchmark + global ranking | Per-case µs, geomean, publish validated results | Stable benchmarks and baseline | 1–2 weeks |
-| 5. A3, source/binary delivery | Independent A3 rankings and compatible artifact retrieval | A3 worker, `cannery-kernels` loader | 2–3 weeks |
-| 6. Harden / demonstrate | Repeatable PoC and operational controls | Security, backups, failure testing | 1–2 weeks |
-
-Elapsed calendar time depends heavily on A3/A5 and build toolchain access. Parallelize `cannery-kernels` runtime development from milestone 1.
-
-## Milestone 0 — Repository and service foundation
-
-Deliverables:
-- FastAPI `/health` and `/api/v1` routes, Jinja2/HTMX app shell, Typer client.
-- PostgreSQL + Redis in Docker Compose, Alembic migrations and typed Pydantic DTOs.
-- Local filesystem fake artifact store plus Hugging Face private storage adapter contract.
-- GitHub Actions lint, unit tests and packaging checks on CPU, no device hardware requirements.
-- Docs and accepted mockups under `docs/`.
-
-Acceptance:
-- `docker compose up` starts an empty local web catalog.
-- `cannery --help` and a health-check CLI command work.
-- API/UI/DB integration checks run in CI without NPU.
-
-## Milestone 1 — Freeze a new PyTorch specification
-
-Deliverables:
-- `cannery register` from local path and pinned Git URL + commit + path.
-- Strict YAML schema for reference, case generator, input/output contract, default tolerance, environment lock.
-- Sandbox correctness smoke execution for the **reference itself**.
-- Immutable snapshot, SHA-256 digest, unique `namespace/kernel@spec-vN` and versioned metadata.
-- UI: Register New Kernel and Specification Detail.
-
-Acceptance:
-- Register `team/fa_xxx@spec-v1`, inspect the frozen manifest and source provenance.
-- Attempts to overwrite or mutate a registered spec are rejected.
-- A changed PyTorch reference or case generator creates spec-v2 rather than editing v1.
-
-## Milestone 2 — Submit implementations against frozen specs
-
-Deliverables:
-- `cannery submit` for local snapshot or Git URL/commit/path; entrypoint, language, device and requested tolerance.
-- Immutable source digest, parent revision link and author ownership.
-- My Submissions page with queued status, source provenance and audit events.
-- Basic worker capability registration and scheduler queue.
-- Auth boundaries between users and admins; admin worker/queue view separate.
-
-Acceptance:
-- Multiple CATLASS/Triton/Ascend C candidates can target spec-v1 without re-supplying reference/cases.
-- Git branches resolve to full SHA and repeatably restore snapshotted sources.
-- Normal user cannot access worker or storage admin APIs.
-- User receives stage status and an ETA range, or 'insufficient history' when no reliable estimate exists.
-
-## Milestone 3 — A5 correctness vertical slice
-
-Deliverables:
-- One A5 worker with registered CANN/torch_npu/DSL toolchain versions.
-- First end-to-end runtime/build adapter and isolated execution environment.
-- Deterministic PyTorch reference and optimized implementation comparison.
-- Per-case error summaries, first tolerance profile, failed-case logs.
-- Durable device leases, retries and timeout behavior.
-
-Acceptance:
-- A5 candidate runs against canonical PyTorch spec.
-- A deliberate incorrect implementation fails with actionable error.
-- The UI shows validating → failed/validated without claiming finalized performance during validation.
-- The worker survives restart without losing completed results or double-publishing artifacts.
-
-## Milestone 4 — Benchmarks and global leaderboard
-
-Deliverables:
-- Warmup, synchronized device timing, repetition, median and p95 **µs**.
-- Pinned PyTorch baseline, case-level reports and geomean speedup.
-- Versioned built-in tolerance profiles; filter eligibility based on proven results.
-- Explicit owner publish action; global page only shows validated + published results.
-- Per-device overall best-so-far **step plot**, points colored by winning language, no cross-device ranking.
-- User-facing benchmark history and projected job completion time.
-
-Acceptance:
-- Multiple candidate revisions compete under the same spec, A5, test suite and tolerance.
-- A valid but unpublished candidate stays private.
-- A published but accuracy-ineligible candidate does not appear for a stricter selected tolerance.
-- History is a single best-so-far step line with language-colored record events.
-- Per-case µs and geomean are independently reproducible from stored inputs.
-
-## Milestone 5 — Additional device and distribution
-
-Deliverables:
-- A3 device worker and separate A3 leaderboard/history.
-- Productionized `cannery-kernels` A3/A5 loader / variant matcher.
-- Source and binary publication, ABI/toolchain manifests, checksums.
-- Environment-aware download; explicit `--device`, `--lang`, `--source`, `--no-detect`.
-- Ascend C, Triton-Ascend, CATLASS adapters as availability permits.
-
-Acceptance:
-- Same spec has A3 and A5 candidates; results cannot be mixed or directly compared in the ranking.
-- User can download source regardless of local binary compatibility.
-- Compatible binary is selected and executed through a `huggingface/kernels`-compatible API, or a clear compatibility diagnostic is returned.
-
-## Milestone 6 — PoC hardening and demonstration
-
-Deliverables:
-- Worker failure recovery, idempotent jobs, upload consistency, artifact retention.
-- AuthN/AuthZ, Git fetch allowlist/SSRF protection, sandbox and resource quotas.
-- Logging/metrics, admin dashboard, backups and restore exercise.
-- Demo runbook and sample user-defined kernel/spec with competing revisions.
-
-End-to-end demo:
-1. Register `team/fa_xxx@spec-v1` from a Git commit, freezing YAML/reference/cases.
-2. Submit an A5 Triton candidate from a newer Git commit without copying the spec.
-3. Observe estimated test time; validate against the immutable PyTorch reference.
-4. Show µs timings and geomean speedup, publish explicitly.
-5. Filter accuracy thresholds and show an A5 best-so-far step history with language-colored improvement markers.
-6. Submit an A3 revision, show entirely separate rankings.
-7. Download sources and the correct compatible binary, execute locally with the runtime.
-
-## Cross-repository critical path
-
-`cannery-kernels` work runs in parallel:
-- R0: audit Hugging Face loader/packaging contracts and add minimal Ascend device detection.
-- R1: fetch/load/call one pinned Ascend C binary end to end.
-- R2: add CATLASS/Triton source/JIT paths and revisions/side-by-side isolation.
-- R3: resolve A3/A5, CANN, torch_npu, Python ABI; provide stable errors.
-- R4: integrate worker and CLI download, compatibility tests, upstream contribution assessment.
-
-Do not block the platform's registration or submission UI waiting for all runtime backends: use a mock worker or a single validated A5 execution path first.
-
-## Staffing and infrastructure
-
-Suggested core team: 2 platform engineers (API/data/UI and worker/evaluation), 1 compiler/runtime engineer for `cannery-kernels`, and part-time validation/device infrastructure support. Minimal equipment: 8-vCPU/32-GB control-plane VM, one A3 and one A5 worker host, private Hugging Face storage, PostgreSQL and Redis. A CPU builder host is optional until compilation demand requires it.
-
-## Risks and mitigations
-
-| Risk | Impact | Mitigation |
+| Stage | Deliverable | Acceptance |
 |---|---|---|
-| Arbitrary PyTorch code execution | High | Separate sandbox, no worker host secrets, restricted network/filesystem |
-| Unstable device timing | High | Exclusive device lease, native timing, repetitions, environment cohort |
-| Arbitrary tolerance filters | High | Versioned tested profiles; revalidate unseen pairs |
-| Immutable Git refs vs mutable repos | Medium | Full SHA, snapshot and digest |
-| Unsupported Ascend HF loader | High | Early hardware spike in `cannery-kernels` |
-| Private artifact policy | Medium | Corporate approval; S3 adapter fallback |
-| Variable queue ETAs | Medium | Rolling empirical stage estimates; show ranges / uncertainty |
-| Fixed-suite model leaking into design | Medium | First-class user-provided reference and cases |
+| M0 — foundations | FastAPI/Web/CLI, PostgreSQL, Redis, Git intake skeleton, fake HF storage and CPU CI | Local services boot and health checks pass |
+| M1 — frozen PyTorch spec | External Git fetch and **bare mirror**; verified commit/path, schema, content hash; register spec-v1 | Register spec from Git; spec is immutable and rebuildable from retained Git |
+| M2 — Git submissions | Save source binding, `submit --repo --commit --path`, `revise --commit`, user status/ETA; strict `submission.yaml` | Commit-only revision preserves prior submission and inherits frozen target |
+| M3 — Ascend C binary admission | Adapter preflight/compile/package, A5 device build and loader, binary pushed to private HF staging | Pinned Git commit produces actual loadable A5 binary with hash/build metadata |
+| M4 — CATLASS binary admission | Ahead-of-publication CATLASS compilation and specialization/export proof; adapter and ABI metadata | Pinned CATLASS commit builds a loadable compatible artifact; unsupported specializations rejected |
+| M5 — correctness & benchmark | Frozen PyTorch oracle; tolerance profile validation; synchronized µs timings; geomean | Bad binary fails; passing binary has complete per-case evidence |
+| M6 — published leaderboard and consumption | Explicit publish, global vs personal submissions, device/tolerance filtering, HF pinned loader integration | Published validated binary can be downloaded and loaded; single best-so-far step history with language-colored record points |
+| M7 — A3 and hardening | A3 variants, separate rankings, sandbox/secret/backup and failure recovery | Repeat user journey on A3 and A5 without cross-device comparisons |
 
-See [Design](design.md) and [Implementation](implementation.md).
+M3–M5 may be developed in parallel after M2. Testing the CATLASS exported-binary path should start as an **early technical spike** even before M3 completes. Work in `cannery-kernels` occurs alongside platform work.
+
+## M0 — Foundation
+
+- FastAPI API + server-rendered HTMX website, Typer CLI, SQLAlchemy/Alembic, PostgreSQL, Redis/Dramatiq, Docker Compose.
+- CI: Ruff, Pytest, typing and packaging, with local bare Git fixture repositories.
+- Private Hugging Face binary-artifact adapter and fake testing store.
+- Reserve data volumes for PostgreSQL and **internal bare Git mirror**.
+- User navigation: Global Best, My Submissions, Register Kernel, Submit Implementation; worker/storage administration is role gated.
+
+## M1 — Git-backed immutable specifications
+
+- `cannery register --repo URL --commit FULL_SHA --path specs/fa_xxx/`.
+- Restricted Git intake handles GitHub/GitLab/self-hosted, including private scoped credentials.
+- Mirror accepted Git commit objects, protect retained refs against garbage collection and compute digests.
+- Read `cannery.yaml`, `reference.py`, `cases.py` and environment lock from the verified Git tree.
+- Freeze `kernel@spec-v1` in PostgreSQL; any semantic spec update becomes spec-v2.
+- Run reference smoke test in an isolated worker; API process never executes arbitrary reference code.
+
+**Acceptance:** source lives only in Git; no local source file upload API or HF source repository exists.
+
+## M2 — Implementation submissions and commit-only revisions
+
+- `submission.yaml` uses strict schema for device, language, entrypoint and `implementation.build` adapter/options.
+- `cannery submit` accepts Git URL, pinned SHA and subdir; rejects non-Git upload or unsupported adapter IDs.
+- `cannery revise SUB_ID --commit FULL_SHA` inherits repo, path, spec, device, language and build adapter while creating a new immutable record.
+- Intake retains each accepted commit and source tree in Git mirror.
+- My Submissions shows queue, build, correctness, benchmark and completion state, with empirical ETA or honest unknown.
+
+**Acceptance:** two different Git SHAs create two immutable candidate revisions, without re-registering or copying the spec.
+
+## M3 — Ascend C binary build
+
+- Select A5 worker with matching CANN compiler/runtime.
+- Implement typed `AscendCAdapter.preflight/build/package`.
+- Produce shared-library or runtime-compatible binary plus generated loader metadata, hashes and ABI/toolchain fingerprint.
+- Upload the generated artifact to private HF staging; PostgreSQL indexes pinned HF revision.
+- Verify that a minimal `cannery-kernels` runtime can load/call this binary on A5.
+- Compilation logs and failures are private job records.
+
+**Acceptance:** submit Git source → compiled, stored and executed A5 Ascend C binary. Precompiled author binary alone is not admissible.
+
+## M4 — CATLASS DSL binary build
+
+- Determine actual supported CATLASS compiler export/JIT specialization mechanisms.
+- Define supported shapes/dtypes specialization manifest.
+- Implement `CatlassAdapter` with controlled ahead-of-publication compilation and exported loadable artifacts.
+- Validate compatible runtime wrapper and same loader path as Ascend C where feasible.
+- Reject pure JIT-only unsupported variants; do not claim a packaged binary exists where it does not.
+
+**Acceptance:** a pinned CATLASS implementation commit yields reproducible loadable binary candidate and manifest for its supported cases.
+
+## M5 — Correctness and performance evaluation
+
+- Match worker device, language, toolchain versions and target ABI.
+- Run PyTorch reference and built binary against frozen mandatory cases; persist case-level errors and tolerance-profile outcomes.
+- Pin reference baseline, capture warmup and synchronized NPU timings in **µs**, compute speedup per case and geometric mean across all cases.
+- Version spec/suite/device/tolerance/environment cohorts. Evaluate untested tolerance profiles on demand.
+- Save run logs/raw timing and generated binaries in private HF; outcomes and searchable aggregates in PostgreSQL.
+
+**Acceptance:** failed correctness never produces a globally eligible performance score; valid submissions are privately inspectable.
+
+## M6 — Release, leaderboard and consumer
+
+- Explicit publication by owner/authorized reviewer after successful build + correctness + full benchmarks.
+- Package existing generated binary into HF `kernel` release layout; pin exact HF repo commit and hashes.
+- CANNery CLI resolves compatible binaries by device/runtime; no user source copy in HF.
+- The extended Hugging Face `get_kernel` interface loads and calls a published A5 binary.
+- Global Best filters only published, valid, tolerance-eligible results; My Submissions retains failures and private work.
+- One **overall best-so-far** step line per device, markers colored by record-setting language.
+
+**Acceptance:** end user finds, selects and loads binary from private HF using pinned revision, while source inspection points to external Git SHA/path.
+
+## M7 — A3 and operations
+
+- Add A3 worker and matching Ascend C/CATLASS binary variants; completely separate A3 rankings/history.
+- Apply device leases, idempotent dispatch, heartbeat recovery, restricted Git intake, sandbox execution, credential scoping and artifact cleanup.
+- Back up **PostgreSQL and the internal Git mirror**, test restore, reconcile orphaned HF staging artifacts.
+- Role gate workers/storage/Git mirror admin UI; expose only user-relevant submission ETA.
+
+## Parallel `cannery-kernels` deliverables
+
+1. Confirm Hugging Face kernel repository/metadata and ABI packaging contract for CANN backend.
+2. Load one pinned Ascend C binary in A5; record exact loader and trust behavior.
+3. Add CATLASS exported binary/adapter loading; handle supported specialization keys.
+4. Provide A3/A5 and CANN/torch_npu/Python compatibility matching and pinned HF revisions.
+5. Contribute relevant Ascend support upstream when independently reusable.
+
+## Beyond PoC
+
+Triton-Ascend and PyPTO become additional **versioned build adapters** with independent early compiler-export feasibility checks. Git webhooks can automatically submit each new commit to a bound implementation track, but must follow the same admission, validation and publication gates.
+
+## Infrastructure and risks
+
+Starting resources: control-plane VM 8 vCPU/32 GB with PostgreSQL + Redis; persistent **Git mirror volume budgeted at 100–200 GB** and separate DB/temporary storage; one A3 and one A5 worker host with sufficient CANN/toolchain scratch; private HF binary/results storage ~100–500 GB. Scale mirror, artifacts and worker disk based on measured source and compiled artifact sizes.
+
+Main risks: CATLASS specialized JIT binaries may not be generally exportable, Ascend C callable ABI packaging, arbitrary Git source security, correct device timing, and public/private HF permissions. Gate milestones on real compile→store→load→execute demonstrations rather than mocked binaries.
+
+See [System Architecture](architecture.md), [Implementation](implementation.md) and [User Story](user-story.md).
