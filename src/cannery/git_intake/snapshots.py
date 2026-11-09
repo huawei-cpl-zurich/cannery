@@ -111,7 +111,12 @@ class SnapshotStore:
             for name, data in sorted(selected.files.items())
         }
         digest = hashlib.sha256(json.dumps(content, sort_keys=True).encode()).hexdigest()
-        identity = hashlib.sha256((source.model_dump_json() + digest).encode()).hexdigest()
+        provenance = {
+            "source": source.model_dump(mode="json"),
+            "external_tree_id": selected.external_tree_id,
+        }
+        provenance_json = json.dumps(provenance, sort_keys=True)
+        identity = hashlib.sha256((provenance_json + digest).encode()).hexdigest()
         reference = f"refs/cannery/snapshots/{identity}"
         repository = self.root / f"{key}.git"
         with kernel_lock(self.root, key):
@@ -159,7 +164,7 @@ class SnapshotStore:
                     git(
                         repository,
                         *arguments,
-                        data=("CANNery snapshot\n" + source.model_dump_json() + "\n").encode(),
+                        data=("CANNery snapshot\n" + provenance_json + "\n").encode(),
                         env=env,
                     )
                     .decode()
@@ -179,6 +184,28 @@ class SnapshotStore:
         )
 
     def read(self, binding: SnapshotBinding) -> SelectedTree:
+        repository = self.root / f"{binding.internal_repository}.git"
+        message = git(repository, "show", "-s", "--format=%B", binding.internal_snapshot_sha)
+        try:
+            header, body = message.decode().strip().split("\n", 1)
+            provenance = json.loads(body)
+            if header != "CANNery snapshot" or provenance != {
+                "source": binding.source.model_dump(mode="json"),
+                "external_tree_id": binding.external_tree_id,
+            }:
+                raise ValueError("Provenance mismatch")
+        except (ValueError, UnicodeError):
+            raise IntakeError("Retained snapshot provenance mismatch") from None
+        identity = hashlib.sha256(
+            (json.dumps(provenance, sort_keys=True) + binding.content_sha256).encode()
+        ).hexdigest()
+        retained = (
+            git(repository, "show-ref", "--verify", "--hash", f"refs/cannery/snapshots/{identity}")
+            .decode()
+            .strip()
+        )
+        if retained != binding.internal_snapshot_sha:
+            raise IntakeError("Snapshot retention reference mismatch")
         selected = read_tree(
             self.root / f"{binding.internal_repository}.git", binding.internal_snapshot_sha
         )
