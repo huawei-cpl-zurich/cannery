@@ -24,6 +24,7 @@ class FakeArtifactStore:
         checksum = digest(data)
         reference = ArtifactRef(repository="fake", revision=checksum, path=path, sha256=checksum)
         target = self._target(reference)
+        temporary = None
         try:
             target.parent.mkdir(parents=True, exist_ok=True)
             # Publish a complete file atomically without replacing an existing
@@ -35,10 +36,11 @@ class FakeArtifactStore:
                 os.link(temporary, target)
             except FileExistsError:
                 verified(target.read_bytes(), reference)
-            finally:
-                temporary.unlink(missing_ok=True)
         except OSError:
             raise ArtifactError("Artifact write unavailable") from None
+        finally:
+            if temporary is not None:
+                temporary.unlink(missing_ok=True)
         return reference
 
     def get(self, reference: ArtifactRef) -> bytes:
