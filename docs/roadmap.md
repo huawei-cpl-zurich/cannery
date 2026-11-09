@@ -9,7 +9,7 @@ Build a working user journey with thin end-to-end slices. **No non-Git source in
 | Stage | Deliverable | Acceptance |
 |---|---|---|
 | M0 — foundations | FastAPI/Web/CLI, PostgreSQL, Redis, Git intake skeleton, fake HF storage and CPU CI | Local services boot and health checks pass |
-| M1 — frozen PyTorch spec | External Git fetch and **bare mirror**; verified commit/path, schema, content hash; register spec-v1 | Register spec from Git; spec is immutable and rebuildable from retained Git |
+| M1 — frozen PyTorch spec | External Git fetch and **selected-subtree Git snapshots**; verified commit/path, schema, content hash; register spec-v1 | Register spec from Git; spec is immutable and rebuildable from internal snapshot commits |
 | M2 — Git submissions | Save source binding, `submit --repo --commit --path`, `revise --commit`, user status/ETA; strict `submission.yaml` | Commit-only revision preserves prior submission and inherits frozen target |
 | M3 — Ascend C binary admission | Adapter preflight/compile/package, A5 device build and loader, binary pushed to private HF staging | Pinned Git commit produces actual loadable A5 binary with hash/build metadata |
 | M4 — CATLASS binary admission | Ahead-of-publication CATLASS compilation and specialization/export proof; adapter and ABI metadata | Pinned CATLASS commit builds a loadable compatible artifact; unsupported specializations rejected |
@@ -24,7 +24,7 @@ M3–M5 may be developed in parallel after M2. Testing the CATLASS exported-bina
 - FastAPI API + server-rendered HTMX website, Typer CLI, SQLAlchemy/Alembic, PostgreSQL, Redis/Dramatiq, Docker Compose.
 - CI: Ruff, Pytest, typing and packaging, with local bare Git fixture repositories.
 - Private Hugging Face binary-artifact adapter and fake testing store.
-- Reserve data volumes for PostgreSQL and **internal bare Git mirror**.
+- Reserve data volumes for PostgreSQL and **internal per-kernel Git snapshot repositories**.
 - User navigation: Global Best, My Submissions, Register Kernel, Submit Implementation; worker/storage administration is role gated.
 
 ## M1 — Git-backed immutable specifications
@@ -43,7 +43,7 @@ M3–M5 may be developed in parallel after M2. Testing the CATLASS exported-bina
 - `submission.yaml` uses strict schema for device, language, entrypoint and `implementation.build` adapter/options.
 - `cannery submit` accepts Git URL, pinned SHA and subdir; rejects non-Git upload or unsupported adapter IDs.
 - `cannery revise SUB_ID --commit FULL_SHA` inherits repo, path, spec, device, language and build adapter while creating a new immutable record.
-- Intake retains each accepted commit and source tree in Git mirror.
+- Intake imports only selected source directory and declared dependencies as a new internal Git snapshot commit; retains the upstream SHA mapping without mirroring upstream history.
 - My Submissions shows queue, build, correctness, benchmark and completion state, with empirical ETA or honest unknown.
 
 **Acceptance:** two different Git SHAs create two immutable candidate revisions, without re-registering or copying the spec.
@@ -94,8 +94,8 @@ M3–M5 may be developed in parallel after M2. Testing the CATLASS exported-bina
 
 - Add A3 worker and matching Ascend C/CATLASS binary variants; completely separate A3 rankings/history.
 - Apply device leases, idempotent dispatch, heartbeat recovery, restricted Git intake, sandbox execution, credential scoping and artifact cleanup.
-- Back up **PostgreSQL and the internal Git mirror**, test restore, reconcile orphaned HF staging artifacts.
-- Role gate workers/storage/Git mirror admin UI; expose only user-relevant submission ETA.
+- Back up **PostgreSQL and internal Git snapshot repositories**, test restore, reconcile orphaned HF staging artifacts.
+- Role gate workers/storage/Git snapshot admin UI; expose only user-relevant submission ETA.
 
 ## Parallel `cannery-kernels` deliverables
 
@@ -111,8 +111,12 @@ Triton-Ascend and PyPTO become additional **versioned build adapters** with inde
 
 ## Infrastructure and risks
 
-Starting resources: control-plane VM 8 vCPU/32 GB with PostgreSQL + Redis; persistent **Git mirror volume budgeted at 100–200 GB** and separate DB/temporary storage; one A3 and one A5 worker host with sufficient CANN/toolchain scratch; private HF binary/results storage ~100–500 GB. Scale mirror, artifacts and worker disk based on measured source and compiled artifact sizes.
+Starting resources: control-plane VM 8 vCPU/32 GB with PostgreSQL + Redis; persistent **Git snapshot volume initially budgeted at 20–50 GB**, adjusted to measured imported file sizes and separate DB/temporary storage; one A3 and one A5 worker host with sufficient CANN/toolchain scratch; private HF binary/results storage ~100–500 GB. Scale mirror, artifacts and worker disk based on measured source and compiled artifact sizes.
 
 Main risks: CATLASS specialized JIT binaries may not be generally exportable, Ascend C callable ABI packaging, arbitrary Git source security, correct device timing, and public/private HF permissions. Gate milestones on real compile→store→load→execute demonstrations rather than mocked binaries.
 
 See [System Architecture](architecture.md), [Implementation](implementation.md) and [User Story](user-story.md).
+
+### Revised Git storage acceptance
+
+The importer accepts a potentially large upstream monorepo but persists only the selected kernel/spec directories and declared dependency files as compact internal Git snapshot commits. Submitting only a new SHA creates an internal child commit and supports diffs across accepted revisions. The system does not retain the upstream DAG, must keep the upstream/internal SHA mapping, and must prove an internal snapshot can build after deleting the temporary upstream checkout.
