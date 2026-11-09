@@ -1,0 +1,43 @@
+x-app: &app
+  build: .
+  environment:
+    CANNERY_DATABASE_URL: postgresql+psycopg://cannery:cannery@postgres:5432/cannery
+    CANNERY_REDIS_URL: redis://redis:6379/0
+  depends_on:
+    postgres:
+      condition: service_healthy
+    redis:
+      condition: service_healthy
+services:
+  postgres:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: cannery
+      POSTGRES_PASSWORD: cannery
+      POSTGRES_DB: cannery
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cannery -d cannery"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+  api:
+    <<: *app
+    ports:
+      - "127.0.0.1:${CANNERY_PORT:-8000}:8000"
+    volumes:
+      - git-snapshots:/var/lib/cannery/snapshots:ro
+volumes:
+  postgres-data:
+  git-snapshots:
