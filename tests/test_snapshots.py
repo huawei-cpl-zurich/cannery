@@ -93,3 +93,12 @@ def test_invalid_store_paths_and_byte_budget(tmp_path) -> None:
         store.commit("a" * 64, source("a" * 40), selected)
     with pytest.raises(IntakeError):
         store.commit("../escape", source("a" * 40), selected)
+
+
+def test_store_enforces_file_and_byte_limits_before_writing(tmp_path) -> None:
+    store = SnapshotStore(tmp_path)
+    for files in ({"huge": b"x" * (16 * 1024 * 1024 + 1)}, {f"file{i}": b"" for i in range(257)}):
+        selected = SelectedTree(files, dict.fromkeys(files, "100644"), "a" * 40)
+        with pytest.raises(IntakeError):
+            store.commit("a" * 64, source("a" * 40), selected)
+    assert list(tmp_path.iterdir()) == []
