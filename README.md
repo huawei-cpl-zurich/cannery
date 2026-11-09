@@ -18,4 +18,7 @@ Authors register a frozen, versioned, Git-backed PyTorch specification and subse
 
 ## Status
 
-Design stage. The Markdown docs and SVG image previews are committed; UI and backend code remain to be implemented.
+M0 CPU foundation implemented: API/web/CLI, PostgreSQL/Redis worker plumbing, artifact
+stores, Git intake contracts and fault-tested Docker acceptance. See
+[Local development](docs/development.md) for setup and validation. Kernel intake,
+NPU build/validation and publication remain later milestones.

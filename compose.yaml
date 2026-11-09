@@ -3,11 +3,17 @@ x-app: &app
   environment:
     CANNERY_DATABASE_URL: postgresql+psycopg://cannery:cannery@postgres:5432/cannery
     CANNERY_REDIS_URL: redis://redis:6379/0
+    CANNERY_DEV_IDENTITY_ENABLED: ${CANNERY_DEV_IDENTITY_ENABLED:-false}
   depends_on:
     postgres:
       condition: service_healthy
     redis:
       condition: service_healthy
+x-runtime: &runtime
+  <<: *app
+  depends_on:
+    migrate:
+      condition: service_completed_successfully
 services:
   postgres:
     image: postgres:17
@@ -30,16 +36,22 @@ services:
       timeout: 2s
       retries: 30
   reconciler:
-    <<: *app
+    <<: *runtime
     command: ["python", "-m", "cannery.reconcile"]
   worker:
-    <<: *app
+    <<: *runtime
     command: ["dramatiq", "cannery.worker", "--processes", "1", "--threads", "2"]
   migrate:
     <<: *app
     command: ["alembic", "upgrade", "head"]
   api:
-    <<: *app
+    <<: *runtime
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5)"]
+      interval: 5s
+      timeout: 6s
+      start_period: 5s
+      retries: 12
     ports:
       - "127.0.0.1:${CANNERY_PORT:-8000}:8000"
     volumes:
