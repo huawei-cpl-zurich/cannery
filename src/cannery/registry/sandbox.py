@@ -16,13 +16,39 @@ from cannery.registry.manifest import SpecError, ValidatedSpec, validate_spec
 
 
 class SmokeError(ValueError):
-    pass
+    def __init__(self, message: str, handle: str | None = None) -> None:
+        self.handle = handle
+        super().__init__(message if handle is None else f"{message}; sandbox={handle}")
 
 
 def remove_smoke(name: str) -> None:
     if not re.fullmatch(r"cannery-smoke-[a-f0-9]{32}", name):
         raise SmokeError("Invalid sandbox handle")
-    subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=5, check=False)
+    for _ in range(2):
+        try:
+            subprocess.run(
+                ["docker", "rm", "-f", name], capture_output=True, timeout=3, check=False
+            )
+            remaining = subprocess.run(
+                [
+                    "docker",
+                    "ps",
+                    "-a",
+                    "--filter",
+                    f"name=^/{name}$",
+                    "--format",
+                    "{{.ID}}",
+                ],
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False,
+            )
+            if remaining.returncode == 0 and not remaining.stdout.strip():
+                return
+        except (OSError, subprocess.SubprocessError):
+            pass
+    raise SmokeError("Sandbox cleanup incomplete; retry removal using this handle", handle=name)
 
 
 def run_smoke(
@@ -67,6 +93,7 @@ def run_smoke(
             "path": path,
             "spec": spec.manifest.spec.model_dump(mode="json"),
             "environment": spec.environment.model_dump(mode="json"),
+            "timeout": timeout,
         }
     ).encode()
     runner = Path(__file__).with_name("reference_runner.py").read_text()

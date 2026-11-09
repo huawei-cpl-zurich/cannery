@@ -5,6 +5,7 @@ import importlib.metadata
 import json
 import os
 import secrets
+import signal
 import subprocess
 import sys
 from pathlib import Path
@@ -80,7 +81,10 @@ def demote() -> None:
 
 
 def main() -> None:
+    signal.signal(signal.SIGALRM, lambda *_: os._exit(124))
+    signal.alarm(70)
     payload = json.load(sys.stdin)
+    signal.setitimer(signal.ITIMER_REAL, payload["timeout"] + 2)
     python = f"{sys.version_info.major}.{sys.version_info.minor}"
     torch = importlib.metadata.version("torch")
     if python != payload["environment"]["python"] or torch != payload["environment"]["torch"]:

@@ -64,3 +64,28 @@ def test_mismatched_source_is_rejected_before_docker(monkeypatch):
     )
     with pytest.raises(SmokeError, match="does not match"):
         run_smoke(spec, files, "spec", image="trusted")
+
+
+def test_failed_removal_exposes_owned_handle_for_recovery(monkeypatch):
+    from cannery.registry.sandbox import remove_smoke
+
+    failed = MagicMock(returncode=1, stdout="")
+    monkeypatch.setattr("cannery.registry.sandbox.subprocess.run", lambda *a, **k: failed)
+    handle = "cannery-smoke-" + "a" * 32
+    with pytest.raises(SmokeError) as caught:
+        remove_smoke(handle)
+    assert caught.value.handle == handle
+    assert handle in str(caught.value)
+
+
+def test_smoke_observations_never_claim_independent_execution_proof():
+    from cannery.registry.freeze import SmokeEvidence
+
+    evidence = SmokeEvidence(
+        spec_sha256="a" * 64,
+        image_id="sha256:" + "b" * 64,
+        python="3.12",
+        torch="2.6.0+cpu",
+        cases=1,
+    )
+    assert evidence.model_dump()["assurance"] == "diagnostic"
