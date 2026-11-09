@@ -9,6 +9,7 @@ from redis.exceptions import RedisError
 
 from cannery.health import postgres_ready
 from cannery.settings import Settings
+from cannery.web import install_web
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -46,4 +47,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             status_code=200 if ok else 503,
         )
 
+    install_web(app, config)
     return app

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{{ title }} · CANNery</title>
+  <script src="/static/htmx.min.js" defer></script>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <header><strong>CANNery</strong>
+    <nav aria-label="Main navigation">
+      {% for path, item in pages.items() %}
+      <a href="/{{ path }}"{% if item[0] == title %} aria-current="page"{% endif %}>{{ item[0] }}</a>
+      {% endfor %}
+      {% if admin %}<a href="/admin">Administration</a>{% endif %}
+    </nav>
+  </header>
+  <main id="content">
+    {% if development %}<p class="notice">Development identity enabled</p>{% endif %}
+    <h1>{{ title }}</h1><p>{{ message }}</p>
+    <button hx-get="{{ request.url.path }}" hx-target="#content" hx-select="#content" hx-swap="outerHTML">Refresh</button>
+  </main>
+</body>
+</html>

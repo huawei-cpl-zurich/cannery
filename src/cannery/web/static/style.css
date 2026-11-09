@@ -1,0 +1,7 @@
+body { font: 1rem system-ui, sans-serif; max-width: 72rem; margin: 2rem auto; padding: 0 1rem; color: #182636; }
+nav { display: flex; flex-wrap: wrap; gap: 1.2rem; margin: 1rem 0 3rem; }
+a { color: #124c81; }
+a[aria-current] { font-weight: bold; }
+main { border-top: 1px solid #ccd; padding-top: 1rem; }
+.notice { background: #fff0cc; padding: .6rem; }
+button { padding: .6rem 1rem; }
