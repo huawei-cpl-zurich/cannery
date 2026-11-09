@@ -478,3 +478,47 @@ CANNery catalog/SDK resolution
   → cannery-kernels loader
   → CANN / torch_npu / NPU execution
 ```
+
+
+## Iterating by changing only the Git commit
+
+After registering an implementation source once, Alice can reuse its repository, subdirectory, entrypoint, target device, language and spec version. In **My Submissions**, she opens `r001` and selects **New revision**. The form is prefilled from the previous submission; only **Commit SHA** needs to change. A change summary can be displayed by comparing the pinned commits.
+
+Proposed CLI:
+
+```bash
+# r001 was already submitted with its repository, path, spec and A5/CATLASS target.
+cannery submit --from sub_001 --commit 1111111111111111111111111111111111111111
+
+# A compact alias for the same operation:
+cannery revise sub_001 --commit 1111111111111111111111111111111111111111
+```
+
+Proposed REST endpoint:
+
+```bash
+curl -X POST https://cannery.example.internal/api/v1/submissions/sub_001/revisions \
+  -H "Authorization: Bearer $CANNERY_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"commit":"1111111111111111111111111111111111111111"}'
+```
+
+Example response:
+
+```json
+{
+  "submission_id": "sub_002",
+  "parent_submission_id": "sub_001",
+  "kernel": "team/fa_xxx",
+  "spec_version": 1,
+  "device": "a5",
+  "language": "catlass",
+  "git_commit": "1111111111111111111111111111111111111111",
+  "source_digest": "sha256:<new-snapshot-digest>",
+  "status": "queued"
+}
+```
+
+CANNery resolves the new Git commit and creates a new immutable HF snapshot and submission. It does **not** modify `sub_001` or re-upload the frozen reference/cases. An updated commit pointing to a revised **PyTorch reference or YAML specification** follows a separate **Register spec-v2** workflow rather than changing `spec-v1`.
+
+If a source is not Git-backed (an uploaded archive), the user must upload a new source snapshot instead of selecting a commit. Changing device, programming language, repo path or spec is allowed through an advanced **Fork submission** flow, not the commit-only shortcut.
