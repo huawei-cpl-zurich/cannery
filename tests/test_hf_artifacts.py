@@ -73,16 +73,15 @@ def test_fake_default_and_explicit_hf_configuration(tmp_path) -> None:
         HfArtifactStore("org/private", " ")
 
 
-def test_real_sdk_requires_bounded_http_configuration(monkeypatch) -> None:
-    monkeypatch.setattr("cannery.artifacts.hf.constants.HF_HUB_DISABLE_XET", False)
-    with pytest.raises(ArtifactError, match="HF_HUB_DISABLE_XET"):
-        HfArtifactStore("org/private", "token")
-    monkeypatch.setattr("cannery.artifacts.hf.constants.HF_HUB_DISABLE_XET", True)
-    factories = []
-    monkeypatch.setattr("cannery.artifacts.hf.set_client_factory", factories.append)
-    store = HfArtifactStore("org/private", "token")
-    assert store.api.token == "token"
-    with factories[0]() as client:
-        assert client.timeout.connect == 5
-        assert client.timeout.read == 5
-        assert client.timeout.write == 5
+def test_operation_timeout_kills_subprocess(monkeypatch) -> None:
+    import subprocess
+
+    def timeout(*args, **kwargs):
+        assert "token" not in " ".join(args[0])
+        assert kwargs["timeout"] == 0.1
+        raise subprocess.TimeoutExpired(args[0], 0.1)
+
+    monkeypatch.setattr("cannery.artifacts.hf.subprocess.run", timeout)
+    store = HfArtifactStore("org/private", "token", timeout=0.1)
+    with pytest.raises(ArtifactError, match="deadline exceeded"):
+        store.put("op", b"data")
