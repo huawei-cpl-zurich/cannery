@@ -230,3 +230,33 @@ Storage example (illustrative): 500 submissions × 5 MB compressed source = 2.5 
 **Slice D:** A3 support + independently ranked results → binary packaging → pinned HF `get_kernel` path.
 
 For exact commands, UI steps and consumption samples, see [User Story](user-story.md).
+
+
+## External Git and commit-only revisions
+
+External Git (GitHub, GitLab or self-hosted) is the **authoritative development repository**; private Hugging Face Hub storage is the **immutable artifact distribution and evaluation snapshot store**. Hugging Face's Git-backed repositories and mirroring mechanisms do not replace CANNery's commit-specific intake, validation and publication service.
+
+A kernel source can be registered from an external Git URL, commit SHA and subdirectory. A one-off Git submission may supply all three; an optional **repository connection** records a reusable remote identity, allowed path, authentication-secret reference and namespace. Private Git access uses narrowly scoped app/deploy credentials stored outside PostgreSQL. Intake restricts hosts, schemes, redirects, submodules, fetch sizes and unsafe Git operations.
+
+For iterative kernel development, each implementation has a **source binding** consisting of repository connection (or canonical remote URL), repository path, entrypoint, device, language and frozen spec version. An author can create the next submission by supplying **only a new commit**. CANNery inherits these binding fields from the previous submission, resolves the new full SHA and snapshots it as a fresh immutable revision. The previous submission and all results remain untouched.
+
+```text
+External Git (developer workspace)
+      |
+      | new SHA only (reuses previous repo/path/target)
+      v
+CANNery source binding + restricted Git intake
+      |
+      +--> Git commit and tree metadata -------> PostgreSQL
+      +--> verified content snapshot ----------> private HF source archive
+      +--> new submission + evaluation job ----> PostgreSQL / Redis
+                                                  |
+                                                  v
+                                                Worker
+```
+
+A new commit of the **specification's** Git repository never edits a frozen spec: registration with a changed spec digest creates `spec-v2` (subject to authorization), while changes to implementation source produce `r002`, `r003`, etc. If an identical snapshot digest is submitted again, intake can deduplicate stored bytes and optionally reuse compatible immutable build artifacts, but must preserve a distinct submission/provenance event when requested.
+
+Data ownership: the Git remote remains the source of development history; Hugging Face owns pinned, reproducible snapshots for each accepted revision; PostgreSQL owns bindings, full Git SHAs, source hashes, submission IDs, states and artifact pointers. A worker downloads a copy from HF, not a moving branch from the developer's remote. A repository deletion cannot invalidate an already accepted revision.
+
+Follow-up phase: optional signed Git webhooks can generate new submissions from commits on selected branches. They must resolve commits immutably and never silently republish without the required validation and owner authorization.
