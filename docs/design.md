@@ -40,7 +40,7 @@ Kernel (namespace/name)
         └── ImplementationSubmission (immutable Git commit + build plan)
               ├── device track: a3 | a5
               ├── language track: ascendc | catlass (PoC); triton | pypto (later)
-              ├── build artifacts: source, binary, manifest, checksums
+              ├── build artifacts: generated binary, manifest, checksums
               ├── validation runs (per case, tolerances, errors, environment)
               ├── benchmark runs (per case, µs, baseline, speedup)
               └── Publication (explicit authorization + status)
@@ -153,7 +153,7 @@ Separate states:
 
 The **Global Best** catalog consists exclusively of explicitly published, fully validated, eligible implementations. A validated candidate remains in **My Submissions** until publication is authorized. Global results are partitioned by spec version, device, test suite, and selected tolerance; the user's personal workspace includes queued, failed and private revisions.
 
-For each device show one cumulative **overall best-so-far** step line over time. Each **new record-setting event** is marked with a point whose color identifies the winning language (Ascend C, Triton-Ascend or CATLASS). Do not draw three competing language-specific best lines in the primary chart. The chart's score/timeline recomputes for the selected tolerance profile and filters to results that were published and eligible at the point in time.
+For each device show one cumulative **overall best-so-far** step line over time. Each **new record-setting event** is marked with a point whose color identifies the winning language (Ascend C or CATLASS in PoC). Do not draw three competing language-specific best lines in the primary chart. The chart's score/timeline recomputes for the selected tolerance profile and filters to results that were published and eligible at the point in time.
 
 ## 8. User experience
 
@@ -168,7 +168,7 @@ The following vector mockups are repository-native previews. The approved high-r
 - [Global leaderboard — corrected step chart](mockups/global-leaderboard.svg): single overall best-so-far line per selected device; markers colored by language.
 - [My submissions](mockups/my-submissions.svg): private candidates, validation state and ETA.
 - [Register new kernel](mockups/register-kernel.svg): immutable PyTorch reference and YAML specification.
-- [Submit implementation](mockups/submit-implementation.svg): Git provenance, source snapshot and requested tolerances.
+- [Submit implementation](mockups/submit-implementation.svg): Git provenance, Git commit provenance, build configuration and requested tolerances.
 - [Submit implementation — validation clarification](mockups/submit-implementation.svg): provisional results until correctness finishes.
 
 ### Embedded previews
@@ -200,21 +200,21 @@ CLI (Typer) / Web (Jinja2 + HTMX)
              CANN / torch_npu
 ```
 
-Worker capability documents cover A3/A5, installed CANN, torch_npu, CATLASS, Triton-Ascend, supported operations (build, test, bench), accelerator count and capacity. Dispatch checks capability constraints and acquires an exclusive per-device lease for timing. Workers heartbeat and upload isolated run artifacts/results.
+Worker capability documents cover A3/A5, installed CANN, torch_npu, CATLASS, supported operations (build, test, bench), accelerator count and capacity. Dispatch checks capability constraints and acquires an exclusive per-device lease for timing. Workers heartbeat and upload isolated run artifacts/results.
 
-Artifact storage interface supports private Hugging Face repositories for generated binaries and benchmark evidence, with S3-compatible binary storage as a later alternative. Source remains in external Git plus a retained bare Git mirror. PostgreSQL stores the authoritative index; Redis is a job transport rather than source of truth. Binary variants include ABI/runtime constraints. Download resolution probes local capabilities by default; `--no-detect` permits explicit device/language selection but does not waive server-side execution compatibility checks. Offer sources when no compatible binary exists.
+Artifact storage interface supports private Hugging Face repositories for generated binaries and benchmark evidence, with S3-compatible binary storage as a later alternative. Source remains in external Git plus a retained bare Git mirror. PostgreSQL stores the authoritative index; Redis is a job transport rather than source of truth. Binary variants include ABI/runtime constraints. Download resolution probes local capabilities by default; `--no-detect` permits explicit device/language selection but does not waive server-side execution compatibility checks. Offer a pinned Git source link when no compatible binary exists.
 
 ## 10. PoC resource envelope
 
-For 5–15 internal users and hundreds of daily tasks: control plane VM ~8 vCPU, 32 GB RAM, ~100–200 GB SSD; one dedicated A3 worker and one dedicated A5 worker; optionally a CPU builder (~8–16 vCPU, 32–64 GB RAM). PostgreSQL 20–50 GB initially, local logs/cache 50–100 GB, private HF artifact allowance 100–500 GB depending on binary retention. Docker Compose for the control plane, isolated worker services on device hosts. Add backup/restore, quotas, credential rotation and storage retention before production.
+For 5–15 internal users and hundreds of daily tasks: control plane VM ~8 vCPU, 32 GB RAM, ~100–200 GB SSD plus a separate 100–200 GB persistent Git mirror volume; one dedicated A3 worker and one dedicated A5 worker; optionally a CPU builder (~8–16 vCPU, 32–64 GB RAM). PostgreSQL 20–50 GB initially, local logs/cache 50–100 GB, private HF artifact allowance 100–500 GB depending on binary retention. Docker Compose for the control plane, isolated worker services on device hosts. Add backup/restore, quotas, credential rotation and storage retention before production.
 
 ## 11. Security and provenance
 
-Untrusted author Python/compilers must run in sandboxed containers with restricted mounts, network egress, CPU/memory/time limits and no shared production credentials. Never execute user code in the FastAPI process. Snapshot Git inputs, verify hashes, sign or attest official releases, scope HF tokens per worker/service, and distinguish author-owned uploads from trusted global publications.
+Untrusted author Python/compilers must run in sandboxed containers with restricted mounts, network egress, CPU/memory/time limits and no shared production credentials. Never execute user code in the FastAPI process. Retain accepted Git commits in a bare mirror, verify hashes, sign or attest official releases, scope HF tokens per worker/service, and distinguish private candidate builds from trusted global publications.
 
 ## 12. PoC acceptance story
 
-An author registers `team/fa_xxx@spec-v1` from a pinned external Git commit. A second author submits an A5/CATLASS implementation referencing the frozen spec ID, pinned Git commit and build manifest. CANNery compiles it into a binary candidate, validates and benchmarks it. A capable worker runs correctness and benchmarks, records per-case µs and error; the author sees ETA and later passes/failures privately. On explicit publication, the result appears in Global Best if it satisfies the viewer's tolerance. Switching A3/A5 yields independent rankings and history. A client downloads the compatible source or binary, and a local Ascend runtime can load and execute the artifact.
+An author registers `team/fa_xxx@spec-v1` from a pinned external Git commit. A second author submits an A5/CATLASS implementation referencing the frozen spec ID, pinned Git commit and build manifest. CANNery compiles it into a binary candidate, validates and benchmarks it. A capable worker runs correctness and benchmarks, records per-case µs and error; the author sees ETA and later passes/failures privately. On explicit publication, the result appears in Global Best if it satisfies the viewer's tolerance. Switching A3/A5 yields independent rankings and history. A client checks out pinned Git source or downloads a compatible HF binary, and a local Ascend runtime can load and execute the binary.
 
 See [Implementation](implementation.md) and [Roadmap](roadmap.md).
 
