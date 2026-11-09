@@ -4,9 +4,10 @@ import json
 import os
 import subprocess
 from pathlib import Path
+from uuid import uuid4
 
-from cannery.registry.manifest import validate_spec
-from cannery.registry.sandbox import SmokeError, new_handle, run_smoke, split_handle
+from cannery.registry.manifest import ValidatedSpec, validate_spec
+from cannery.registry.sandbox import SmokeError, new_handle, remove_smoke, run_smoke, split_handle
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE = f"cannery-reference-check-{os.getpid()}"
@@ -38,6 +39,53 @@ def files(
     }
 
 
+def check_collision(spec: ValidatedSpec, data: dict[str, bytes], image: str) -> None:
+    ownership = new_handle()
+    name, _ = split_handle(ownership)
+    fixture_owner = uuid4().hex
+    fixture_handle = f"{name}@{fixture_owner}"
+    try:
+        foreign = subprocess.run(
+            [
+                "docker",
+                "run",
+                "--rm",
+                "-d",
+                "--name",
+                name,
+                "--label",
+                f"cannery.smoke.owner={fixture_owner}",
+                image,
+                "python",
+                "-c",
+                "import time; time.sleep(60)",
+            ],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        ).stdout.strip()
+        try:
+            run_smoke(spec, data, "spec", image=image, handle=ownership)
+        except SmokeError as error:
+            assert error.handle == ownership
+        else:
+            raise AssertionError("Name collision unexpectedly succeeded")
+        state = subprocess.run(
+            ["docker", "inspect", "--format", "{{.State.Running}}", foreign],
+            check=True,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        assert state.stdout.strip() == "true"
+    except BaseException:
+        print(f"Collision fixture recovery handle: {fixture_handle}")
+        raise
+    finally:
+        remove_smoke(fixture_handle)
+
+
 def main() -> None:
     try:
         subprocess.run(
@@ -53,6 +101,7 @@ def main() -> None:
         isolated = files(b"""
 import os, socket
 from pathlib import Path
+from uuid import uuid4
 
 def reference(x):
     assert 'CANNERY_DATABASE_URL' not in os.environ
@@ -101,52 +150,7 @@ for line in sys.stdin:
         )
         observation = run_smoke(validate_spec(adaptive, "spec"), adaptive, "spec", image=IMAGE)
         assert observation.assurance == "diagnostic"  # Never proof of callable execution.
-        # A colliding name belongs to another invocation; failed launch must
-        # preserve it even when it has the same public name prefix.
-        ownership = new_handle()
-        name, _ = split_handle(ownership)
-        foreign = subprocess.run(
-            [
-                "docker",
-                "run",
-                "-d",
-                "--name",
-                name,
-                "--label",
-                "cannery.smoke.owner=foreign",
-                IMAGE,
-                "python",
-                "-c",
-                "import time; time.sleep(60)",
-            ],
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=5,
-        ).stdout.strip()
-        try:
-            try:
-                run_smoke(
-                    spec,
-                    files(b"def reference(x): return x\n"),
-                    "spec",
-                    image=IMAGE,
-                    handle=ownership,
-                )
-            except SmokeError as error:
-                assert error.handle == ownership
-            else:
-                raise AssertionError("Name collision unexpectedly succeeded")
-            state = subprocess.run(
-                ["docker", "inspect", "--format", "{{.State.Running}}", foreign],
-                check=True,
-                capture_output=True,
-                text=True,
-                timeout=5,
-            )
-            assert state.stdout.strip() == "true"
-        finally:
-            subprocess.run(["docker", "rm", "-f", foreign], check=True, timeout=5)
+        check_collision(spec, files(b"def reference(x): return x\n"), IMAGE)
         bad = [
             files(
                 b"""import os
