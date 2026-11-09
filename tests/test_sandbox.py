@@ -35,11 +35,21 @@ def test_deadline_removes_restricted_container(monkeypatch):
 
     monkeypatch.setattr("cannery.registry.sandbox.subprocess.Popen", popen)
     removed = []
-    monkeypatch.setattr("cannery.registry.sandbox.remove_smoke", removed.append)
+    order = []
+    process.kill.side_effect = lambda: order.append("kill")
+    process.wait.side_effect = lambda **kwargs: order.append("wait")
+
+    def remove(handle):
+        order.append("remove")
+        removed.append(handle)
+
+    monkeypatch.setattr("cannery.registry.sandbox.remove_smoke", remove)
     files = spec_files()
-    with pytest.raises(SmokeError):
+    with pytest.raises(SmokeError) as caught:
         run_smoke(validate_spec(files, "spec"), files, "spec", image="trusted", timeout=0.001)
     assert removed and removed[0].startswith("cannery-smoke-")
+    assert order == ["kill", "wait", "remove"]
+    assert caught.value.handle == removed[0]  # Retained even if a late create is still possible.
     assert "none" in calls[0] and "--read-only" in calls[0]
     assert "--cap-drop=ALL" in calls[0] and "--pids-limit" in calls[0]
     assert not any("socket" in item or "CANNERY_" in item for item in calls[0][:-1])

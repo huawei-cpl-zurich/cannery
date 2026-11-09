@@ -171,11 +171,18 @@ def run_smoke(
             result = json.loads(output.read())
             return SmokeEvidence(**result, image_id=image_id, spec_sha256=spec.content_sha256)
         except (ValueError, TypeError):
-            raise SmokeError("Reference smoke failed or returned invalid evidence") from None
+            raise SmokeError(
+                "Reference smoke failed or returned invalid evidence", handle=handle
+            ) from None
         finally:
+            # Stop/reap the run client before querying/removing its container.
+            # A failed run may still have an in-flight daemon creation; its
+            # exception always retains ownership for later reconciliation.
             try:
-                remove_smoke(handle)
-            finally:
                 if process.poll() is None:
                     process.kill()
                 process.wait(timeout=5)
+            except (OSError, subprocess.SubprocessError):
+                raise SmokeError("Docker client cleanup is uncertain", handle=handle) from None
+            finally:
+                remove_smoke(handle)
