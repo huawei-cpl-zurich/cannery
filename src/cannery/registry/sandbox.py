@@ -21,6 +21,10 @@ class SmokeError(ValueError):
         super().__init__(message if handle is None else f"{message}; sandbox={handle}")
 
 
+class CleanupError(SmokeError):
+    pass
+
+
 def new_handle() -> str:
     return "cannery-smoke-" + uuid4().hex + "@" + uuid4().hex
 
@@ -63,7 +67,7 @@ def remove_smoke(handle: str) -> None:
                 )
         except (OSError, subprocess.SubprocessError):
             pass
-    raise SmokeError("Sandbox cleanup incomplete; retry this ownership handle", handle=handle)
+    raise CleanupError("Sandbox cleanup incomplete; retry this ownership handle", handle=handle)
 
 
 def run_smoke(
@@ -183,6 +187,6 @@ def run_smoke(
                     process.kill()
                 process.wait(timeout=5)
             except (OSError, subprocess.SubprocessError):
-                raise SmokeError("Docker client cleanup is uncertain", handle=handle) from None
+                raise CleanupError("Docker client cleanup is uncertain", handle=handle) from None
             finally:
                 remove_smoke(handle)

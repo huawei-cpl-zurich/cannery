@@ -7,7 +7,14 @@ from pathlib import Path
 from uuid import uuid4
 
 from cannery.registry.manifest import ValidatedSpec, validate_spec
-from cannery.registry.sandbox import SmokeError, new_handle, remove_smoke, run_smoke, split_handle
+from cannery.registry.sandbox import (
+    CleanupError,
+    SmokeError,
+    new_handle,
+    remove_smoke,
+    run_smoke,
+    split_handle,
+)
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE = f"cannery-reference-check-{os.getpid()}"
@@ -84,6 +91,40 @@ def check_collision(spec: ValidatedSpec, data: dict[str, bytes], image: str) -> 
         raise
     finally:
         remove_smoke(fixture_handle)
+
+
+def remove_image(image: str) -> None:
+    for _ in range(2):
+        subprocess.run(
+            ["docker", "image", "rm", image], capture_output=True, timeout=10, check=False
+        )
+        remaining = subprocess.run(
+            ["docker", "image", "ls", "--filter", f"reference={image}", "--format", "{{.ID}}"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if remaining.returncode == 0 and not remaining.stdout.strip():
+            return
+    raise RuntimeError(f"Task image cleanup pending: {image}")
+
+
+def expect_rejection(data: dict[str, bytes], image: str) -> None:
+    handle = new_handle()
+    try:
+        try:
+            run_smoke(
+                validate_spec(data, "spec"), data, "spec", image=image, handle=handle, timeout=4
+            )
+        except CleanupError:
+            raise
+        except SmokeError as error:
+            assert error.handle == handle  # Reject infrastructure/setup failures as evidence.
+        else:
+            raise AssertionError("Invalid reference was accepted")
+    finally:
+        remove_smoke(handle)
 
 
 def main() -> None:
@@ -165,15 +206,10 @@ os._exit(0)
             files(b"import os\ndef reference(x):\n os.write(1, b'x' * 2097152)\n return x"),
         ]
         for data in bad:
-            try:
-                run_smoke(validate_spec(data, "spec"), data, "spec", image=IMAGE, timeout=4)
-            except SmokeError:
-                pass
-            else:
-                raise AssertionError("Invalid reference was accepted")
-        print("PASS: CPU diagnostics, locked runtime, isolation, ownership and failure budgets")
+            expect_rejection(data, IMAGE)
     finally:
-        subprocess.run(["docker", "image", "rm", IMAGE], check=False, timeout=20)
+        remove_image(IMAGE)
+    print("PASS: CPU diagnostics, locked runtime, isolation, ownership and failure budgets")
 
 
 if __name__ == "__main__":
