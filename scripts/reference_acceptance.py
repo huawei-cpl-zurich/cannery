@@ -1,7 +1,6 @@
 """CPU reference sandbox checks with task-owned image/container cleanup."""
 
 import json
-import os
 import subprocess
 from pathlib import Path
 from uuid import uuid4
@@ -17,7 +16,7 @@ from cannery.registry.sandbox import (
 )
 
 ROOT = Path(__file__).resolve().parents[1]
-IMAGE = f"cannery-reference-check-{os.getpid()}"
+IMAGE = f"cannery-reference-check-{uuid4().hex}"
 
 
 def files(

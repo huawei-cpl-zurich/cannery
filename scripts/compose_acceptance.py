@@ -8,9 +8,10 @@ import time
 from pathlib import Path
 from urllib.error import HTTPError, URLError
 from urllib.request import urlopen
+from uuid import uuid4
 
 ROOT = Path(__file__).resolve().parents[1]
-PROJECT = f"cannery-m0-{os.getpid()}"
+PROJECT = f"cannery-m0-{uuid4().hex}"
 with socket.socket() as listener:
     listener.bind(("127.0.0.1", 0))
     PORT = listener.getsockname()[1]
