@@ -2,7 +2,7 @@
 
 CANNery is an Ascend-oriented kernel registry, benchmarking, and distribution platform for user-defined PyTorch operators.
 
-Authors register a frozen, versioned PyTorch specification and subsequently submit any number of implementation revisions in Ascend C, Triton-Ascend, or CATLASS DSL. CANNery validates correctness, measures per-case latency in microseconds, publishes explicit opt-in results, and ranks them independently by device and accuracy requirements.
+Authors register a frozen, versioned, Git-backed PyTorch specification and subsequently submit Git commit revisions with mandatory build manifests in Ascend C or CATLASS DSL initially, with Triton-Ascend and PyPTO planned later. CANNery compiles binary candidates, retains accepted Git commits in an internal bare mirror, stores generated binaries in private Hugging Face repositories, and validates correctness, measures per-case latency in microseconds, publishes explicit opt-in results, and ranks them independently by device and accuracy requirements.
 
 ## Documentation
 
