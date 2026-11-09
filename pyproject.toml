@@ -8,13 +8,13 @@ version = "0.1.0"
 description = "Ascend kernel registry control plane"
 requires-python = ">=3.12"
 dependencies = [
-  "fastapi>=0.115,<1", "uvicorn>=0.30,<1", "pydantic-settings>=2.6,<3",
+  "pyyaml>=6,<7", "fastapi>=0.115,<1", "uvicorn>=0.30,<1", "pydantic-settings>=2.6,<3",
   "typer>=0.15,<1", "httpx>=0.28,<1", "huggingface_hub>=1,<2", "jinja2>=3.1.6,<4",
   "sqlalchemy>=2,<3", "psycopg[binary]>=3.2,<4", "alembic>=1.14,<2", "redis>=5,<9", "dramatiq[redis]>=2.2,<3",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8,<10", "ruff>=0.11,<1", "mypy>=1.15,<2", "build>=1.2,<2"]
+dev = ["types-PyYAML>=6,<7", "pytest>=8,<10", "ruff>=0.11,<1", "mypy>=1.15,<2", "build>=1.2,<2"]
 
 [project.scripts]
 cannery = "cannery.cli:app"
