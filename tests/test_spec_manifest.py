@@ -77,3 +77,27 @@ def test_required_files_and_lock_are_verified() -> None:
     ).encode()
     with pytest.raises(SpecError):
         validate_spec(files, "spec")
+
+
+@pytest.mark.parametrize("path", [".git/config", "spec/.git/hooks/pre-commit"])
+def test_nested_git_administration_paths_rejected(path) -> None:
+    files = spec_files()
+    files[path] = b"untrusted"
+    with pytest.raises(SpecError):
+        validate_spec(files, "spec")
+
+
+@pytest.mark.parametrize("version", [True, 1.0, "1"])
+def test_schema_versions_are_strict_integers(version) -> None:
+    files = spec_files()
+    manifest = yaml.safe_load(files["spec/cannery.yaml"])
+    manifest["schema_version"] = version
+    files["spec/cannery.yaml"] = yaml.safe_dump(manifest).encode()
+    with pytest.raises(SpecError):
+        validate_spec(files, "spec")
+    files = spec_files()
+    lock = json.loads(files["spec/environment.lock"])
+    lock["schema_version"] = version
+    files["spec/environment.lock"] = json.dumps(lock).encode()
+    with pytest.raises(SpecError):
+        validate_spec(files, "spec")

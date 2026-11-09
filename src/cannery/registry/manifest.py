@@ -74,13 +74,13 @@ class SpecDefinition(StrictModel):
 
 
 class Manifest(StrictModel):
-    schema_version: Literal[1]
+    schema_version: int = Field(ge=1, le=1)
     kernel: KernelIdentity
     spec: SpecDefinition
 
 
 class EnvironmentLock(StrictModel):
-    schema_version: Literal[1]
+    schema_version: int = Field(ge=1, le=1)
     python: str = Field(pattern=r"^3\.[0-9]+$")
     torch: str = Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+(?:\+cpu)?$")
 
@@ -153,7 +153,7 @@ def validate_spec(files: dict[str, bytes], source_path: str) -> ValidatedSpec:
         )
         for path in files:
             relative_source_path(path)
-            if PurePosixPath(path).name == ".git":
+            if ".git" in PurePosixPath(path).parts:
                 raise SpecError("Git administration paths are forbidden")
         hashes = {name: hashlib.sha256(data).hexdigest() for name, data in sorted(files.items())}
         normalized = manifest.model_dump(mode="json")
