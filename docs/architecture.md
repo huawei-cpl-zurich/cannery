@@ -171,7 +171,7 @@ For execution, `cannery get` resolves binary variants against the local A3/A5, C
 - Deduplicate identical file blobs across internal Git snapshots; deduplicate binary artifacts by content hashes where permitted.
 - On worker crash, recover durable job/lease from PostgreSQL and retry idempotently. On build failure, retain logs. On HF failure, leave job pending publication, not globally visible.
 - Backup PostgreSQL **and internal Git snapshots**. HF holds binary artifacts externally; keep independent release metadata backups and consider mirrored binary storage for production.
-- Initial capacity: 8 vCPU / 32 GB control plane; 100–200 GB SSD for DB/log/cache **plus Git snapshots volume starting at 100–200 GB**; A3 and A5 worker hosts with 100+ GB scratch each; private HF binary/report budget ~100–500 GB (actual usage measured). Optional CPU Git intake host.
+- Initial capacity: 8 vCPU / 32 GB control plane; 100–200 GB SSD for DB/log/cache **plus an initial 20–50 GB persistent Git snapshots volume (adjust by measured usage)**; A3 and A5 worker hosts with 100+ GB scratch each; private HF binary/report budget ~100–500 GB (actual usage measured). Optional CPU Git intake host.
 
 ## Git subtree snapshot policy
 
