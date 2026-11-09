@@ -1,6 +1,7 @@
 import base64
 import ipaddress
 import json
+import sys
 from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
@@ -50,7 +51,7 @@ def pinned_environment(rule: RemoteRule) -> dict[str, str]:
     # checked address, so a second DNS answer cannot redirect a scoped token.
     raw = run(
         [
-            "python3",
+            sys.executable,
             "-c",
             "import socket,json,sys; print(json.dumps(sorted({r[4][0] for r in "
             "socket.getaddrinfo(sys.argv[1],int(sys.argv[2]),type=socket.SOCK_STREAM)})))",

@@ -80,6 +80,12 @@ store = make_store(Settings())
 reference = store.put('probe.bin', b'cpu-only')
 assert store.get(reference) == b'cpu-only'
 """)
+        python("""
+from cannery.git_intake.transport import RemoteRule, pinned_environment
+rule = RemoteRule(url='https://localhost/repo.git', namespaces=('team',),
+                  allowed_networks=('127.0.0.0/8', '::1/128'))
+assert pinned_environment(rule)['CANNERY_PINNED_ADDRESS']
+""")
         # No consumers: durable queued work must survive a lost dispatch and a
         # Redis restart. The reconciler, rather than the caller, replays the ID.
         compose("stop", "worker", "reconciler")
