@@ -1,4 +1,5 @@
 import hashlib
+from typing import Literal
 
 from pydantic import Field
 from sqlalchemy import Engine, func, select
@@ -13,6 +14,9 @@ from cannery.registry.models import Kernel, SpecConflict, SpecVersion
 
 
 class SmokeEvidence(StrictModel):
+    """Bounded program observations; never independent proof of Python execution."""
+
+    assurance: Literal["diagnostic"] = "diagnostic"
     spec_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     image_id: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
     python: str
