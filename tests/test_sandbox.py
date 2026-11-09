@@ -71,7 +71,7 @@ def test_failed_removal_exposes_owned_handle_for_recovery(monkeypatch):
 
     failed = MagicMock(returncode=1, stdout="")
     monkeypatch.setattr("cannery.registry.sandbox.subprocess.run", lambda *a, **k: failed)
-    handle = "cannery-smoke-" + "a" * 32
+    handle = "cannery-smoke-" + "a" * 32 + "@" + "b" * 32
     with pytest.raises(SmokeError) as caught:
         remove_smoke(handle)
     assert caught.value.handle == handle
@@ -89,3 +89,18 @@ def test_smoke_observations_never_claim_independent_execution_proof():
         cases=1,
     )
     assert evidence.model_dump()["assurance"] == "diagnostic"
+
+
+def test_cleanup_never_removes_a_foreign_container_with_same_name(monkeypatch):
+    from cannery.registry.sandbox import remove_smoke
+
+    calls = []
+    foreign = MagicMock(returncode=0, stdout="a" * 64 + " " + "b" * 32)
+
+    def run(argv, **kwargs):
+        calls.append(argv)
+        return foreign
+
+    monkeypatch.setattr("cannery.registry.sandbox.subprocess.run", run)
+    remove_smoke("cannery-smoke-" + "c" * 32 + "@" + "d" * 32)
+    assert all(command[1] == "ps" for command in calls)

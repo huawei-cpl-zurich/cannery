@@ -21,34 +21,49 @@ class SmokeError(ValueError):
         super().__init__(message if handle is None else f"{message}; sandbox={handle}")
 
 
-def remove_smoke(name: str) -> None:
-    if not re.fullmatch(r"cannery-smoke-[a-f0-9]{32}", name):
-        raise SmokeError("Invalid sandbox handle")
-    for _ in range(2):
+def new_handle() -> str:
+    return "cannery-smoke-" + uuid4().hex + "@" + uuid4().hex
+
+
+def split_handle(handle: str) -> tuple[str, str]:
+    if not re.fullmatch(r"cannery-smoke-[a-f0-9]{32}@[a-f0-9]{32}", handle):
+        raise SmokeError("Invalid sandbox ownership handle")
+    name, owner = handle.split("@")
+    return name, owner
+
+
+def remove_smoke(handle: str) -> None:
+    name, owner = split_handle(handle)
+    for attempt in range(3):
         try:
-            subprocess.run(
-                ["docker", "rm", "-f", name], capture_output=True, timeout=3, check=False
-            )
             remaining = subprocess.run(
                 [
                     "docker",
                     "ps",
                     "-a",
+                    "--no-trunc",
                     "--filter",
                     f"name=^/{name}$",
                     "--format",
-                    "{{.ID}}",
+                    '{{.ID}} {{.Label "cannery.smoke.owner"}}',
                 ],
                 capture_output=True,
                 text=True,
                 timeout=3,
                 check=False,
             )
-            if remaining.returncode == 0 and not remaining.stdout.strip():
-                return
+            if remaining.returncode != 0:
+                continue
+            fields = remaining.stdout.split()
+            if not fields or len(fields) != 2 or fields[1] != owner:
+                return  # No container owned by this invocation; never delete a namesake.
+            if attempt < 2 and re.fullmatch(r"[a-f0-9]{64}", fields[0]):
+                subprocess.run(
+                    ["docker", "rm", "-f", fields[0]], capture_output=True, timeout=3, check=False
+                )
         except (OSError, subprocess.SubprocessError):
             pass
-    raise SmokeError("Sandbox cleanup incomplete; retry removal using this handle", handle=name)
+    raise SmokeError("Sandbox cleanup incomplete; retry this ownership handle", handle=handle)
 
 
 def run_smoke(
@@ -57,7 +72,7 @@ def run_smoke(
     path: str,
     *,
     image: str,
-    name: str | None = None,
+    handle: str | None = None,
     timeout: float = 30,
 ) -> SmokeEvidence:
     if not math.isfinite(timeout) or timeout <= 0 or timeout > 60:
@@ -71,9 +86,8 @@ def run_smoke(
         raise SmokeError("Smoke source does not match validated specification") from None
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9./:@_-]{0,255}", image):
         raise SmokeError("Invalid configured image")
-    name = name if name is not None else "cannery-smoke-" + uuid4().hex
-    if not re.fullmatch(r"cannery-smoke-[a-f0-9]{32}", name):
-        raise SmokeError("Invalid sandbox handle")
+    handle = new_handle() if handle is None else handle
+    name, owner = split_handle(handle)
     try:
         inspected = subprocess.run(
             ["docker", "image", "inspect", "--format", "{{.Id}}", image],
@@ -107,6 +121,8 @@ def run_smoke(
                 "--rm",
                 "--name",
                 name,
+                "--label",
+                f"cannery.smoke.owner={owner}",
                 "--network",
                 "none",
                 "--read-only",
@@ -158,7 +174,7 @@ def run_smoke(
             raise SmokeError("Reference smoke failed or returned invalid evidence") from None
         finally:
             try:
-                remove_smoke(name)
+                remove_smoke(handle)
             finally:
                 if process.poll() is None:
                     process.kill()
