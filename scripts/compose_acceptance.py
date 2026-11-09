@@ -18,7 +18,7 @@ ENV = {**os.environ, "CANNERY_PORT": str(PORT), "CANNERY_DEV_IDENTITY_ENABLED": 
 URL = f"http://127.0.0.1:{PORT}"
 
 
-def compose(*args: str, check: bool = True, timeout: int = 180) -> str:
+def compose(*args: str, check: bool = True, timeout: int = 180, input: str | None = None) -> str:
     result = subprocess.run(
         ["docker", "compose", "-p", PROJECT, *args],
         cwd=ROOT,
@@ -28,6 +28,7 @@ def compose(*args: str, check: bool = True, timeout: int = 180) -> str:
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         timeout=timeout,
+        input=input,
     )
     return result.stdout
 
@@ -86,6 +87,14 @@ rule = RemoteRule(url='https://localhost/repo.git', namespaces=('team',),
                   allowed_networks=('127.0.0.0/8', '::1/128'))
 assert pinned_environment(rule)['CANNERY_PINNED_ADDRESS']
 """)
+        compose(
+            "exec",
+            "-T",
+            "api",
+            "python",
+            "-",
+            input=(ROOT / "scripts/check_frozen_specs.py").read_text(),
+        )
         # No consumers: durable queued work must survive a lost dispatch and a
         # Redis restart. The reconciler, rather than the caller, replays the ID.
         compose("stop", "worker", "reconciler")

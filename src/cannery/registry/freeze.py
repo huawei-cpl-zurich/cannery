@@ -6,11 +6,13 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from cannery.git_intake import SnapshotBinding
-from cannery.registry.manifest import StrictModel, ValidatedSpec
+from cannery.git_intake.snapshots import SnapshotStore
+from cannery.registry.manifest import StrictModel, ValidatedSpec, validate_spec
 from cannery.registry.models import Kernel, SpecConflict, SpecVersion
 
 
 class SmokeEvidence(StrictModel):
+    spec_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     image_id: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
     python: str
     torch: str
@@ -27,9 +29,13 @@ def freeze_in_session(
     binding: SnapshotBinding,
     evidence: SmokeEvidence,
     *,
+    store: SnapshotStore,
     namespace: str,
     allow_new_version: bool,
 ) -> SpecVersion:
+    retained = validate_spec(store.read(binding).files, binding.source.path)
+    if retained != spec or evidence.spec_sha256 != retained.content_sha256:
+        raise SpecConflict("Validated content and smoke evidence must match the retained snapshot")
     manifest = spec.manifest
     if manifest.kernel.namespace != namespace:
         raise SpecConflict("Specification namespace does not match authorized namespace")
@@ -79,6 +85,7 @@ def freeze_spec(
     binding: SnapshotBinding,
     evidence: SmokeEvidence,
     *,
+    store: SnapshotStore,
     namespace: str,
     allow_new_version: bool,
 ) -> SpecVersion:
@@ -89,6 +96,7 @@ def freeze_spec(
                 spec,
                 binding,
                 evidence,
+                store=store,
                 namespace=namespace,
                 allow_new_version=allow_new_version,
             )
