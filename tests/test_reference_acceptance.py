@@ -29,7 +29,10 @@ def test_failed_image_removal_fails_acceptance(monkeypatch):
     remove = runpy.run_path(str(script), run_name="reference_acceptance")["remove_image"]
 
     def unavailable(argv, **kwargs):
-        return MagicMock(returncode=0, stdout="still-present" if argv[2] == "ls" else "")
+        return MagicMock(
+            returncode=0 if argv[2] == "ls" else 1,
+            stdout="still-present" if argv[2] == "ls" else "",
+        )
 
     monkeypatch.setattr(subprocess, "run", unavailable)
     with pytest.raises(RuntimeError, match="fixture-image"):

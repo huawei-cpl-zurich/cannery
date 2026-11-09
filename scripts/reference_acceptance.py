@@ -74,6 +74,8 @@ def check_collision(spec: ValidatedSpec, data: dict[str, bytes], image: str) -> 
         ).stdout.strip()
         try:
             run_smoke(spec, data, "spec", image=image, handle=ownership)
+        except CleanupError:
+            raise
         except SmokeError as error:
             assert error.handle == ownership
         else:
