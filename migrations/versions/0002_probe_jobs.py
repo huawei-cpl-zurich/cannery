@@ -13,6 +13,7 @@ def upgrade() -> None:
     op.create_table(
         "probe_jobs",
         sa.Column("id", sa.Uuid(), primary_key=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("status", sa.String(16), nullable=False),
         sa.Column("effects", sa.Integer(), nullable=False),
         sa.CheckConstraint("status IN ('queued', 'complete', 'failed')"),
