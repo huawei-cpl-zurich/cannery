@@ -1,5 +1,7 @@
 # CANNery — Implementation Plan and Libraries
 
+**Service deployment, data stores, copy boundaries and artifact flows:** [System Architecture](architecture.md). **Concrete submission and consumption walkthrough:** [User Story](user-story.md).
+
 Status: engineering implementation notes | 2026-11-09
 
 ## 1. Implementation principles
