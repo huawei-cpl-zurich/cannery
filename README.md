@@ -7,6 +7,8 @@ Authors register a frozen, versioned PyTorch specification and subsequently subm
 ## Documentation
 
 - [System design](docs/design.md) — scope, immutable specs, submissions, tolerances, leaderboards, UI mockups and infrastructure.
+- [System architecture](docs/architecture.md) — deployable services, sequence diagrams, data landing/copying and Hugging Face artifact lifecycle.
+- [User story](docs/user-story.md) — website, CLI, REST submissions and Hugging Face loading/execution.
 - [Implementation notes](docs/implementation.md) — Python libraries, API/data contracts, scheduling, benchmark engine and security.
 - [Roadmap](docs/roadmap.md) — incremental PoC milestones, acceptance criteria and cross-repository runtime work.
 
