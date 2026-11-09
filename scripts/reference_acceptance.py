@@ -133,8 +133,8 @@ for line in sys.stdin:
                     image=IMAGE,
                     handle=ownership,
                 )
-            except SmokeError:
-                pass
+            except SmokeError as error:
+                assert error.handle == ownership
             else:
                 raise AssertionError("Name collision unexpectedly succeeded")
             state = subprocess.run(
