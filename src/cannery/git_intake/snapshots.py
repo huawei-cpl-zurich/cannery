@@ -61,11 +61,11 @@ def read_tree(repository: Path, revision: str, paths: tuple[str, ...] = ()) -> S
 
 
 def extract_tree(repository: Path, source: GitSource) -> SelectedTree:
-    location = source.commit if source.path == "." else f"{source.commit}:{source.path}"
+    location = source.commit + "^{tree}" if source.path == "." else f"{source.commit}:{source.path}"
     tree_id = git(repository, "rev-parse", "--verify", location).decode().strip()
     if git(repository, "cat-file", "-t", tree_id).strip() != b"tree":
         raise IntakeError("Source path must name a committed directory")
-    paths = (() if source.path == "." else (source.path,)) + source.dependencies
+    paths = () if source.path == "." else (source.path,) + source.dependencies
     for path in source.dependencies:
         git(repository, "rev-parse", "--verify", f"{source.commit}:{path}")
     selected = read_tree(repository, source.commit, paths)

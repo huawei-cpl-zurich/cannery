@@ -102,3 +102,16 @@ def test_store_enforces_file_and_byte_limits_before_writing(tmp_path) -> None:
         with pytest.raises(IntakeError):
             store.commit("a" * 64, source("a" * 40), selected)
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("dependencies", [(), ("unrelated.txt",)])
+def test_root_selection_retains_all_files_with_or_without_dependencies(bare_upstream, dependencies):
+    upstream, first, _ = bare_upstream
+    root = GitSource(
+        url="https://example.com/repo.git", commit=first, path=".", dependencies=dependencies
+    )
+    selected = extract_tree(upstream, root)
+    assert set(selected.files) == {"kernels/op/reference.py", "unrelated.txt"}
+    assert (
+        selected.external_tree_id == git(upstream, "rev-parse", first + "^{tree}").decode().strip()
+    )
