@@ -74,3 +74,26 @@ def test_failed_fetch_cleans_scratch(tmp_path, monkeypatch) -> None:
         ):
             pass
     assert list(tmp_path.iterdir()) == []
+
+
+@pytest.mark.parametrize("length,object_format", [(40, "sha1"), (64, "sha256")])
+def test_fetch_initializes_matching_object_format(tmp_path, monkeypatch, length, object_format):
+    from cannery.git_intake.process import git as real_git
+
+    def simulated_fetch(repository, *args, **kwargs):
+        if args[0] == "fetch":
+            return b""
+        if args[:2] == ("cat-file", "-t"):
+            return b"commit\n"
+        return real_git(repository, *args, **kwargs)
+
+    monkeypatch.setattr("cannery.git_intake.transport.git", simulated_fetch)
+    monkeypatch.setattr(
+        "cannery.git_intake.transport.pinned_environment",
+        lambda _: {"CANNERY_PINNED_ADDRESS": "127.0.0.1", "GIT_CONFIG_COUNT": "0"},
+    )
+    source = GitSource(url="https://host/repo.git", commit="a" * length, path="spec")
+    with fetched_source(
+        source, "team", (RemoteRule(url=source.url, namespaces=("team",)),)
+    ) as repo:
+        assert real_git(repo, "rev-parse", "--show-object-format").strip().decode() == object_format

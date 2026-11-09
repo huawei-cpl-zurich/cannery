@@ -11,7 +11,7 @@ from contextlib import contextmanager
 
 @contextmanager
 def tunnel(host: str, port: int, address: str) -> Iterator[str]:
-    authority = f"{host}:{port}"
+    authority = f"[{host}]:{port}" if ":" in host else f"{host}:{port}"
 
     class Handler(socketserver.StreamRequestHandler):
         def handle(self) -> None:

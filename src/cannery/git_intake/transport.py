@@ -114,7 +114,13 @@ def fetched_source(
                 env[f"GIT_CONFIG_VALUE_{i}"] = proxy
         with TemporaryDirectory(prefix="cannery-intake-", dir=scratch) as temporary:
             repository = Path(temporary) / "source.git"
-            git(repository, "init", "--bare", str(repository))
+            git(
+                repository,
+                "init",
+                "--bare",
+                "--object-format=" + ("sha256" if len(source.commit) == 64 else "sha1"),
+                str(repository),
+            )
             git(
                 repository,
                 "fetch",
