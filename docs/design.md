@@ -214,3 +214,12 @@ Untrusted author Python/compilers must run in sandboxed containers with restrict
 An author registers `team/fa_xxx@spec-v1` from a local folder or pinned Git commit. A second author submits an A5/Triton implementation referencing **only** the frozen spec ID plus its own source and tolerance target. A capable worker runs correctness and benchmarks, records per-case µs and error; the author sees ETA and later passes/failures privately. On explicit publication, the result appears in Global Best if it satisfies the viewer's tolerance. Switching A3/A5 yields independent rankings and history. A client downloads the compatible source or binary, and a local Ascend runtime can load and execute the artifact.
 
 See [Implementation](implementation.md) and [Roadmap](roadmap.md).
+
+
+## External Git revisions
+
+Both new spec registration and implementation submission support sources in GitHub, GitLab, and self-hosted Git repositories, including private remotes with scoped credentials. CANNery snapshots the resolved full commit and subdirectory into private HF artifact storage for reproducibility.
+
+After an implementation's initial Git-backed submission, the normal iteration is **New revision → update commit SHA only**. The repository, path, entrypoint, frozen spec, device and language are inherited. Each commit becomes a **new immutable submission** with its own provenance, content digest, validation and benchmark history. Users can use the website, `cannery revise <submission-id> --commit <sha>`, or a REST revision endpoint. Editing the specification's Git commit produces a **new spec version** if the canonical spec changes; it never mutates an existing frozen spec.
+
+External Git is the development source of truth; Hugging Face stores immutable accepted snapshots and release artifacts. A deleted or changed upstream repository does not break previously published CANNery revisions.
