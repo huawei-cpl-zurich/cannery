@@ -45,7 +45,7 @@ spec:
 
 She signs in, selects **Register Kernel**, chooses **Git repository**, and enters the repo URL, full commit SHA and `specs/fa_xxx/`. The UI previews the YAML, PyTorch reference and generated cases, and shows that publication freezes the spec. She presses **Register**.
 
-CANNery fetches the commit in a restricted Git intake service, retains the Git objects in an **internal bare Git mirror**, verifies the tree and files, then registers `team/fa_xxx@spec-v1` in PostgreSQL with the full SHA and content digests. It **does not upload a source snapshot to Hugging Face**. The author can register a new `spec-v2` later; `spec-v1` is never edited.
+CANNery fetches the commit in a restricted Git intake service, imports only the selected spec directory and declared dependencies into an **internal per-kernel Git snapshot repository**, verifies the tree and files, then registers `team/fa_xxx@spec-v1` in PostgreSQL with the full SHA and content digests. It **does not upload a source snapshot to Hugging Face**. The author can register a new `spec-v2` later; `spec-v1` is never edited.
 
 ### Equivalent CLI
 
@@ -62,7 +62,7 @@ Mock output:
 Registered: team/fa_xxx@spec-v1
 Git:        0123456789abcdef0123456789abcdef01234567
 Spec hash:  sha256:5fe9...
-Storage:    retained Git commit (internal bare mirror)
+Storage:    internal Git snapshot commit (selected files only)
 State:      frozen
 ```
 
@@ -158,7 +158,7 @@ Response example:
 
 ## 3. Binary generation and validation
 
-CANNery's scheduler matches the submission to a worker with A5 + CATLASS build/execute capabilities. The trusted coordinator checks out frozen spec-v1 and the candidate's Git commit from the internal Git mirror, inside an isolated environment.
+CANNery's scheduler matches the submission to a worker with A5 + CATLASS build/execute capabilities. The trusted coordinator checks out frozen spec-v1 and the candidate's Git commit from the internal Git snapshot repository, inside an isolated environment.
 
 1. The CATLASS build adapter compiles the declared supported specializations into **binary candidate(s)**. For frameworks whose compilation is JIT-dependent, the adapter must proactively compile/export each supported specialization using the real framework API. If it cannot export a loadable artifact, the submission cannot be advertised as a prebuilt binary.
 2. A build manifest captures source Git SHA/tree digest, adapter version, CANN, torch_npu, target device, ABI, supported shapes/dtypes and output checksums.
@@ -189,7 +189,7 @@ These figures are examples, not actual benchmarks. During correctness or benchma
 Data movement:
 
 ```text
-External Git --fetch--> Internal bare Git mirror (canonical retained source)
+External Git --fetch--> Per-kernel internal Git snapshots (canonical retained source)
                                |
                                | checkout exact SHA + path
                                v
@@ -240,7 +240,7 @@ The global leaderboard includes this implementation only when it is validated **
 
 Bob visits **Global Best**, selects `team/fa_xxx`, **A5** and his tolerance. He sees a published validated release, case-level µs, geomean speedup, errors, and two distinct links:
 
-- **Source (Git):** the external repository + full SHA + path (or authorized internal mirror URL). No source files are served from Hugging Face.
+- **Source (Git):** the external repository + full SHA + path (or authorized internal snapshot repository URL). No source files are served from Hugging Face.
 - **Binary (Hugging Face):** the exact release repository and immutable HF revision with validated binary and callable packaging.
 
 CLI examples:
@@ -279,13 +279,13 @@ git checkout fedcba9876543210fedcba9876543210fedcba98
 ls implementations/fa_xxx/
 ```
 
-Source access is subject to Git permissions, while binary download is subject to HF repository permissions. An admitted Git commit is retained in the internal mirror if the developer's remote disappears. Private Git source access need not be granted to binary consumers.
+Source access is subject to Git permissions, while binary download is subject to HF repository permissions. The admitted source tree is retained as an internal Git snapshot commit if the developer's remote disappears. Private Git source access need not be granted to binary consumers.
 
 ## 7. PoC completion conditions
 
 - **Git-only** inputs for spec and implementations: URL, immutable commit, path; no local source archive ingestion.
 - Saved Git binding supports **commit-only revisions**, each producing a separate immutable submission.
-- Frozen PyTorch YAML/reference/cases live in retained Git and PostgreSQL digests, never mutable in place.
+- Frozen PyTorch YAML/reference/cases live in internal Git snapshots and PostgreSQL digests, never mutable in place.
 - Each accepted implementation declares a supported, reproducible build plan; build runs automatically at admission.
 - PoC adapters support **Ascend C** and **CATLASS DSL** only; Triton and PyPTO are future integrations.
 - Generated binary plus build/environment manifest is stored as a pinned private HF artifact.
