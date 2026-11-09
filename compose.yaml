@@ -29,6 +29,12 @@ services:
       interval: 2s
       timeout: 2s
       retries: 30
+  reconciler:
+    <<: *app
+    command: ["python", "-m", "cannery.reconcile"]
+  worker:
+    <<: *app
+    command: ["dramatiq", "cannery.worker", "--processes", "1", "--threads", "2"]
   migrate:
     <<: *app
     command: ["alembic", "upgrade", "head"]

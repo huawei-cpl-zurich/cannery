@@ -13,5 +13,13 @@ def make_engine(settings: Settings) -> Engine:
         settings.database_url.get_secret_value(),
         pool_pre_ping=True,
         pool_timeout=2,
-        connect_args={"connect_timeout": 2, "options": "-c statement_timeout=2000"},
+        connect_args={
+            "connect_timeout": 2,
+            "options": "-c statement_timeout=2000",
+            "tcp_user_timeout": 3000,
+            "keepalives": 1,
+            "keepalives_idle": 2,
+            "keepalives_interval": 1,
+            "keepalives_count": 2,
+        },
     )
