@@ -2,7 +2,7 @@
 
 from uuid import UUID, uuid4
 
-from sqlalchemy import CheckConstraint, Engine, String, select, update
+from sqlalchemy import CheckConstraint, Engine, String, insert, select, update
 from sqlalchemy.orm import Mapped, mapped_column
 
 from cannery.database import Base
@@ -24,7 +24,7 @@ def create_probe(engine: Engine) -> UUID:
     job_id = uuid4()
     with engine.begin() as connection:
         connection.execute(
-            ProbeJob.__table__.insert().values(
+            insert(ProbeJob).values(
                 id=job_id,
                 status="queued",
                 effects=0,

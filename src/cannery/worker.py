@@ -8,7 +8,7 @@ from cannery.jobs import complete_probe, fail_probe
 from cannery.settings import Settings
 
 settings = Settings()
-broker = RedisBroker(
+broker = RedisBroker(  # type: ignore[no-untyped-call]
     url=settings.redis_url.get_secret_value(),
     socket_connect_timeout=2,
     socket_timeout=2,
