@@ -2,6 +2,8 @@
 
 Status: PoC design | Updated: 2026-11-09
 
+For detailed service architecture and data movement, see [Architecture](architecture.md). For UI/programmatic submission and Hugging Face consumption examples, see [User Story](user-story.md).
+
 ## 1. Purpose and scope
 
 CANNery is a Python-based registry, execution, benchmark, and distribution platform for **user-defined compute kernels**. Authors register an immutable PyTorch operator specification, then submit any number of implementation revisions. CANNery builds, validates, benchmarks, and optionally publishes implementations, distributing source and compatible binaries.
