@@ -1,20 +1,26 @@
+import asyncio
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
-from redis import Redis
+from redis.asyncio import Redis
 from redis.exceptions import RedisError
 from sqlalchemy import text
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.ext.asyncio import create_async_engine
 
-from cannery.database import make_engine
 from cannery.settings import Settings
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     config = settings if settings is not None else Settings()
-    engine = make_engine(config)
+    engine = create_async_engine(
+        config.database_url.get_secret_value(),
+        pool_pre_ping=True,
+        pool_timeout=2,
+        connect_args={"connect_timeout": 2, "options": "-c statement_timeout=2000"},
+    )
     redis = Redis.from_url(
         config.redis_url.get_secret_value(),
         socket_connect_timeout=1,
@@ -25,27 +31,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
-        engine.dispose()
-        redis.close()
+        await engine.dispose()
+        await redis.aclose()
 
     app = FastAPI(title=config.service_name, lifespan=lifespan)
 
     @app.get("/health/live")
-    def live() -> dict[str, str]:
+    async def live() -> dict[str, str]:
         return {"status": "ok"}
 
     @app.get("/health/ready")
-    def ready() -> JSONResponse:
+    async def ready() -> JSONResponse:
         checks = {"postgres": False, "redis": False}
         try:
-            with engine.connect() as connection:
-                connection.execute(text("SELECT 1"))
+            async with asyncio.timeout(3):
+                async with engine.connect() as connection:
+                    await connection.execute(text("SELECT 1"))
             checks["postgres"] = True
-        except SQLAlchemyError:
+        except (SQLAlchemyError, TimeoutError):
             pass
         try:
-            checks["redis"] = bool(redis.ping())
-        except RedisError:
+            async with asyncio.timeout(2):
+                checks["redis"] = bool(await redis.ping())
+        except (RedisError, TimeoutError):
             pass
         ok = all(checks.values())
         return JSONResponse(
