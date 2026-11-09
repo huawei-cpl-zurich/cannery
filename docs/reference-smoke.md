@@ -19,3 +19,12 @@ snapshot provenance, retained refs and content digests are verified separately
 before freezing. Smoke observations never replace those checks or authorize a
 new spec version. M5 must perform its own correctness and benchmark evaluation;
 it cannot treat the M1 diagnostic as proof.
+
+## CPU acceptance
+
+With the package installed and Docker available, run
+`python scripts/reference_acceptance.py`. This builds a task-owned CPU image,
+checks ordinary reference diagnostics and sandbox boundaries, and removes its
+resources afterward. It also demonstrates adaptive protocol emulation returning
+only diagnostic assurance; it never treats that observation as callable proof.
+The CPU CI reference job runs the same command without an NPU or host PyTorch.
