@@ -64,6 +64,7 @@ def git(
     return run(
         [
             "git",
+            "--literal-pathspecs",
             "-c",
             "core.hooksPath=/dev/null",
             "-c",

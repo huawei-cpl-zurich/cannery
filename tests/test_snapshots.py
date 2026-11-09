@@ -115,3 +115,42 @@ def test_root_selection_retains_all_files_with_or_without_dependencies(bare_upst
     assert (
         selected.external_tree_id == git(upstream, "rev-parse", first + "^{tree}").decode().strip()
     )
+
+
+@pytest.mark.parametrize("as_dependency", [False, True])
+def test_magic_looking_paths_remain_literal(bare_upstream, as_dependency) -> None:
+    upstream, first, _ = bare_upstream
+    blob = git(upstream, "hash-object", "-w", "--stdin", data=b"selected").strip().decode()
+    child = git(upstream, "mktree", data=f"100644 blob {blob}\tx\n".encode()).strip().decode()
+    tree = (
+        git(
+            upstream,
+            "mktree",
+            data=(f"040000 tree {child}\t:(top)other\n040000 tree {child}\tother\n").encode(),
+        )
+        .strip()
+        .decode()
+    )
+    commit = (
+        git(
+            upstream,
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit-tree",
+            tree,
+            data=b"literal fixture\n",
+        )
+        .strip()
+        .decode()
+    )
+    source = GitSource(
+        url="https://example.com/repo.git",
+        commit=commit,
+        path="other" if as_dependency else ":(top)other",
+        dependencies=(":(top)other",) if as_dependency else (),
+    )
+    selected = extract_tree(upstream, source)
+    assert ":(top)other/x" in selected.files
+    assert ("other/x" in selected.files) == as_dependency
