@@ -158,13 +158,23 @@ An **Admin** route (role restricted) exposes workers, queue health, device lease
 
 ### Mockups
 
-The following PNGs are design references, with illustrative numbers:
+The following vector mockups are repository-native previews. The approved high-resolution PNG mockups are distributed separately in the review bundle:
 
-- [Global leaderboard — corrected step chart](mockups/global-leaderboard.png): single overall best-so-far line per selected device; markers colored by language.
-- [My submissions](mockups/my-submissions.png): private candidates, validation state and ETA.
-- [Register new kernel](mockups/register-kernel.png): immutable PyTorch reference and YAML specification.
-- [Submit implementation](mockups/submit-implementation.png): Git provenance, source snapshot and requested tolerances.
-- [Submit implementation — validation clarification](mockups/submit-implementation-validation.png): provisional results until correctness finishes.
+- [Global leaderboard — corrected step chart](mockups/global-leaderboard.svg): single overall best-so-far line per selected device; markers colored by language.
+- [My submissions](mockups/my-submissions.svg): private candidates, validation state and ETA.
+- [Register new kernel](mockups/register-kernel.svg): immutable PyTorch reference and YAML specification.
+- [Submit implementation](mockups/submit-implementation.svg): Git provenance, source snapshot and requested tolerances.
+- [Submit implementation — validation clarification](mockups/submit-implementation.svg): provisional results until correctness finishes.
+
+### Embedded previews
+
+![Global leaderboard](mockups/global-leaderboard.svg)
+
+![My submissions](mockups/my-submissions.svg)
+
+![Register kernel](mockups/register-kernel.svg)
+
+![Submit implementation](mockups/submit-implementation.svg)
 
 These mockups are illustrative UI concepts; implementation must follow the explicit rules above even where example artwork differs.
 
