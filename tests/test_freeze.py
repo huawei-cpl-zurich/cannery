@@ -108,3 +108,37 @@ def test_mismatched_snapshot_or_smoke_content_is_rejected(engine, store):
         )
     with Session(engine) as session:
         assert session.scalars(select(SpecVersion)).all() == []
+
+
+@pytest.mark.parametrize("change", ["source", "external_tree_id"])
+def test_forged_provenance_is_rejected_before_freezing(engine, store, change):
+    spec, binding, evidence = frozen_arguments(store)
+    value = (
+        GitSource(url="https://other.example/unrelated.git", commit="e" * 40, path="spec")
+        if change == "source"
+        else "f" * 40
+    )
+    binding = binding.model_copy(update={change: value})
+    with pytest.raises(SpecConflict, match="verification failed"):
+        freeze_spec(
+            engine, spec, binding, evidence, store=store, namespace="team", allow_new_version=True
+        )
+    with Session(engine) as session:
+        assert session.scalars(select(SpecVersion)).all() == []
+
+
+def test_missing_protected_ref_prevents_freezing(engine, store):
+    from cannery.git_intake.process import git
+
+    spec, binding, evidence = frozen_arguments(store)
+    repository = store.root / f"{binding.internal_repository}.git"
+    reference = (
+        git(repository, "for-each-ref", "--format=%(refname)", "refs/cannery/snapshots/")
+        .decode()
+        .strip()
+    )
+    git(repository, "update-ref", "-d", reference)
+    with pytest.raises(SpecConflict, match="verification failed"):
+        freeze_spec(
+            engine, spec, binding, evidence, store=store, namespace="team", allow_new_version=False
+        )

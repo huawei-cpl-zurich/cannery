@@ -6,8 +6,9 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from cannery.git_intake import SnapshotBinding
+from cannery.git_intake.process import IntakeError
 from cannery.git_intake.snapshots import SnapshotStore
-from cannery.registry.manifest import StrictModel, ValidatedSpec, validate_spec
+from cannery.registry.manifest import SpecError, StrictModel, ValidatedSpec, validate_spec
 from cannery.registry.models import Kernel, SpecConflict, SpecVersion
 
 
@@ -33,7 +34,10 @@ def freeze_in_session(
     namespace: str,
     allow_new_version: bool,
 ) -> SpecVersion:
-    retained = validate_spec(store.read(binding).files, binding.source.path)
+    try:
+        retained = validate_spec(store.read(binding).files, binding.source.path)
+    except (IntakeError, SpecError):
+        raise SpecConflict("Retained snapshot verification failed") from None
     if retained != spec or evidence.spec_sha256 != retained.content_sha256:
         raise SpecConflict("Validated content and smoke evidence must match the retained snapshot")
     manifest = spec.manifest
