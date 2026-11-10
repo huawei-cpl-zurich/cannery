@@ -1,9 +1,10 @@
 from pathlib import Path
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from cannery.git_intake.transport import RemoteRule
 from cannery.registry.manifest import Name
 
 
@@ -26,3 +27,8 @@ class Settings(BaseSettings):
     hf_token: SecretStr | None = None
 
     dev_namespace: Name = "team"
+    git_remotes: tuple[RemoteRule, ...] = ()
+    snapshot_root: Path = Path("/var/lib/cannery/snapshots")
+    intake_scratch: Path = Path("/tmp/cannery-intake")
+    smoke_image: str = "cannery-reference:local"
+    smoke_timeout: float = Field(default=30, gt=0, le=60)

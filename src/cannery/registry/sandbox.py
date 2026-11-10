@@ -122,6 +122,7 @@ def run_smoke(
             [
                 "docker",
                 "run",
+                "--pull=never",
                 "--rm",
                 "--name",
                 name,
