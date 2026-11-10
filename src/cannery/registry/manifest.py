@@ -94,7 +94,7 @@ def unique_pairs(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
     return result
 
 
-def parse_manifest(data: bytes) -> Manifest:
+def parse_yaml_mapping(data: bytes) -> Any:
     if len(data) > 65536:
         raise SpecError("Manifest exceeds 64 KiB")
     try:
@@ -119,8 +119,15 @@ def parse_manifest(data: bytes) -> Manifest:
                     keys(child)
 
         keys(node)
-        return Manifest.model_validate(yaml.safe_load(data))
+        return yaml.safe_load(data)
     except (yaml.YAMLError, ValueError, TypeError, RecursionError):
+        raise SpecError("Invalid specification manifest") from None
+
+
+def parse_manifest(data: bytes) -> Manifest:
+    try:
+        return Manifest.model_validate(parse_yaml_mapping(data))
+    except (ValueError, TypeError, RecursionError):
         raise SpecError("Invalid specification manifest") from None
 
 
