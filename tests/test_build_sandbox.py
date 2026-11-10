@@ -152,3 +152,34 @@ def test_prepare_makes_input_readable_despite_private_supervisor_umask(tmp_path)
     root = Path(config.workspace) / token.hex
     assert root.stat().st_mode & 0o777 == 0o700
     assert (root / "input").stat().st_mode & 0o777 == 0o755
+
+
+def test_container_output_symlink_cannot_redirect_host_log_writes(tmp_path, monkeypatch):
+    config, token, calls = setup(tmp_path, monkeypatch)
+    victim = tmp_path / "host-secret"
+    victim.write_text("preserve this host file")
+    (Path(config.workspace) / token.hex / "output/runtime.log").symlink_to(victim)
+    supervise(config, token, "runtime")
+    assert victim.read_text() == "preserve this host file"
+
+
+def test_failed_removal_after_timeout_preserves_device_owner_and_scratch(tmp_path, monkeypatch):
+    config, token, calls = setup(tmp_path, monkeypatch)
+    original = subprocess.run
+
+    def broken(args, **kwargs):
+        if args[:2] == ["docker", "run"]:
+            raise subprocess.TimeoutExpired(args, 180)
+        if args[:3] == ["docker", "rm", "-f"] or args[:2] == ["docker", "ps"]:
+            return SimpleNamespace(returncode=1, stdout="daemon unavailable")
+        return original(args, **kwargs)
+
+    monkeypatch.setattr("subprocess.run", broken)
+    with pytest.raises(RuntimeError, match="preserve device ownership"):
+        supervise(config, token, "runtime")
+    root = Path(config.workspace)
+    assert (root / "device-1.owner").read_text() == token.hex
+    assert (root / token.hex).exists()
+    with pytest.raises(RuntimeError, match="preserve device ownership"):
+        execute(config, token, "cleanup")
+    assert (root / "device-1.owner").exists() and (root / token.hex).exists()

@@ -67,8 +67,14 @@ lock = root / ('device-' + str(config['npu']) + '.lock')
 
 def remove_containers():
     for name in names.values():
-        subprocess.run(['docker', 'rm', '-f', name], stdout=subprocess.DEVNULL,
-                       stderr=subprocess.DEVNULL, timeout=15)
+        removed = subprocess.run(['docker', 'rm', '-f', name], stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL, timeout=15)
+        if removed.returncode:
+            remaining = subprocess.run(['docker', 'ps', '-a', '--filter', 'name=^/' + name + '$',
+                                        '--format', '{{.ID}}'], capture_output=True,
+                                       text=True, timeout=15)
+            if remaining.returncode or remaining.stdout.strip():
+                raise RuntimeError('Container cleanup uncertain; preserve device ownership')
 
 if phase == 'prepare':
     attempt.mkdir(mode=0o700, exist_ok=True)
@@ -158,7 +164,7 @@ else:
 args += [config['image'], 'python', '-c', command]
 resource.setrlimit(resource.RLIMIT_FSIZE, (16 * 1024 * 1024,) * 2)
 try:
-    with (output / (phase + '.log')).open('w+b') as log:
+    with (attempt / (phase + '.log')).open('w+b') as log:
         try:
             result = subprocess.run(args, stdout=log, stderr=subprocess.STDOUT, timeout=180)
         finally:
