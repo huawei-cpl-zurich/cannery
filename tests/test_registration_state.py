@@ -121,3 +121,39 @@ def test_recovery_retains_old_ownership_until_verified_cleanup(job):
     with Session(engine) as session:
         assert session.get(Registration, key).cleanup_handle == newer
     assert due_registrations(engine) == [str(key)]
+
+
+def test_cleanup_backlog_cannot_starve_queued_or_expired_work(job):
+    from cannery.registry.sandbox import new_handle
+
+    engine, queued = job
+    source = GitSource(url="https://example.com/repo.git", commit="a" * 40, path="spec")
+    expired = create_registration(engine, source, "team", None, False)
+    assert claim_registration(engine, expired) is not None
+    old = datetime.now(UTC) - timedelta(days=1)
+    with Session(engine) as session, session.begin():
+        for _ in range(120):
+            session.add(
+                Registration(
+                    namespace="team",
+                    source=source.model_dump(mode="json"),
+                    allow_new_version=False,
+                    status="failed",
+                    created_at=old,
+                    deadline=old,
+                    due_at=old,
+                    cleanup_handle=new_handle(),
+                )
+            )
+    with engine.begin() as connection:
+        connection.execute(
+            update(Registration).where(Registration.id == expired).values(lease_until=old)
+        )
+    observed = set()
+    for _ in range(3):
+        batch = due_registrations(engine)
+        assert str(queued) in batch and str(expired) in batch
+        observed.update(set(batch) - {str(queued), str(expired)})
+    assert len(observed) == 120
+    with Session(engine) as session:
+        assert session.get(Registration, queued).status == "queued"

@@ -142,27 +142,38 @@ def fail_registration(engine: Engine, claim: Claim, code: str, retryable: bool) 
 
 def due_registrations(engine: Engine) -> list[str]:
     now = datetime.now(UTC)
-    with Session(engine) as session:
-        return [
-            str(key)
-            for key in session.scalars(
+    with Session(engine) as session, session.begin():
+        active = list(
+            session.scalars(
                 select(Registration.id)
                 .where(
+                    Registration.status.in_(("queued", "running")),
                     or_(
-                        Registration.status.in_(("queued", "running"))
-                        & or_(
-                            Registration.deadline <= now,
-                            (Registration.status == "queued") & (Registration.due_at <= now),
-                            (Registration.status == "running") & (Registration.lease_until <= now),
-                        ),
-                        Registration.status.in_(("complete", "failed"))
-                        & Registration.cleanup_handle.is_not(None),
-                    )
+                        Registration.deadline <= now,
+                        (Registration.status == "queued") & (Registration.due_at <= now),
+                        (Registration.status == "running") & (Registration.lease_until <= now),
+                    ),
                 )
                 .order_by(Registration.created_at)
-                .limit(100)
+                .limit(50)
             )
-        ]
+        )
+        cleanup = list(
+            session.scalars(
+                select(Registration)
+                .where(
+                    Registration.status.in_(("complete", "failed")),
+                    Registration.cleanup_handle.is_not(None),
+                    Registration.due_at <= now,
+                )
+                .order_by(Registration.due_at)
+                .limit(50)
+                .with_for_update(skip_locked=True)
+            )
+        )
+        for job in cleanup:
+            job.due_at = now + timedelta(seconds=30)
+        return [str(key) for key in active] + [str(job.id) for job in cleanup]
 
 
 def prepare_handle(engine: Engine, claim: Claim) -> str:
