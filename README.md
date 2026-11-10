@@ -2,7 +2,7 @@
 
 CANNery is an Ascend-oriented kernel registry, benchmarking, and distribution platform for user-defined PyTorch operators.
 
-Authors register a frozen, versioned, Git-backed PyTorch specification and subsequently submit Git commit revisions with mandatory build manifests in Ascend C or CATLASS DSL initially, with Triton-Ascend and PyPTO planned later. CANNery compiles binary candidates, retains accepted Git commits in an internal bare mirror, stores generated binaries in private Hugging Face repositories, and validates correctness, measures per-case latency in microseconds, publishes explicit opt-in results, and ranks them independently by device and accuracy requirements.
+Authors register a frozen, versioned, Git-backed PyTorch specification and subsequently submit Git commit revisions with mandatory build manifests in Ascend C or CATLASS DSL initially, with Triton-Ascend and PyPTO planned later. CANNery compiles binary candidates, retains selected source files in internal Git snapshots, stores generated binaries in private Hugging Face repositories, and validates correctness, measures per-case latency in microseconds, publishes explicit opt-in results, and ranks them independently by device and accuracy requirements.
 
 ## Documentation
 
@@ -18,7 +18,10 @@ Authors register a frozen, versioned, Git-backed PyTorch specification and subse
 
 ## Status
 
-M0 CPU foundation implemented: API/web/CLI, PostgreSQL/Redis worker plumbing, artifact
-stores, Git intake contracts and fault-tested Docker acceptance. See
-[Local development](docs/development.md) for setup and validation. Kernel intake,
-NPU build/validation and publication remain later milestones.
+M0 foundations and M1 Git-backed specification registration are implemented.
+The API, CLI and web form register immutable versions through durable workers,
+retain selected Git snapshots and run isolated CPU reference diagnostics. See
+[registration](docs/registration.md) for source format, configuration and usage,
+and [local development](docs/development.md) for setup and validation.
+Implementation submission, NPU builds, numerical validation and publication are
+later milestones. CPU diagnostics do not independently prove correctness.

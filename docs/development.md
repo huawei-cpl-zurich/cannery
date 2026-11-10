@@ -1,7 +1,8 @@
-# Local development and M0 acceptance
+# Local development and CPU acceptance
 
-M0 supplies the CPU control-plane foundation. Registration, submission, real Git
-snapshot import, NPU builds, benchmarks and publication arrive in later milestones.
+M0 supplies the CPU control-plane foundation; M1 adds Git-backed immutable
+specification registration and isolated CPU reference diagnostics. Implementation
+submission, NPU builds, benchmarks and publication remain later milestones.
 No source-upload endpoint exists. No A3/A5 access is needed for these checks.
 
 ## Install and check
@@ -38,7 +39,7 @@ The web shell is at http://127.0.0.1:8000. By default requests are anonymous and
 private/admin pages deny access. To inspect user navigation locally, start with
 `CANNERY_DEV_IDENTITY_ENABLED=true docker compose up --build -d --wait`.
 Development identity is fixed server-side, has the user role, and is not login.
-For an isolated admin shell outside Compose set `CANNERY_DEV_ROLE=admin` as well;
+For a local admin identity set `CANNERY_DEV_ROLE=admin` as well;
 never enable development identity in a shared deployment. Real OIDC is deferred.
 
 The internal CPU probe has a 60-second lifetime, three actor retries, and a failure
@@ -57,8 +58,8 @@ cleans its containers, volumes and generated images afterward. It tests migratio
 web/CLI, fake artifacts, two workers, duplicate deliveries, lost dispatch, Redis
 outage and PostgreSQL pause/recovery. Ordinary `docker compose down` preserves
 local data; add `--volumes` only when intentionally discarding that project's data.
-CPU CI runs the acceptance script and Python 3.12/3.13 lint, typing, tests and wheel
-installation checks. Tests also simulate HF retry delays, cache contention and
+CPU CI runs this script, CPU reference and registration acceptance, and Python
+3.12/3.13 lint, typing, tests and wheel installation checks. Tests also simulate HF retry delays, cache contention and
 corruption without live credentials, using a disposable SDK process with a deadline.
 
 ## Artifact configuration
@@ -76,7 +77,16 @@ Xet is disabled inside that process so it can be terminated cleanly. A timed-out
 upload may leave an unreferenced remote artifact; no publication is recorded by M0.
 Live HF integration remains unverified until a separately authorized credentialed test.
 
-Git intake currently supplies types and local bare-repository fixtures only. M1
-must implement restricted remote access, safe selected-file export, synthetic
-snapshot lineage and upstream/internal SHA mapping; it must not retain upstream
-history or rely on a temporary checkout after admission.
+Git intake implements operator-scoped HTTPS access, safe selected-file export,
+synthetic snapshot lineage and upstream/internal SHA mapping. Protected internal
+refs retain selected files after upstream deletion and garbage collection, without
+retaining unrelated upstream history or relying on a temporary checkout.
+
+## M1 registration
+
+See [registration](registration.md) for the strict manifest/environment lock, operator
+HTTPS repository rules, local development identity, CLI/API and web flow.
+Run `python scripts/registration_acceptance.py` for private Git, two registrars,
+actual CPU PyTorch diagnostics, immutable versions and service/lease recovery.
+The test-only Compose override contains synthetic credentials and cleans its own
+project resources. NPU validation is outside M1.

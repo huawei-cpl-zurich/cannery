@@ -1,6 +1,6 @@
 # CANNery — PoC Roadmap
 
-Status: updated for Git-only sources and mandatory binary build · 2026-11-09
+Status: M0 and M1 implemented; M2 onward planned · 2026-11-10
 
 Build a working user journey with thin end-to-end slices. **No non-Git source intake.** Every implementation commit contains a supported build contract, and binary artifacts are produced by our workers before validation and published from private HF storage. **Initial adapters: Ascend C and CATLASS DSL only**; Triton-Ascend and PyPTO are future phases.
 
@@ -31,10 +31,11 @@ M3–M5 may be developed in parallel after M2. Testing the CATLASS exported-bina
 
 - `cannery register --repo URL --commit FULL_SHA --path specs/fa_xxx/`.
 - Restricted Git intake handles GitHub/GitLab/self-hosted, including private scoped credentials.
-- Mirror accepted Git commit objects, protect retained refs against garbage collection and compute digests.
+- Retain selected files in internal synthetic Git snapshots, protect refs against garbage collection and compute digests. Upstream commit/tree identities are provenance, without mirroring unrelated source/history.
 - Read `cannery.yaml`, `reference.py`, `cases.py` and environment lock from the verified Git tree.
 - Freeze `kernel@spec-v1` in PostgreSQL; any semantic spec update becomes spec-v2.
-- Run reference smoke test in an isolated worker; API process never executes arbitrary reference code.
+- Run a CPU reference diagnostic in an isolated worker; API process never executes arbitrary reference code. Arbitrary Python responses do not independently establish callable execution, numerical correctness or performance.
+- See [implemented registration contract and CPU acceptance](registration.md).
 
 **Acceptance:** source lives only in Git; no local source file upload API or HF source repository exists.
 
