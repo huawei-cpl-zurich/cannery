@@ -17,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from cannery.artifacts import ArtifactError
 from cannery.artifacts.factory import make_store
+from cannery.builds.ascendc import BuildError
 from cannery.builds.executor import BuildExecutor, ExecutionFailure
 from cannery.builds.remote import CplRemote, RemoteFailure, RemotePending, durable_write
 from cannery.builds.sandbox import WorkerProfile
@@ -146,7 +147,7 @@ def process(engine: Engine, key: UUID, factory: Callable[[BuildClaim], BuildExec
                     raise ExecutionFailure("retained_source_missing")
             try:
                 reference = executor.execute(candidate, claim.attempt, keeper.fence)
-            except (ExecutionFailure, RemoteFailure) as failure:
+            except (BuildError, RemoteFailure) as failure:
                 if list(executor.remote.journal.glob("*.dispatch")):
                     executor.cleanup(claim.attempt)
                 details = evidence(executor)
@@ -156,8 +157,14 @@ def process(engine: Engine, key: UUID, factory: Callable[[BuildClaim], BuildExec
                     claim,
                     error=failure.code
                     if isinstance(failure, ExecutionFailure)
-                    else "worker_failed",
-                    retryable=failure.retryable if isinstance(failure, ExecutionFailure) else True,
+                    else (
+                        "unsupported_build_contract"
+                        if isinstance(failure, BuildError)
+                        else "worker_failed"
+                    ),
+                    retryable=failure.retryable
+                    if isinstance(failure, ExecutionFailure)
+                    else not isinstance(failure, BuildError),
                     evidence=details,
                 )
                 if finished:

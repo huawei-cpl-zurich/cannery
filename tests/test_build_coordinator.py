@@ -9,6 +9,7 @@ from test_build_state import candidate
 from test_submission_requests import records as records
 
 from cannery.artifacts import ArtifactRef
+from cannery.builds.ascendc import BuildError
 from cannery.builds.coordinator import discover, process
 from cannery.builds.executor import ExecutionFailure
 from cannery.builds.remote import RemotePending
@@ -138,3 +139,14 @@ def test_orphan_cleanup_retains_uncertain_device_and_retries(records, tmp_path):
     recovered = Executor(journal)
     cleanup_finished(engine, tmp_path, lambda claim: recovered)
     assert recovered.cleaned and (journal / "cleanup-complete").exists()
+
+
+def test_adapter_rejection_finishes_without_retry_or_worker_crash(records, tmp_path):
+    engine, _ = records
+    key = candidate(records)
+    executor = Executor(tmp_path / "control", BuildError("unsupported translation units"))
+    process(engine, key, lambda claim: executor)
+    with Session(engine) as session:
+        state = session.get(BuildState, key)
+        assert state.status == "failed" and state.error == "unsupported_build_contract"
+        assert state.attempts == 1
