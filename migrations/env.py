@@ -3,6 +3,7 @@ from alembic import context
 import cannery.jobs  # noqa: F401
 import cannery.registry.models  # noqa: F401
 import cannery.registry.registrations  # noqa: F401
+import cannery.submissions.models  # noqa: F401
 from cannery.database import Base, make_engine
 from cannery.settings import Settings
 

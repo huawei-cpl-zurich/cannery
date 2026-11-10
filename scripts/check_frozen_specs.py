@@ -5,6 +5,7 @@ from pathlib import Path
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import DBAPIError
+from sqlalchemy.orm import Session
 
 from cannery.database import make_engine
 from cannery.git_intake import GitSource
@@ -13,6 +14,8 @@ from cannery.registry.freeze import SmokeEvidence, freeze_spec, kernel_key
 from cannery.registry.manifest import validate_spec
 from cannery.registry.models import SpecVersion
 from cannery.settings import Settings
+from cannery.submissions.models import Candidate, RequestedTarget, Submission
+from cannery.submissions.requests import new_submission
 
 manifest = {
     "schema_version": 1,
@@ -83,6 +86,39 @@ try:
         assert (
             connection.scalar(select(SpecVersion.version).where(SpecVersion.id == frozen.id)) == 1
         )
-    print("PASS: PostgreSQL frozen spec retries and direct SQL mutation guards")
+    request = new_submission(
+        engine,
+        "acceptance",
+        frozen.id,
+        binding.source,
+        RequestedTarget(device="a5", language="catlass"),
+    )
+    # Database-only candidate fixture; actual intake/provenance is tested separately.
+    with Session(engine) as session, session.begin():
+        session.add(
+            Candidate(
+                id=request,
+                binding_id=request,
+                binding={},
+                manifest={},
+                snapshot={},
+                content_sha256="c" * 64,
+                file_sha256={},
+            )
+        )
+    for statement in (
+        update(Submission).where(Submission.id == request).values(target={}),
+        delete(Submission).where(Submission.id == request),
+        update(Candidate).where(Candidate.id == request).values(binding={"changed": True}),
+        delete(Candidate).where(Candidate.id == request),
+    ):
+        try:
+            with engine.begin() as connection:
+                connection.execute(statement)
+        except DBAPIError as error:
+            assert getattr(error.orig, "sqlstate", None) == "P0001"
+        else:
+            raise AssertionError("PostgreSQL accepted immutable submission mutation")
+    print("PASS: PostgreSQL frozen spec, submission and candidate mutation guards")
 finally:
     engine.dispose()
