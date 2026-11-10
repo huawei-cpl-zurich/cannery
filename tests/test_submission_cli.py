@@ -84,3 +84,50 @@ def test_pending_wait_timeout_keeps_identifier_visible(monkeypatch):
         arguments() + ["--wait", "--timeout", "1"],
     )
     assert result.exit_code == 1 and KEY in result.output and "Still pending" in result.output
+
+
+def test_source_wait_finishes_even_when_build_has_already_finished(monkeypatch):
+    result, _ = invoke(
+        monkeypatch,
+        [
+            (202, {"id": KEY}),
+            (
+                200,
+                {
+                    "status": "awaiting_validation",
+                    "stages": {"intake": "complete", "build": "complete"},
+                },
+            ),
+        ],
+        arguments() + ["--wait"],
+    )
+    assert result.exit_code == 0 and "Source retained" in result.output
+    assert "Binary admitted" not in result.output
+
+
+def test_wait_build_implies_wait_and_observes_binary_admission(monkeypatch):
+    result, requests = invoke(
+        monkeypatch,
+        [
+            (202, {"id": KEY}),
+            (200, {"status": "building", "stages": {"intake": "complete"}}),
+            (200, {"status": "awaiting_validation"}),
+        ],
+        arguments() + ["--wait-build"],
+    )
+    assert result.exit_code == 0 and "Binary admitted; awaiting validation" in result.output
+    assert len(requests) == 3
+
+
+def test_wait_build_reports_failure_or_source_only_contract(monkeypatch):
+    for status in (
+        {"status": "failed", "error": "runtime_failed", "stages": {"intake": "complete"}},
+        {
+            "status": "awaiting_build",
+            "candidate": {"manifest": {"implementation": {"build": {"adapter": "ascendc"}}}},
+        },
+    ):
+        result, _ = invoke(
+            monkeypatch, [(202, {"id": KEY}), (200, status)], arguments() + ["--wait-build"]
+        )
+        assert result.exit_code == 1
