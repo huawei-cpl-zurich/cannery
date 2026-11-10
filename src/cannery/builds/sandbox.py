@@ -95,7 +95,8 @@ if (not Path(cann).is_absolute() or len(Path(cann).parts) < 4
 args = ['docker', 'run', '--rm', '--init', '--pull', 'never', '--name', names[phase],
         '--network', 'none', '--user', '10001:10001', '--cap-drop', 'ALL',
         '--security-opt', 'no-new-privileges', '--read-only', '--log-driver', 'none',
-        '--tmpfs', '/tmp:rw,size=512m', '--shm-size', '512m', '--cpus', '4',
+        '--tmpfs', '/tmp:rw,exec,nosuid,nodev,size=512m' if phase == 'runtime'
+        else '/tmp:rw,noexec,nosuid,nodev,size=512m', '--shm-size', '512m', '--cpus', '4',
         '--memory', '8g' if phase == 'runtime' else '4g', '--pids-limit', '256',
         '--ulimit', 'fsize=67108864:67108864', '--env', 'HOME=/tmp',
         '--mount', f'type=bind,src={source},dst=/input,readonly',
