@@ -38,7 +38,7 @@ def test_lost_launch_response_recovers_same_handle_after_restart(tmp_path):
     handle = restarted.operation("compile", b"print(1)", workspace="/work", runtime="cann")
     assert handle == "remote:test-a5:job:123"
     assert all(call[0] == "observe" for call in restarted.calls)
-    assert (tmp_path / "compile.py").read_bytes() == b"print(1)"
+    assert (tmp_path / "compile.source.py").read_bytes() == b"print(1)"
 
 
 def test_ambiguous_dispatch_without_receipt_never_resubmits(tmp_path):
@@ -162,3 +162,22 @@ def test_retained_screen_relay_is_rejected_before_transfer_submission(tmp_path):
     with pytest.raises(ValueError, match="rsync"):
         remote.transfer("upload", "local", "/remote")
     assert [call[0] for call in remote.calls] == ["capabilities"]
+
+
+def test_missing_retained_job_is_cancel_fenced_before_failure(tmp_path):
+    remote = FakeCpl(tmp_path, [{"state": "running"}, {"state": "missing"}, {"state": "cancelled"}])
+    with pytest.raises(RemoteFailure) as failure:
+        remote.operation("compile", b"print(1)", workspace="/work", runtime="cann")
+    assert failure.value.exit_code == 125
+    assert [call[0] for call in remote.calls] == ["run", "observe", "cancel"]
+
+
+def test_compressed_payload_executes_exact_source(tmp_path):
+    import subprocess
+    import sys
+
+    from cannery.builds.remote import script_payload
+
+    source = b"from pathlib import Path\nPath('proof').write_bytes(b'exact source')\n"
+    subprocess.run([sys.executable, "-c", script_payload(source)], cwd=tmp_path, check=True)
+    assert (tmp_path / "proof").read_bytes() == b"exact source"
