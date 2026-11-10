@@ -129,3 +129,15 @@ def test_explicit_a5_abi_and_trusted_build_plan():
     files["candidate/submission.yaml"] = yaml.safe_dump(manifest).encode()
     with pytest.raises(SubmissionError):
         validate_submission(files, "candidate")
+
+
+def test_generated_wrapper_is_separate_from_author_launch_filename():
+    from cannery.builds.ascendc import AscendCAdapter
+    from cannery.submissions.manifest import SubmissionManifest
+
+    manifest = yaml.safe_load(submission_files("ascendc")["candidate/submission.yaml"])
+    manifest["implementation"].update(device="a5", entrypoint="launch.asc:forward")
+    manifest["implementation"]["build"].update(abi="unary-f32-v1", inputs=["launch.asc"])
+    plan = AscendCAdapter().build(SubmissionManifest.model_validate(manifest))
+    assert '#include "source/launch.asc"' in plan.wrapper
+    assert plan.command[plan.command.index("-I") + 1] == "source"

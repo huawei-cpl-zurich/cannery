@@ -42,13 +42,13 @@ class AscendCAdapter:
         """Return trusted inputs; caller must compile in a device-less sandbox."""
         self.preflight(manifest)
         entry, symbol = manifest.implementation.entrypoint.split(":")
-        wrapper = f'''#include <cstdint>
-#include "{entry}"
+        wrapper = f"""#include <cstdint>
+#include "source/{entry}"
 extern "C" void cannery_launch(void* stream, void* input, void* output, uint64_t count) {{
     {symbol}<<<1, nullptr, stream>>>((GM_ADDR)input,
                                    (GM_ADDR)output, count);
 }}
-'''
+"""
         optimization = (
             "-O2" if manifest.implementation.build.options.optimization == "release" else "-O0"
         )
@@ -62,7 +62,7 @@ extern "C" void cannery_launch(void* stream, void* input, void* output, uint64_t
                 "asc",
                 "launch.asc",
                 "-I",
-                ".",
+                "source",
                 "--npu-arch=dav-3510",
                 optimization,
                 "-o",

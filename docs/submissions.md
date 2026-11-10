@@ -160,6 +160,7 @@ The entry point is one declared Ascend C translation unit plus optional declared
 headers. Export the selected device symbol with arguments
 `(GM_ADDR input, GM_ADDR output, uint64_t count)` for contiguous float32 buffers.
 The trusted adapter generates a one-block launch wrapper and fixed A5 compiler
-arguments. It never interprets build inputs as commands or runs author build
+arguments. Author inputs are materialized beneath `source/`, separately from
+the generated `launch.asc` and output library. It never interprets build inputs as commands or runs author build
 scripts. Compilation must occur in the dedicated device-less sandbox; returning
 a build plan alone does not prove compilation or device execution.
