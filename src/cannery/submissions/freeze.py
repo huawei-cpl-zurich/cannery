@@ -45,6 +45,8 @@ def freeze_candidate(
             "entrypoint": implementation.entrypoint,
             "adapter": implementation.build.adapter,
         }
+        if implementation.build.abi is not None:
+            identity["abi"] = implementation.build.abi
         binding_id = identifier
         if request.parent_id is not None:
             parent = session.get(Candidate, request.parent_id)

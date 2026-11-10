@@ -7,7 +7,13 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import Annotated, Any, Literal, Self
 
-from pydantic import Field, field_validator, model_validator
+from pydantic import (
+    Field,
+    SerializerFunctionWrapHandler,
+    field_validator,
+    model_serializer,
+    model_validator,
+)
 
 from cannery.git_intake import relative_source_path
 from cannery.git_intake.snapshots import MAX_BYTES, MAX_FILES
@@ -28,9 +34,18 @@ class BuildOptions(StrictModel):
 
 class Build(StrictModel):
     adapter: Language
+    abi: Literal["unary-f32-v1"] | None = None
     inputs: tuple[str, ...] = Field(min_length=1, max_length=128)
     artifact: Name
     options: BuildOptions = Field(default_factory=BuildOptions)
+
+    @model_serializer(mode="wrap")
+    def serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        value: dict[str, Any] = handler(self)
+        # Existing M2 hashes and frozen manifest representations must stay identical.
+        if self.abi is None:
+            value.pop("abi", None)
+        return value
 
     @field_validator("inputs", mode="before")
     @classmethod
@@ -53,12 +68,16 @@ class Implementation(StrictModel):
     def supported_contract(self) -> Self:
         if self.build.adapter != self.language:
             raise ValueError("Build adapter must match language")
+        if self.build.abi is not None and (self.language != "ascendc" or self.device != "a5"):
+            raise ValueError("unary-f32-v1 requires Ascend C on A5")
         parts = self.entrypoint.split(":")
         if len(parts) != 2 or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", parts[1]):
             raise ValueError("Entrypoint must be source-file:symbol")
         entry = relative_source_path(parts[0])
         extensions = (
-            {".py"} if self.language == "catlass" else {".c", ".cc", ".cpp", ".cce", ".h", ".hpp"}
+            {".py"}
+            if self.language == "catlass"
+            else {".c", ".cc", ".cpp", ".cce", ".asc", ".h", ".hpp"}
         )
         if any(
             PurePosixPath(path).suffix not in extensions for path in (*self.build.inputs, entry)
