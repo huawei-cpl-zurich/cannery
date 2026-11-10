@@ -1,8 +1,8 @@
 # Registering an immutable specification (M1)
 
 M1 provides Git-only registration through the API, CLI and Register Kernel page.
-Implementation submission, NPU builds, numerical validation, benchmarking and
-publication are later milestones. Authentication currently uses an explicitly
+M2 adds [source submissions and revisions](submissions.md). NPU builds, numerical
+validation, benchmarking and publication are later milestones. Authentication currently uses an explicitly
 enabled development identity; this is a local development deployment.
 
 ## Run locally
@@ -21,7 +21,7 @@ the Git token, Docker socket or database credentials.
 Set `CANNERY_GIT_REMOTES` to a JSON list of exact HTTPS repository rules:
 
 ```json
-[{"url":"https://git.example.com/team/kernels.git","namespaces":["team"]}]
+[{"url":"https://github.com/huawei-cpl-zurich/helloworld-kernel.git","namespaces":["team"]}]
 ```
 
 A rule can add `username` (default `oauth2`), `token`, and a registrar-local
@@ -42,7 +42,7 @@ accepted; all paths must stay within the repository.
 
 ```yaml
 schema_version: 1
-kernel: {namespace: team, name: identity}
+kernel: {namespace: team, name: helloworld}
 spec:
   version: 1
   reference: {file: reference.py, function: reference}
@@ -51,15 +51,15 @@ spec:
   validation:
     metric: torch_close
     equal_nan: false
-    default_rtol: 0.001
-    default_atol: 0.0001
+    default_rtol: 0.00001
+    default_atol: 0.000001
 ```
 
 ```json
 {"schema_version":1,"python":"3.12","torch":"2.6.0+cpu"}
 ```
 
-`reference.py` can define `def reference(x): return x`. `cases.py` must provide a
+`reference.py` can define `def reference(x): return x + 1`. `cases.py` must provide a
 callable yielding dictionaries of named inputs, for example:
 
 ```python
@@ -77,16 +77,34 @@ See [reference diagnostic limits](reference-smoke.md).
 
 ## Register and observe
 
+The [public hello-world repository](https://github.com/huawei-cpl-zurich/helloworld-kernel)
+contains a verified spec at commit `99a8a1a9fd0d1b471e6520bafbbb1020fcdc198d`, directory `spec`.
+It registers `team/helloworld@spec-v1` without shared dependencies. In the `team`
+namespace, **Use hello-world example** on `/register-kernel` fills those pinned
+values. The normal form stays blank until you choose the example; using it still
+requires the exact public repository URL in the operator allowlist above.
+
+For the local stack on port8095, start from your Cannery checkout:
+
 ```bash
-cannery register --repo https://git.example.com/team/kernels.git \
-  --commit FULL_SHA --path specs/identity/ --dependency shared --wait
-cannery registrations
+CANNERY_PORT=8095 CANNERY_DEV_IDENTITY_ENABLED=true \
+CANNERY_GIT_REMOTES='[{"url":"https://github.com/huawei-cpl-zurich/helloworld-kernel.git","namespaces":["team"]}]' \
+docker compose up --build -d --wait
+```
+
+Preserve any other repository rules and operator settings. Then run on your host:
+
+
+```bash
+cannery register --repo https://github.com/huawei-cpl-zurich/helloworld-kernel.git \
+  --commit 99a8a1a9fd0d1b471e6520bafbbb1020fcdc198d --path spec --url http://localhost:8095 --wait
+cannery registrations --url http://localhost:8095
 ```
 
 `POST /api/v1/kernels` accepts `{"source":{"type":"git","url":"...",
-"commit":"FULL_SHA","path":"specs/identity","dependencies":["shared"]}}` and
+"commit":"99a8a1a9fd0d1b471e6520bafbbb1020fcdc198d","path":"spec","dependencies":[]}}` and
 returns HTTP202 with an ID/status URL. `GET /api/v1/registrations/{id}` reports
-queued/running/complete/failed; `GET /api/v1/kernels/team/identity/specs/1` reads
+queued/running/complete/failed; `GET /api/v1/kernels/team/helloworld/specs/1` reads
 frozen metadata. The web form uses the same durable submission service. There is
 no local-source archive upload endpoint.
 

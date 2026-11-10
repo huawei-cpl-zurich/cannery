@@ -22,16 +22,16 @@ CANNERY_GIT_REMOTES='[{"url":"https://github.com/huawei-cpl-zurich/helloworld-ke
 docker compose up --build -d --wait
 ```
 
-Run that command from your Cannery checkout. The example repository supplies an M1
-spec; add your implementation directory in a new commit or use another allowlisted
-repository. Preserve your existing rule list, identity, port and other operator
+Run that command from your Cannery checkout. The example repository supplies both the M1
+spec and a host-tested M2 toy submission. Use your own implementation directory
+for subsequent compiler and device validation. Preserve your existing rule list, identity, port and other operator
 settings when rebuilding. Local development identity is configured server-side;
 request headers cannot grant a namespace or administrator role.
 
 ## Implementation source contract
 
 The selected directory contains `submission.yaml` and every declared build input.
-For a CATLASS source directory containing `kernel.py`, the manifest is:
+The public example includes a toy under `candidates/helloworld`, with this manifest:
 
 ```yaml
 schema_version: 1
@@ -39,21 +39,27 @@ kernel: team/helloworld
 spec_version: 1
 implementation:
   device: a5
-  language: catlass
-  entrypoint: kernel.py:forward
+  language: ascendc
+  entrypoint: kernel.cpp:forward
   build:
-    adapter: catlass
-    inputs: [kernel.py]
+    adapter: ascendc
+    inputs: [kernel.cpp]
     artifact: helloworld_a5
     options:
       optimization: release
 validation:
-  requested_rtol: 0.001
-  requested_atol: 0.0001
+  requested_rtol: 0.00001
+  requested_atol: 0.000001
 ```
 
-Use the namespace/name/version of your actual registered spec. `kernel.py` contains
-your implementation source. M2 checks its declaration and retained bytes without
+At commit `99a8a1a9fd0d1b471e6520bafbbb1020fcdc198d`, `kernel.cpp` is a portable C++
+add-one loop with host arithmetic tests. It is an M2 source-intake fixture using the
+recognized `ascendc`/`a5` declaration, not an Ascend device kernel or NPU-validated
+binary. After registering `team/helloworld@spec-v1`, **Use hello-world toy submission**
+on `/submit-implementation` selects that frozen spec and fills the pinned source
+and target. The preset is unavailable until the required spec is retained.
+
+For your own implementation, use the namespace/name/version of your actual spec. M2 checks its declaration and retained bytes without
 importing, executing or compiling it. Requested tolerances are recorded claims
 until evaluated in a later milestone.
 
@@ -76,9 +82,9 @@ symlinks, submodules, LFS pointers, hooks or inherited credentials/proxies.
 From an installed Cannery CLI:
 
 ```bash
-cannery submit team/helloworld --spec-version 1 --device a5 --lang catlass \
+cannery submit team/helloworld --spec-version 1 --device a5 --lang ascendc \
   --repo https://github.com/huawei-cpl-zurich/helloworld-kernel.git \
-  --commit FULL_SHA --path candidates/helloworld/ \
+  --commit 99a8a1a9fd0d1b471e6520bafbbb1020fcdc198d --path candidates/helloworld/ \
   --url http://localhost:8095 --wait
 cannery submissions --url http://localhost:8095
 cannery submission SUBMISSION_UUID --url http://localhost:8095
@@ -97,7 +103,7 @@ it has no numerical result, performance score or publication eligibility.
 The initial REST request is `POST /api/v1/kernels/team/helloworld/submissions`:
 
 ```json
-{"spec_version":1,"device":"a5","language":"catlass","source":{"type":"git","url":"https://github.com/huawei-cpl-zurich/helloworld-kernel.git","commit":"FULL_SHA","path":"candidates/helloworld","dependencies":[]}}
+{"spec_version":1,"device":"a5","language":"ascendc","source":{"type":"git","url":"https://github.com/huawei-cpl-zurich/helloworld-kernel.git","commit":"99a8a1a9fd0d1b471e6520bafbbb1020fcdc198d","path":"candidates/helloworld","dependencies":[]}}
 ```
 
 It returns HTTP202 with `id` and `status_url`. Read
