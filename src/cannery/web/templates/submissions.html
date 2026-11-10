@@ -1,0 +1,50 @@
+{% extends "page.html" %}
+{% block content %}
+<h1>{{ title }}</h1>
+{% if specs is defined %}
+{% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{% if specs %}
+<form method="post" action="/submit-implementation">
+  <p><label>Frozen specification <select name="spec_id" required>{% for spec in specs %}
+    <option value="{{ spec.id }}">{{ spec.label }}</option>{% endfor %}</select></label></p>
+  <p><label>Device <select name="device"><option>a5</option><option>a3</option></select></label></p>
+  <p><label>Language <select name="language"><option>catlass</option><option>ascendc</option></select></label></p>
+  <p><label>Git repository URL <input name="url" type="url" required></label></p>
+  <p><label>Full commit SHA <input name="commit" required></label></p>
+  <p><label>Source directory <input name="path" required></label></p>
+  <p><label>Shared dependency paths (space separated) <input name="dependencies"></label></p>
+  <button type="submit">Submit implementation</button>
+</form>
+{% else %}<p><a href="/register-kernel">Register a specification</a> before submitting an implementation.</p>{% endif %}
+{% elif job %}
+<section id="submission"{% if job.status in ['queued','intaking'] %}
+ hx-get="{{ request.url.path }}" hx-trigger="every 2s" hx-select="#submission" hx-swap="outerHTML"{% endif %}>
+  <p>Submission <code>{{ job.id }}</code>: <strong>{{ job.status }}</strong>. ETA: Unknown.</p>
+  <p>{{ job.kernel.namespace }}/{{ job.kernel.name }}@spec-v{{ job.spec_version }} · {{ job.target.device }} · {{ job.target.language }}</p>
+  <p>Source: {{ job.source.url }} · <code>{{ job.source.commit }}</code> · {{ job.source.path }}</p>
+  {% if job.parent_id %}<p>Revision of <a href="/submissions/{{ job.parent_id }}">{{ job.parent_id }}</a></p>{% endif %}
+  {% if job.error %}<p role="alert">Intake failed: {{ job.error }}.</p>{% endif %}
+  {% if job.candidate %}
+    <p>Source retained. Build, correctness and benchmark are pending.</p>
+    <p>Content SHA256: <code>{{ job.candidate.content_sha256 }}</code></p>
+    <form method="post" action="/submissions/{{ job.id }}/revisions">
+      <label>New full commit SHA <input name="commit" required></label>
+      <button type="submit">Create revision</button>
+    </form>
+    <p>A revision inherits the repository, path, dependencies, frozen specification, device, language, entrypoint and adapter.</p>
+  {% endif %}
+</section>
+<p><a href="/my-submissions">My Submissions</a></p>
+{% else %}
+<section id="submissions"{% if pending %} hx-get="/my-submissions" hx-trigger="every 3s" hx-select="#submissions" hx-swap="outerHTML"{% endif %}>
+{% if jobs %}
+<table><thead><tr><th>Submission</th><th>Kernel</th><th>Target</th><th>Status</th><th>ETA</th></tr></thead><tbody>
+{% for item in jobs %}<tr><td><a href="/submissions/{{ item.id }}">{{ item.id }}</a></td>
+<td>{{ item.kernel.namespace }}/{{ item.kernel.name }}@spec-v{{ item.spec_version }}</td>
+<td>{{ item.target.device }} · {{ item.target.language }}</td><td>{{ item.status }}</td><td>Unknown</td></tr>{% endfor %}
+</tbody></table>
+{% else %}<p>No submissions yet.</p>{% endif %}
+</section>
+<a href="/submit-implementation">Submit implementation</a>
+{% endif %}
+{% endblock %}
