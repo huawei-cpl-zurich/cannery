@@ -16,7 +16,7 @@ from cannery.submissions.models import Candidate
 from cannery.submissions.state import IntakeState
 
 
-@pytest.mark.parametrize("failure", [None, "scratch", "interrupted"])
+@pytest.mark.parametrize("failure", [None, "scratch", "interrupted", "fenced"])
 def test_source_intake_is_fenced_atomic_and_recoverable(records, tmp_path, monkeypatch, failure):
     engine, _ = records
     key = initial(records)
@@ -36,6 +36,17 @@ def test_source_intake_is_fenced_atomic_and_recoverable(records, tmp_path, monke
         return json.dumps({"snapshot": snapshot.model_dump(mode="json")}).encode()
 
     monkeypatch.setattr(worker, "run", admitted)
+    current = worker.current_intake
+    checks = 0
+
+    def fenced(session, claim):
+        nonlocal checks
+        checks += 1
+        if failure == "fenced" and checks == 2:
+            return None
+        return current(session, claim)
+
+    monkeypatch.setattr(worker, "current_intake", fenced)
     cleanup = worker.discard_scratch
     if failure == "scratch":
         monkeypatch.setattr(
@@ -46,6 +57,7 @@ def test_source_intake_is_fenced_atomic_and_recoverable(records, tmp_path, monke
         with Session(engine) as session, session.begin():
             state = session.get(IntakeState, key)
             assert state.status == "queued" and state.attempts == 1
+            assert session.get(Candidate, key) is None
             if failure == "scratch":
                 assert state.scratch_token is not None
             state.due_at = datetime.now(UTC)

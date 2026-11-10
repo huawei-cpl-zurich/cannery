@@ -99,6 +99,8 @@ def intake_submission(identifier: str) -> None:
             if state is None:
                 return
             freeze_candidate(session, key, snapshot, store=SnapshotStore(settings.snapshot_root))
+            if current_intake(session, claim) is None:
+                raise IntakeError("Intake lease expired during snapshot verification")
             state.status, state.error = "awaiting_build", None
             state.lease, state.lease_until = None, None
     except SubmissionConflict:
