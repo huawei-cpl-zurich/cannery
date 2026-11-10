@@ -54,7 +54,7 @@ class WorkerProfile(StrictModel):
 
 # Executed only by the trusted remote host supervisor, never imported by author code.
 SUPERVISOR = r"""
-import fcntl, hashlib, json, os, re, resource, stat, subprocess
+import fcntl, hashlib, json, os, re, resource, shutil, stat, subprocess, sys
 from pathlib import Path
 
 root = Path(config['workspace'])
@@ -87,6 +87,8 @@ if phase == 'cleanup':
             raise SystemExit(75)
         if lease.exists() and lease.read_text() == token:
             lease.unlink()
+    if attempt.exists():
+        shutil.rmtree(attempt)
     raise SystemExit(0)
 
 cann = os.environ['ASCEND_HOME_PATH']
@@ -156,8 +158,13 @@ else:
 args += [config['image'], 'python', '-c', command]
 resource.setrlimit(resource.RLIMIT_FSIZE, (16 * 1024 * 1024,) * 2)
 try:
-    with (output / (phase + '.log')).open('wb') as log:
-        result = subprocess.run(args, stdout=log, stderr=subprocess.STDOUT, timeout=180)
+    with (output / (phase + '.log')).open('w+b') as log:
+        try:
+            result = subprocess.run(args, stdout=log, stderr=subprocess.STDOUT, timeout=180)
+        finally:
+            log.seek(max(0, os.fstat(log.fileno()).st_size - 16384))
+            sys.stderr.buffer.write(b'Last 16 KiB of isolated job log:\n' + log.read(16384))
+            sys.stderr.flush()
     if result.returncode:
         raise SystemExit(1)
     if phase == 'compile':
