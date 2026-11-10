@@ -30,9 +30,9 @@ async def form_data(request: Request, allowed: set[str]) -> dict[str, str]:
         raise HTTPException(415, "Form encoding required")
     data = bytearray()
     async for chunk in request.stream():
-        data.extend(chunk)
-        if len(data) > 16384:
+        if len(data) + len(chunk) > 16384:
             raise HTTPException(413, "Form too large")
+        data.extend(chunk)
     try:
         fields = parse_qs(
             data.decode("utf-8", errors="replace"), keep_blank_values=True, max_num_fields=16
