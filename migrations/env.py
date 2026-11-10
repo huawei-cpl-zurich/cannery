@@ -1,5 +1,6 @@
 from alembic import context
 
+import cannery.builds.state  # noqa: F401
 import cannery.jobs  # noqa: F401
 import cannery.registry.models  # noqa: F401
 import cannery.registry.registrations  # noqa: F401
