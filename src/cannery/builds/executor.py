@@ -80,6 +80,7 @@ with tarfile.open(bundle, 'r:gz') as archive:
                 directory.chmod(0o755)
             else:
                 break
+        target.unlink(missing_ok=True)
         target.write_bytes(archive.extractfile(member).read())
         target.chmod(0o444)
 """.encode()
