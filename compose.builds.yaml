@@ -26,6 +26,7 @@ services:
       - ${CANNERY_LOADER_WHEEL}:${CANNERY_LOADER_WHEEL}:ro
       - ${CANNERY_REMOTE_SKILL_ROOT}:${CANNERY_REMOTE_SKILL_ROOT}:ro
       - ${CANNERY_OPERATOR_HOME}/.config/cpl:${CANNERY_OPERATOR_HOME}/.config/cpl:ro
+      - ${CANNERY_OPERATOR_HOME}/.local/state/cpl/remote-access:${CANNERY_OPERATOR_HOME}/.local/state/cpl/remote-access:ro
       - ${CANNERY_OPERATOR_HOME}/.ssh:${CANNERY_OPERATOR_HOME}/.ssh:ro
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:

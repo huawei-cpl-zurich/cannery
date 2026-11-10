@@ -20,7 +20,8 @@ account, endpoint or artifact repository is required.
 Build the `cannery-runtime` wheel from the reviewed `cannery-kernels` repository,
 retain its original wheel filename and record its SHA256. Provision the installed
 remote-access skill, SSH configuration, ignored target registry and user-enabled
-NPU policy on the coordinator host. Register the remote host's runtime in that
+NPU policy on the coordinator host. The overlay mounts the existing user-wide
+NPU policy directory read-only; it never grants device eligibility. Register the remote host's runtime in that
 registry; CANN paths are resolved from the selected runtime rather than copied
 into job sources. The profile is trusted operator configuration, never submission
 input. Give it a dedicated empty remote workspace and a pinned Docker image ID.
