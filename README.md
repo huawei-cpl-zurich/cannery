@@ -26,4 +26,5 @@ retain selected Git snapshots and run isolated CPU reference diagnostics. See
 [submissions and revisions](docs/submissions.md) for M2 usage, and
 [local development](docs/development.md) for setup and validation.
 Retained submissions await build with unknown ETA. NPU builds, numerical
-validation and publication are later milestones. CPU diagnostics do not independently prove correctness.
+validation and publication are later milestones. CPU diagnostics do not independently
+prove correctness.

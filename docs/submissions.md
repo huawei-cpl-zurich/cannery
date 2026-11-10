@@ -35,7 +35,7 @@ For a CATLASS source directory containing `kernel.py`, the manifest is:
 
 ```yaml
 schema_version: 1
-kernel: team/identity
+kernel: team/helloworld
 spec_version: 1
 implementation:
   device: a5
@@ -44,7 +44,7 @@ implementation:
   build:
     adapter: catlass
     inputs: [kernel.py]
-    artifact: identity_a5
+    artifact: helloworld_a5
     options:
       optimization: release
 validation:
@@ -76,9 +76,9 @@ symlinks, submodules, LFS pointers, hooks or inherited credentials/proxies.
 From an installed Cannery CLI:
 
 ```bash
-cannery submit team/identity --spec-version 1 --device a5 --lang catlass \
-  --repo https://git.example.com/team/kernels.git \
-  --commit FULL_SHA --path candidates/identity/ --dependency shared \
+cannery submit team/helloworld --spec-version 1 --device a5 --lang catlass \
+  --repo https://github.com/huawei-cpl-zurich/helloworld-kernel.git \
+  --commit FULL_SHA --path candidates/helloworld/ \
   --url http://localhost:8095 --wait
 cannery submissions --url http://localhost:8095
 cannery submission SUBMISSION_UUID --url http://localhost:8095
@@ -94,10 +94,10 @@ page polls queued/intaking work. `/my-submissions` lists your requests, private
 failures, stage and unknown ETA. A retained candidate remains pending for build;
 it has no numerical result, performance score or publication eligibility.
 
-The initial REST request is `POST /api/v1/kernels/team/identity/submissions`:
+The initial REST request is `POST /api/v1/kernels/team/helloworld/submissions`:
 
 ```json
-{"spec_version":1,"device":"a5","language":"catlass","source":{"type":"git","url":"https://git.example.com/team/kernels.git","commit":"FULL_SHA","path":"candidates/identity","dependencies":["shared"]}}
+{"spec_version":1,"device":"a5","language":"catlass","source":{"type":"git","url":"https://github.com/huawei-cpl-zurich/helloworld-kernel.git","commit":"FULL_SHA","path":"candidates/helloworld","dependencies":[]}}
 ```
 
 It returns HTTP202 with `id` and `status_url`. Read
