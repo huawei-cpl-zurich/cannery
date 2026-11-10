@@ -1,14 +1,20 @@
 # CANNery — Implementation and Library Plan
 
+Current M3 contract: [private binary admission](binary-admission.md). The active
+backend is self-hosted; no actual Hugging Face service is required. Ascend C A5
+`unary-f32-v1` is the initial supported binary contract. CATLASS, A3, full
+correctness/benchmarks and publication below remain proposed later milestones.
+
+
 Status: M0–M2 source workflows implemented; build/evaluation/publication below are planned · 2026-11-10
 
-See [Architecture](architecture.md) for services, data movement and storage; [User Story](user-story.md) for UI, CLI, REST and Hugging Face consumption; [Design](design.md) for product requirements; [Roadmap](roadmap.md) for milestones.
+See [Architecture](architecture.md) for services, data movement and storage; [User Story](user-story.md) for UI, CLI, REST and private artifact consumption; [Design](design.md) for product requirements; [Roadmap](roadmap.md) for milestones.
 
 ## 1. Scope and boundaries
 
 CANNery accepts **only Git-backed specification and implementation code**. Registration requires an external Git remote, full SHA and path; implementation revisions can supply only a new commit using a saved source binding. The server imports accepted source subtrees into **per-kernel Git snapshot repositories**. It does not ingest local source archives or upload source bundles to Hugging Face.
 
-An implementation must declare a **reproducible build plan**. A capability-matched worker builds binary candidates during admission, then runs correctness against the frozen PyTorch spec and benchmarks. Generated binaries, manifests and detailed logs land in **private HF repositories**; metadata, Git identities, scores, states and artifact pointers land in PostgreSQL.
+An implementation must declare a **reproducible build plan**. A capability-matched worker builds binary candidates during admission, then runs correctness against the frozen PyTorch spec and benchmarks. Generated binaries, manifests and detailed logs land in **the private artifact backend**; metadata, Git identities, scores, states and artifact pointers land in PostgreSQL.
 
 Initial supported adapters: **Ascend C** and **CATLASS DSL**. Future adapters: **Triton-Ascend** and **PyPTO**. Device tracks: A3 and A5. The runtime integration lives in `cannery-kernels`, the Hugging Face kernels fork.
 
@@ -23,8 +29,8 @@ Initial supported adapters: **Ascend C** and **CATLASS DSL**. Future adapters: *
 | Dispatch | Redis + Dramatiq | Jobs carry IDs only, PostgreSQL authoritative |
 | Git operations | system `git` via controlled subprocess | Restricted temporary Git fetch, selected-path import, internal snapshot commit, full-SHA verification, restricted URLs; prefer Git CLI over reimplementing Git |
 | Git credentials | corporate secret manager / deploy token | Referenced by ID; never place secrets in manifests |
-| HF binary store | `huggingface_hub` | Pinned revisions, private repositories, checksum verification |
-| Alternative binary store | boto3 (later) | Storage abstraction; preserve HF-compatible publication path |
+| Private binary store | Internal HTTP service + persistent volume | SHA256 addressing, separate read/write tokens, bounded transfer and checksum verification |
+| Runtime loader | `cannery-runtime` from `cannery-kernels` | Private bytes + pinned SHA256, exact runtime fingerprint, explicit native-code trust |
 | Device adapter | CANN/Ascend C, CATLASS compiler API, torch_npu | Target-specific; validate actual versioned build APIs |
 | Testing | pytest, PyTorch `torch.testing.assert_close`, NumPy | Numerical correctness and device timing |
 | Identity | corporate OIDC via Authlib | Separate user/admin/worker roles |
@@ -46,7 +52,7 @@ src/cannery/
   benchmark/             reference correctness, timing, tolerance profiles
   scheduler/             worker capability matching and device leases
   worker/                trusted coordinator + sandbox executor
-  artifacts/             HF binary and run evidence store
+  artifacts/             private binary and run evidence store
   compatibility/         device, CANN/runtime and ABI matching
   models/                SQLAlchemy + Pydantic schemas
   telemetry/             logs, progress, ETA, audit
@@ -64,10 +70,10 @@ Deployment units: reverse proxy, FastAPI web/API, scheduler, Redis, PostgreSQL, 
 - `submissions`: binding, commit, parent submission, author, source tree digest, admission status.
 - `build_plans`: normalized adapter/version/options/toolchain target; frozen per submission.
 - `build_runs`: submission, worker/toolchain fingerprint, status, compilation log and binary digest/URI.
-- `artifacts`: binary kind, HF repo/revision, checksum, ABI constraints, specialization coverage.
+- `artifacts`: binary kind, private blob reference/hash, checksum, ABI constraints, specialization coverage.
 - `validation_runs`: spec/case/profile version, per-case outcome/errors, completed/failed.
 - `benchmark_runs`: device, environment cohort, per-case µs, baseline, geomean, trace/evidence URI.
-- `publications`: submission, pinned HF release mapping, publisher, visibility and timestamps.
+- `publications`: submission, pinned private release mapping, publisher, visibility and timestamps.
 - `jobs`/`workers`/`device_leases`: durable execution state, capabilities, capacity and failure recovery.
 
 Use DB constraints to enforce immutability, a unique spec version per kernel, and immutable source binding/commit on submissions. Treat Git source tree hashes as useful verification, supplementary to retaining the imported selected files in a Git snapshot commit.
@@ -156,9 +162,9 @@ The user only sees validation stage, logs and empirical ETA (or insufficient dat
 
 ## 8. Artifact publication and Hugging Face
 
-Published binaries are uploaded to private Hugging Face repositories with an immutable revision and a `cannery-kernels`-compatible loader manifest, source Git SHA/digest, toolchain fingerprint, ABI constraints, target device, language and specialization coverage. HF is not the source store. A source link resolves to the original Git URL and full SHA (or authorized internal mirror) instead.
+Published binaries are uploaded to self-hosted private artifact backend with an immutable revision and a `cannery-kernels`-compatible loader manifest, source Git SHA/digest, toolchain fingerprint, ABI constraints, target device, language and specialization coverage. HF is not the source store. A source link resolves to the original Git URL and full SHA (or authorized internal mirror) instead.
 
-Upload and verify HF files *before* making the PostgreSQL release globally discoverable; reconcile abandoned staging artifacts on failure. Private HF publication does not automatically permit external access. Local compatible binaries are selected by environment detection; `--no-detect` requires explicit variant fields. The extended Hugging Face runtime uses a pinned repo/revision and backend `cann`, with an explicit remote-code trust policy.
+Upload and verify HF files *before* making the PostgreSQL release globally discoverable; reconcile abandoned staging artifacts on failure. Private artifact publication does not automatically permit external access. Local compatible binaries are selected by environment detection; `--no-detect` requires explicit variant fields. The extended Hugging Face runtime uses a pinned repo/revision and backend `cann`, with an explicit remote-code trust policy.
 
 ## 9. Testing and operational concerns
 
