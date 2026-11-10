@@ -4,19 +4,21 @@ from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from sqlalchemy import Engine
 
 from cannery.settings import Settings
+from cannery.web.registration import install_registration
 
 ROOT = Path(__file__).parent
 PAGES = {
     "global-best": ("Global Best", "No published results yet."),
     "my-submissions": ("My Submissions", "No submissions yet."),
-    "register-kernel": ("Register Kernel", "Git-backed registration arrives in M1."),
+    "register-kernel": ("Register Kernel", "Register a pinned Git specification."),
     "submit-implementation": ("Submit Implementation", "Git-backed submission arrives in M2."),
 }
 
 
-def install_web(app: FastAPI, settings: Settings) -> None:
+def install_web(app: FastAPI, settings: Settings, engine: Engine) -> None:
     templates = Jinja2Templates(directory=ROOT / "templates")
     app.mount("/static", StaticFiles(directory=ROOT / "static"), name="static")
 
@@ -46,6 +48,18 @@ def install_web(app: FastAPI, settings: Settings) -> None:
         return render(
             request, "Administration", "Worker and storage management is not available yet."
         )
+
+    install_registration(
+        app,
+        settings,
+        engine,
+        templates,
+        {
+            "pages": PAGES,
+            "admin": settings.dev_identity_enabled and settings.dev_role == "admin",
+            "development": settings.dev_identity_enabled,
+        },
+    )
 
     @app.get("/{page}", response_class=HTMLResponse, include_in_schema=False)
     async def page_view(request: Request, page: str) -> HTMLResponse:

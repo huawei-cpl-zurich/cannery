@@ -32,4 +32,4 @@ def test_navigation_and_local_assets() -> None:
         assert client.get("/unknown").status_code == 404
     with TestClient(create_app()) as client:
         assert client.get("/my-submissions").status_code == 401
-        assert client.post("/register-kernel", json={}).status_code == 405
+        assert client.post("/register-kernel", json={}).status_code == 401
