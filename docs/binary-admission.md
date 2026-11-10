@@ -65,6 +65,9 @@ Export paths to existing files and the installed skill's resolved directory:
 
 ```bash
 export CANNERY_OPERATOR_HOME="$HOME"
+export CANNERY_OPERATOR_UID="$(id -u)"
+export CANNERY_OPERATOR_GID="$(id -g)"
+export CANNERY_DOCKER_GID="$(stat -c %g /var/run/docker.sock)"
 export CANNERY_REMOTE_SKILL_ROOT="$(realpath ~/.agents/skills/remote-access)"
 export CANNERY_WORKER_PROFILE=/absolute/path/worker.json
 export CANNERY_LOADER_WHEEL=/absolute/path/cannery_kernels_runtime-0.1.0-py3-none-any.whl

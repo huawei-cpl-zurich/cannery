@@ -4,6 +4,11 @@ services:
     build:
       context: .
       target: builder
+      args:
+        OPERATOR_UID: ${CANNERY_OPERATOR_UID:?Set the operator UID}
+        OPERATOR_GID: ${CANNERY_OPERATOR_GID:?Set the operator GID}
+    group_add:
+      - ${CANNERY_DOCKER_GID:?Set the Docker socket group ID}
     environment:
       HOME: ${CANNERY_OPERATOR_HOME:?Set the operator home}
       CANNERY_DATABASE_URL: postgresql+psycopg://cannery:cannery@postgres:5432/cannery
@@ -28,9 +33,11 @@ services:
       - ${CANNERY_OPERATOR_HOME}/.config/cpl:${CANNERY_OPERATOR_HOME}/.config/cpl:ro
       - ${CANNERY_OPERATOR_HOME}/.local/state/cpl/remote-access:${CANNERY_OPERATOR_HOME}/.local/state/cpl/remote-access:ro
       - ${CANNERY_OPERATOR_HOME}/.ssh:${CANNERY_OPERATOR_HOME}/.ssh:ro
-      - ${CANNERY_OPERATOR_HOME}/.ssh:/root/.ssh:ro
+      - ${CANNERY_OPERATOR_HOME}/.ssh:/home/cannery/.ssh:ro
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
+      build-control-init:
+        condition: service_completed_successfully
       migrate:
         condition: service_completed_successfully
       artifacts:
@@ -39,5 +46,13 @@ services:
     mem_limit: 1g
     cpus: 2
     pids_limit: 128
+  build-control-init:
+    build:
+      context: .
+      target: app
+    user: "0:0"
+    volumes:
+      - build-control:/var/lib/cannery/builds
+    command: ["chown", "${CANNERY_OPERATOR_UID}:${CANNERY_OPERATOR_GID}", "/var/lib/cannery/builds"]
 volumes:
   build-control:
