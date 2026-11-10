@@ -98,8 +98,10 @@ def test_legacy_canonical_digest_stays_unchanged_with_new_abi():
             separators=(",", ":"),
         ).encode()
     ).hexdigest()
-    assert result.content_sha256 == expected == (
-        "39eefce3783628a2ba850889709d49409a731f8947b0ee77e3210f3325c90299"
+    assert (
+        result.content_sha256
+        == expected
+        == ("39eefce3783628a2ba850889709d49409a731f8947b0ee77e3210f3325c90299")
     )
     declared = yaml.safe_load(files["candidate/submission.yaml"])
     declared["implementation"]["build"]["abi"] = None
