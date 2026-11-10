@@ -1,3 +1,4 @@
+from datetime import UTC, datetime
 from uuid import UUID
 
 from sqlalchemy.orm import Session
@@ -36,6 +37,14 @@ def test_owned_build_progress_artifact_and_terminal_web_polling(client):
     assert "hx-trigger=" in client.get(f"/submissions/{key}").text
     claim = claim_build(engine, key)
     assert client.get(created["status_url"]).json()["status"] == "building"
+    assert finish_build(engine, claim, error="storage_unavailable", retryable=True)
+    retry = client.get(created["status_url"]).json()
+    assert retry["status"] == "build_queued" and retry["error"] == "storage_unavailable"
+    page = client.get(f"/submissions/{key}").text
+    assert "Retry pending" in page and "Submission failed:" not in page and "hx-trigger=" in page
+    with Session(engine) as session, session.begin():
+        session.get(BuildState, key).due_at = datetime.now(UTC)
+    claim = claim_build(engine, key)
     reference = ArtifactRef(
         repository="private", revision="b" * 64, sha256="b" * 64, path="package.tar"
     )
