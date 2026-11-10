@@ -5,6 +5,7 @@ WORKDIR /app
 COPY pyproject.toml ./
 COPY src ./src
 RUN pip install --no-cache-dir . && useradd --uid 10001 --create-home cannery
+RUN mkdir -p /home/cannery/artifacts && chown cannery:cannery /home/cannery/artifacts
 COPY alembic.ini ./
 COPY migrations ./migrations
 USER cannery
