@@ -66,7 +66,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             try:
                 os.link(temporary, path)
             except FileExistsError:
-                if hashlib.sha256(path.read_bytes()).hexdigest() != checksum:
+                if (
+                    path.stat().st_size > MAX_BYTES
+                    or hashlib.sha256(path.read_bytes()).hexdigest() != checksum
+                ):
                     raise HTTPException(409, "Stored artifact integrity failure") from None
             directory = os.open(root, os.O_RDONLY | os.O_DIRECTORY)
             try:

@@ -143,3 +143,46 @@ def test_factory_supports_read_only_private_client(tmp_path):
     assert isinstance(store, PrivateArtifactStore)
     with pytest.raises(ArtifactError, match="writer"):
         store.put("op", b"data")
+
+
+def test_retry_oversized_stored_object_is_rejected_without_reading(tmp_path, monkeypatch):
+    monkeypatch.setattr("cannery.artifacts.service.MAX_BYTES", 4)
+    data = b"one"
+    checksum = digest(data)
+    (tmp_path / checksum).write_bytes(b"oversized")
+    with TestClient(create_app(config(tmp_path))) as client:
+        assert (
+            client.put(f"/v1/blobs/{checksum}", content=data, headers=headers(WRITE)).status_code
+            == 409
+        )
+
+
+def test_total_deadline_cancels_trickle_and_closes_stream(monkeypatch):
+    import asyncio
+    import time
+
+    closed = []
+
+    class Trickle(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            while True:
+                await asyncio.sleep(0.005)
+                yield b"a"
+
+        async def aclose(self):
+            closed.append(True)
+
+    monkeypatch.setattr("cannery.artifacts.private.DEADLINE", 0.04)
+    store = PrivateArtifactStore(
+        "http://private",
+        READ,
+        transport=httpx.MockTransport(lambda _: httpx.Response(200, stream=Trickle())),
+    )
+    from cannery.artifacts import ArtifactRef
+
+    ref = ArtifactRef(repository="private", revision="a" * 64, sha256="a" * 64, path="op")
+    start = time.monotonic()
+    with pytest.raises(ArtifactError, match="unavailable"):
+        store.get(ref)
+    assert time.monotonic() - start < 1
+    assert closed == [True]

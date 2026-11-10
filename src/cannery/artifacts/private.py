@@ -1,10 +1,13 @@
 """Bounded transport for the private, content-addressed artifact service."""
 
+import asyncio
+
 import httpx
 
 from cannery.artifacts import ArtifactError, ArtifactRef, digest, verified
 
 MAX_BYTES = 64 * 1024 * 1024
+DEADLINE = 30
 
 
 class PrivateArtifactStore:
@@ -14,36 +17,44 @@ class PrivateArtifactStore:
         token: str,
         *,
         write_token: str | None = None,
-        transport: httpx.BaseTransport | None = None,
+        transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         self.url = url.rstrip("/")
         self.token = token
         self.write_token = write_token
         self.transport = transport
 
+    async def _transfer(self, method: str, checksum: str, data: bytes | None) -> bytes:
+        token = self.write_token if method == "PUT" else self.token
+        async with httpx.AsyncClient(
+            transport=self.transport,
+            timeout=DEADLINE,
+            follow_redirects=False,
+            trust_env=False,
+        ) as client:
+            async with client.stream(
+                method,
+                f"{self.url}/v1/blobs/{checksum}",
+                content=data,
+                headers={"Authorization": f"Bearer {token}"},
+            ) as response:
+                response.raise_for_status()
+                result = bytearray()
+                async for chunk in response.aiter_bytes():
+                    if len(result) + len(chunk) > MAX_BYTES:
+                        raise ArtifactError("Artifact exceeds size limit")
+                    result.extend(chunk)
+                return bytes(result)
+
+    async def _bounded(self, method: str, checksum: str, data: bytes | None) -> bytes:
+        async with asyncio.timeout(DEADLINE):
+            return await self._transfer(method, checksum, data)
+
     def _request(self, method: str, checksum: str, data: bytes | None = None) -> bytes:
+        # ArtifactStore is synchronous and used by trusted worker/coordinator code.
         try:
-            token = self.write_token if method == "PUT" else self.token
-            with httpx.Client(
-                transport=self.transport,
-                timeout=30,
-                follow_redirects=False,
-                trust_env=False,
-            ) as client:
-                with client.stream(
-                    method,
-                    f"{self.url}/v1/blobs/{checksum}",
-                    content=data,
-                    headers={"Authorization": f"Bearer {token}"},
-                ) as response:
-                    response.raise_for_status()
-                    result = bytearray()
-                    for chunk in response.iter_bytes():
-                        result.extend(chunk)
-                        if len(result) > MAX_BYTES:
-                            raise ArtifactError("Artifact exceeds size limit")
-                    return bytes(result)
-        except httpx.HTTPError:
+            return asyncio.run(self._bounded(method, checksum, data))
+        except (httpx.HTTPError, TimeoutError):
             raise ArtifactError(
                 "Private artifact service unavailable or request rejected"
             ) from None
@@ -61,7 +72,6 @@ class PrivateArtifactStore:
             sha256=checksum,
         )
         self._request("PUT", checksum, data)
-        # Successful admission requires independent read-back, including after retries.
         verified(self._request("GET", checksum), reference)
         return reference
 
