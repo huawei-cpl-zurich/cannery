@@ -8,13 +8,17 @@ from sqlalchemy import Engine
 
 from cannery.settings import Settings
 from cannery.web.registration import install_registration
+from cannery.web.submissions import install_submission_web
 
 ROOT = Path(__file__).parent
 PAGES = {
     "global-best": ("Global Best", "No published results yet."),
     "my-submissions": ("My Submissions", "No submissions yet."),
     "register-kernel": ("Register Kernel", "Register a pinned Git specification."),
-    "submit-implementation": ("Submit Implementation", "Git-backed submission arrives in M2."),
+    "submit-implementation": (
+        "Submit Implementation",
+        "Submit pinned Git source for a frozen specification.",
+    ),
 }
 
 
@@ -50,6 +54,18 @@ def install_web(app: FastAPI, settings: Settings, engine: Engine) -> None:
         )
 
     install_registration(
+        app,
+        settings,
+        engine,
+        templates,
+        {
+            "pages": PAGES,
+            "admin": settings.dev_identity_enabled and settings.dev_role == "admin",
+            "development": settings.dev_identity_enabled,
+        },
+    )
+
+    install_submission_web(
         app,
         settings,
         engine,
