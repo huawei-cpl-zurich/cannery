@@ -1,0 +1,31 @@
+services:
+  git-fixture:
+    build: tests/fixtures/git
+    volumes:
+      - fixture-data:/fixtures
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('127.0.0.1',8443),2).close()"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+  registrar:
+    environment:
+      CANNERY_GIT_REMOTES: '[{"url":"https://git-fixture:8443/repo.git","namespaces":["team"],"allowed_networks":["10.0.0.0/8","172.16.0.0/12","192.168.0.0/16"],"ca_file":"/fixtures/ca.pem","token":"fixture-token"}]'
+      CANNERY_SMOKE_TIMEOUT: '8'
+    volumes:
+      - fixture-data:/fixtures:ro
+    depends_on:
+      git-fixture:
+        condition: service_healthy
+  admin-api:
+    image: ${COMPOSE_PROJECT_NAME}-api
+    environment:
+      CANNERY_DATABASE_URL: postgresql+psycopg://cannery:cannery@postgres:5432/cannery
+      CANNERY_REDIS_URL: redis://redis:6379/0
+      CANNERY_DEV_IDENTITY_ENABLED: 'true'
+      CANNERY_DEV_ROLE: admin
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+volumes:
+  fixture-data:
