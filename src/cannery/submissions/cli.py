@@ -1,4 +1,4 @@
-"""Submission commands; --wait observes source intake, never claims a built binary."""
+"""Submission commands with separate source-intake and binary-admission waits."""
 
 import json
 from time import monotonic, sleep
@@ -13,7 +13,15 @@ from cannery.git_intake import GitSource
 from cannery.submissions.manifest import Device, KernelPath, Language
 
 
-def send(url: str, endpoint: str, body: dict[str, Any], wait: bool, timeout: float) -> None:
+def send(
+    url: str,
+    endpoint: str,
+    body: dict[str, Any],
+    wait: bool,
+    timeout: float,
+    *,
+    wait_build: bool = False,
+) -> None:
     try:
         with httpx.Client(timeout=5) as client:
             response = client.post(url.rstrip("/") + endpoint, json=body)
@@ -38,9 +46,25 @@ def send(url: str, endpoint: str, body: dict[str, Any], wait: bool, timeout: flo
                 except httpx.TransportError:
                     sleep(0.5)
                     continue
-                if result["status"] == "awaiting_build":
-                    typer.echo("Source retained; awaiting build. ETA unknown.")
+                if not wait_build and (
+                    result["status"] == "awaiting_build"
+                    or result.get("stages", {}).get("intake") == "complete"
+                ):
+                    typer.echo("Source retained; awaiting build observation. ETA unknown.")
                     return
+                if wait_build and result["status"] == "awaiting_validation":
+                    typer.echo("Binary admitted; awaiting validation. ETA unknown.")
+                    return
+                if wait_build and result["status"] == "awaiting_build":
+                    candidate = result.get("candidate")
+                    if candidate and not candidate.get("manifest", {}).get(
+                        "implementation", {}
+                    ).get("build", {}).get("abi"):
+                        typer.echo(
+                            "Source retained; this source-only contract has no native build.",
+                            err=True,
+                        )
+                        raise typer.Exit(1)
                 if result["status"] == "failed":
                     typer.echo(f"Submission failed: {result.get('error', 'unknown')}", err=True)
                     raise typer.Exit(1)
@@ -65,6 +89,7 @@ def install_cli(app: typer.Typer) -> None:
         dependency: Annotated[list[str] | None, typer.Option("--dependency")] = None,
         url: str = "http://127.0.0.1:8000",
         wait: bool = False,
+        wait_build: bool = False,
         timeout: Annotated[float, typer.Option(min=1, max=900)] = 180,
     ) -> None:
         """Submit Git source for a frozen kernel; --wait waits only for source intake."""
@@ -86,8 +111,9 @@ def install_cli(app: typer.Typer) -> None:
                 "language": lang,
                 "source": source.model_dump(mode="json"),
             },
-            wait,
+            wait or wait_build,
             timeout,
+            wait_build=wait_build,
         )
 
     @app.command()
@@ -96,10 +122,18 @@ def install_cli(app: typer.Typer) -> None:
         commit: Annotated[str, typer.Option()],
         url: str = "http://127.0.0.1:8000",
         wait: bool = False,
+        wait_build: bool = False,
         timeout: Annotated[float, typer.Option(min=1, max=900)] = 180,
     ) -> None:
         """Create an immutable revision inheriting the parent's frozen binding."""
-        send(url, f"/api/v1/submissions/{identifier}/revisions", {"commit": commit}, wait, timeout)
+        send(
+            url,
+            f"/api/v1/submissions/{identifier}/revisions",
+            {"commit": commit},
+            wait or wait_build,
+            timeout,
+            wait_build=wait_build,
+        )
 
     @app.command()
     def submissions(url: str = "http://127.0.0.1:8000") -> None:

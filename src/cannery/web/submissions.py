@@ -137,7 +137,9 @@ def install_submission_web(
             request,
             "My Submissions",
             jobs=jobs,
-            pending=any(job["status"] in ("queued", "intaking") for job in jobs),
+            pending=any(
+                job["status"] in ("queued", "intaking", "build_queued", "building") for job in jobs
+            ),
         )
 
     @app.get("/submissions/{identifier}", response_class=HTMLResponse, include_in_schema=False)
