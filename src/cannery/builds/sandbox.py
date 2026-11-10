@@ -17,6 +17,7 @@ class WorkerProfile(StrictModel):
     image: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
     npu: int = Field(ge=0, le=63)
     device_group: int = Field(ge=0)
+    toolchain_read_group: int | None = Field(default=None, ge=0)
     readonly_mounts: tuple[str, ...]
     transport_devices: tuple[str, ...] = ()
     fingerprint: dict[str, str]
@@ -123,9 +124,10 @@ args = ['docker', 'run', '--rm', '--init', '--pull', 'never', '--name', names[ph
 for key in ['PATH', 'LD_LIBRARY_PATH', 'ASCEND_HOME_PATH',
             'ASCEND_TOOLKIT_HOME', 'ASCEND_OPP_PATH']:
     args += ['--env', key]
+if config['toolchain_read_group'] is not None:
+    args += ['--group-add', str(config['toolchain_read_group'])]
 held = None
 if phase == 'compile':
-    args += ['--mount', f'type=bind,src={output},dst=/output']
     command = COMPILE
 else:
     held = lock.open('a')
@@ -175,11 +177,13 @@ else:
         args += ['--mount', f'type=bind,src={path},dst={path},readonly']
     command = RUNTIME
 args += [config['image'], 'python', '-c', command]
-resource.setrlimit(resource.RLIMIT_FSIZE, (16 * 1024 * 1024,) * 2)
+resource.setrlimit(resource.RLIMIT_FSIZE, (64 * 1024 * 1024,) * 2)
 try:
-    with (attempt / (phase + '.log')).open('w+b') as log:
+    with (attempt / (phase + '.log')).open('w+b') as log, \
+            open(output / 'kernel.so' if phase == 'compile' else os.devnull, 'wb') as binary_output:
         try:
-            result = subprocess.run(args, stdout=log, stderr=subprocess.STDOUT, timeout=180)
+            result = subprocess.run(args, stdout=binary_output if phase == 'compile' else log,
+                                    stderr=log, timeout=180)
         finally:
             log.seek(max(0, os.fstat(log.fileno()).st_size - 16384))
             sys.stderr.buffer.write(b'Last 16 KiB of isolated job log:\n' + log.read(16384))
@@ -201,18 +205,20 @@ finally:
 """
 
 COMPILE = r"""
-import json, pathlib, shutil, subprocess
+import json, pathlib, subprocess, sys
 plan = json.loads(pathlib.Path('/input/build.json').read_text())
 version = subprocess.run(['bisheng', '--version'], capture_output=True, text=True,
                          check=True, timeout=10).stdout
 assert plan['compiler'] in version, 'compiler fingerprint mismatch'
-print(version[:4096], flush=True)
+print(version[:4096], file=sys.stderr, flush=True)
 work = pathlib.Path('/tmp/work')
 work.mkdir()
 (work / 'source').symlink_to('/input/tree/' + plan['path'], target_is_directory=True)
 (work / 'launch.asc').write_text(plan['wrapper'])
-subprocess.run(plan['command'], cwd=work, check=True, timeout=120)
-shutil.copyfile(work / 'kernel.so', '/output/kernel.so')
+subprocess.run(plan['command'], cwd=work, stdout=sys.stderr, check=True, timeout=120)
+binary = work / 'kernel.so'
+assert binary.is_file() and not binary.is_symlink() and binary.stat().st_size <= 63*1024*1024
+sys.stdout.buffer.write(binary.read_bytes())
 """
 
 RUNTIME = r"""
