@@ -54,5 +54,5 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.state.artifacts = make_store(config)
     install_registry(app, config, engine)
-    install_web(app, config)
+    install_web(app, config, engine)
     return app
