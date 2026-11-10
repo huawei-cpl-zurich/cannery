@@ -1,6 +1,6 @@
 # CANNery — PoC Roadmap
 
-Status: M0 and M1 implemented; M2 onward planned · 2026-11-10
+Status: M0–M2 source workflows implemented; M3 onward planned · 2026-11-10
 
 Build a working user journey with thin end-to-end slices. **No non-Git source intake.** Every implementation commit contains a supported build contract, and binary artifacts are produced by our workers before validation and published from private HF storage. **Initial adapters: Ascend C and CATLASS DSL only**; Triton-Ascend and PyPTO are future phases.
 
@@ -48,6 +48,10 @@ M3–M5 may be developed in parallel after M2. Testing the CATLASS exported-bina
 - My Submissions shows queue, build, correctness, benchmark and completion state, with empirical ETA or honest unknown.
 
 **Acceptance:** two different Git SHAs create two immutable candidate revisions, without re-registering or copying the spec.
+
+Implemented source intake ends at `awaiting_build`; build/correctness/benchmark are
+pending and ETA is unknown. Author implementation code is never executed during M2.
+See [submission usage and CPU failure acceptance](submissions.md).
 
 ## M3 — Ascend C binary build
 
