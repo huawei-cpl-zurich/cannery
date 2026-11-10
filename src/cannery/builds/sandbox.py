@@ -1,5 +1,6 @@
 """Generate trusted host supervision for isolated Ascend C build/runtime jobs."""
 
+import json
 from pathlib import PurePosixPath
 from typing import Literal, Self
 from uuid import UUID
@@ -252,9 +253,10 @@ def job_script(
     attempt: UUID,
     phase: Literal["prepare", "compile", "runtime", "cleanup"],
 ) -> bytes:
+    serialized = json.dumps(profile.model_dump(mode="json"), sort_keys=True)
     return (
         "#!/usr/bin/env python3\nimport json\n"
-        + f"config = json.loads({profile.model_dump_json()!r})\n"
+        + f"config = json.loads({serialized!r})\n"
         + f"token = {attempt.hex!r}\nphase = {phase!r}\n"
         + f"COMPILE = {COMPILE!r}\nRUNTIME = {RUNTIME!r}\n"
         + SUPERVISOR

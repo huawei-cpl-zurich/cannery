@@ -183,3 +183,14 @@ def test_failed_removal_after_timeout_preserves_device_owner_and_scratch(tmp_pat
     with pytest.raises(RuntimeError, match="preserve device ownership"):
         execute(config, token, "cleanup")
     assert (root / "device-1.owner").exists() and (root / token.hex).exists()
+
+
+def test_profile_roundtrip_preserves_generated_job_contract(tmp_path):
+    import json
+
+    original = profile(tmp_path)
+    restored = WorkerProfile.model_validate_json(
+        json.dumps(original.model_dump(mode="json"), sort_keys=True)
+    )
+    token = uuid4()
+    assert job_script(original, token, "runtime") == job_script(restored, token, "runtime")
