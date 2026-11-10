@@ -130,3 +130,35 @@ def test_async_transfer_backend_is_rejected_before_any_dispatch(tmp_path):
     with pytest.raises(ValueError, match="SSH"):
         remote.transfer("upload", "local", "/remote")
     assert [call[0] for call in remote.calls] == ["capabilities"]
+
+
+def test_retained_screen_relay_is_rejected_before_transfer_submission(tmp_path):
+    remote = FakeCpl(
+        tmp_path,
+        [
+            {
+                "state": "available",
+                "backend": "ssh",
+                "capabilities": dict.fromkeys(
+                    ["run", "observe", "upload", "download", "cancel"], True
+                ),
+            }
+        ],
+    )
+    remote._available = False
+    remote.registry = tmp_path / "remotes.yaml"
+    remote.registry.write_text(
+        json.dumps(
+            {
+                "targets": {
+                    "test-a5": {
+                        "backend": "ssh",
+                        "transfer": {"mode": "bashupload", "receiver": "screen"},
+                    }
+                }
+            }
+        )
+    )
+    with pytest.raises(ValueError, match="rsync"):
+        remote.transfer("upload", "local", "/remote")
+    assert [call[0] for call in remote.calls] == ["capabilities"]

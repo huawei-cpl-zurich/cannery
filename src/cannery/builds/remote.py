@@ -6,6 +6,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+import yaml
+
 from cannery.git_intake.process import IntakeError, run
 
 
@@ -35,8 +37,11 @@ def durable_write(path: Path, data: bytes) -> None:
 
 
 class CplRemote:
-    def __init__(self, client: Path, journal: Path, target: str) -> None:
+    def __init__(
+        self, client: Path, journal: Path, target: str, *, registry: Path | None = None
+    ) -> None:
         self.client, self.journal, self.target = client, journal, target
+        self.registry = registry or Path.home() / ".config/cpl/remotes.yaml"
         self._available = False
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", target):
             raise ValueError("Invalid remote target")
@@ -60,7 +65,7 @@ class CplRemote:
         }
         try:
             output = run(
-                [str(self.client), "--json", *arguments],
+                [str(self.client), "--config", str(self.registry), "--json", *arguments],
                 env=environment,
                 timeout=180,
                 max_output=1024 * 1024,
@@ -85,6 +90,15 @@ class CplRemote:
             raise RemotePending("Required remote capabilities unavailable")
         if capabilities.get("backend") != "ssh":
             raise ValueError("M3 requires the validated SSH worker transport")
+        try:
+            config = yaml.safe_load(self.registry.read_text())["targets"][self.target]
+            if (
+                config.get("backend") != "ssh"
+                or config.get("transfer", {}).get("mode", "rsync") != "rsync"
+            ):
+                raise ValueError("M3 requires a synchronous SSH rsync route")
+        except (OSError, KeyError, TypeError, yaml.YAMLError):
+            raise ValueError("Worker route registry unavailable") from None
         if self.call("preflight", self.target).get("state") != "completed":
             raise RemotePending("Remote preflight unavailable")
         self._available = True
