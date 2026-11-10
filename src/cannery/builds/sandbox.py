@@ -31,15 +31,13 @@ class WorkerProfile(StrictModel):
                 or any(c in value for c in "\n\r\x00,")
             ):
                 raise ValueError("Expected a specific absolute worker path")
+        driver_roots = ("/usr/local/Ascend/driver", "/usr/local/dcmi")
+        allowed_prefixes = tuple(value + "/" for value in driver_roots) + (
+            "/usr/lib64/",
+            "/usr/lib/aarch64-linux-gnu/",
+        )
         if any(
-            not value.startswith(
-                (
-                    "/usr/local/Ascend/driver",
-                    "/usr/local/dcmi",
-                    "/usr/lib64/",
-                    "/usr/lib/aarch64-linux-gnu/",
-                )
-            )
+            value not in driver_roots and not value.startswith(allowed_prefixes)
             for value in self.readonly_mounts
         ):
             raise ValueError("Only driver and runtime library mounts are supported")
@@ -91,7 +89,8 @@ if phase == 'cleanup':
     raise SystemExit(0)
 
 cann = os.environ['ASCEND_HOME_PATH']
-if not Path(cann).is_absolute() or len(Path(cann).parts) < 4:
+if (not Path(cann).is_absolute() or len(Path(cann).parts) < 4
+        or not cann.startswith(('/opt/', '/usr/local/Ascend/'))):
     raise ValueError('Invalid registered CANN root')
 args = ['docker', 'run', '--rm', '--init', '--pull', 'never', '--name', names[phase],
         '--network', 'none', '--user', '10001:10001', '--cap-drop', 'ALL',
