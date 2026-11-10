@@ -18,7 +18,7 @@ This document describes deployed services, data ownership, exactly where source 
 4. **PoC builders:** `ascendc` and `catlass`. Future adapter IDs: `triton`, `pypto`. Device dimensions: A3, A5. A submission cannot bring an arbitrary executable build script into the trusted coordinator: build descriptions use a typed, allowlisted adapter contract.
 5. **Frozen specification:** spec YAML, PyTorch reference and case generator are read from an immutable Git commit/tree and bound to content digests. A changed spec produces a new version. Implementations can evolve by submitting **only a new commit SHA** against a saved source binding.
 6. **Results:** keep per-case median µs, p95, correctness/error, pinned baseline and geometric mean speedup. Global best includes only validated, explicitly published releases; rankings and history remain separate per device and tolerance profile.
-7. **Source and binary distribution differ:** source resolution returns a Git URL + pinned commit + path (and optional read access to the internal snapshot repository); binary resolution returns a pinned artifact hash. HF `kernels` loading requires the Ascend runtime extensions in `cannery-kernels`.
+7. **Source and binary distribution differ:** source resolution returns a Git URL + pinned commit + path (and optional read access to the internal snapshot repository); binary resolution returns a pinned artifact hash. Private package loading requires the Ascend runtime extensions in `cannery-kernels`.
 
 ## 2. Logical services
 
@@ -156,7 +156,7 @@ For `ascendc`, the adapter compiles and links into the agreed host-callable libr
 
 Future adapters `triton` and `pypto` implement the same contract with language-specific toolchain and runtime metadata. These are **not in PoC acceptance**. PyPTO is distinct from PTO-DSL; confirm and pin the intended PyPTO toolchain before adding the adapter.
 
-## 7. Binary packaging, HF and publication
+## 7. Binary packaging and private publication
 
 M3 packages only `metadata.json` and `kernel.so`, with source content hash,
 library hash, explicit ABI and exact runtime/compiler fingerprints. The private

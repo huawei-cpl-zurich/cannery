@@ -150,7 +150,7 @@ class BuildAdapter(Protocol):
 - **Triton-Ascend (later):** compile and package relevant target variants with equivalent metadata.
 - **PyPTO (later):** PyPTO compiler/runtime adapter, with its separately pinned toolchain/runtime dependencies, not PTO-DSL.
 
-Build is a mandatory admission/validation stage. A failed build preserves logs and private state. The generated binary is staged in HF and can be published only after correctness and full benchmark completion; keep an immutable build manifest. Never accept a prebuilt author binary as a substitute for source/build validation.
+Build is a mandatory admission/validation stage. A failed build preserves logs and private state. The generated binary is staged in private storage and can be published only after correctness and full benchmark completion; keep an immutable build manifest. Never accept a prebuilt author binary as a substitute for source/build validation.
 
 ## 7. Validation, benchmark and leaderboard
 
@@ -160,15 +160,15 @@ Benchmark only passing candidates. Record synchronized device timing, warmup, me
 
 The user only sees validation stage, logs and empirical ETA (or insufficient data), not worker identities or storage architecture. Admin-only pages handle workers, Git snapshots, queue and storage.
 
-## 8. Artifact publication and Hugging Face
+## 8. Artifact publication and private storage
 
-Published binaries are uploaded to self-hosted private artifact backend with an immutable revision and a `cannery-kernels`-compatible loader manifest, source Git SHA/digest, toolchain fingerprint, ABI constraints, target device, language and specialization coverage. HF is not the source store. A source link resolves to the original Git URL and full SHA (or authorized internal mirror) instead.
+Published binaries are uploaded to self-hosted private artifact backend with an immutable revision and a `cannery-kernels`-compatible loader manifest, source Git SHA/digest, toolchain fingerprint, ABI constraints, target device, language and specialization coverage. Source remains in Git. A source link resolves to the original Git URL and full SHA (or authorized internal mirror) instead.
 
-Upload and verify HF files *before* making the PostgreSQL release globally discoverable; reconcile abandoned staging artifacts on failure. Private artifact publication does not automatically permit external access. Local compatible binaries are selected by environment detection; `--no-detect` requires explicit variant fields. The extended Hugging Face runtime uses a pinned repo/revision and backend `cann`, with an explicit remote-code trust policy.
+Upload and verify private blobs *before* making the PostgreSQL release globally discoverable; reconcile abandoned staging artifacts on failure. Private artifact publication does not automatically permit external access. Local compatible binaries are selected by environment detection; `--no-detect` requires explicit variant fields. The standalone runtime verifies pinned bytes and exact compatibility metadata, with explicit native-code trust.
 
 ## 9. Testing and operational concerns
 
-CPU CI tests Git intake with a local upstream Git fixture, per-kernel snapshot commits and protected refs and commit-only revisions, YAML validation, adapter preflight, fake binary artifacts, PostgreSQL/Redis/MockHF integration and fault recovery. Hardware tests use protected internal runners on A3 and A5 and verify real build/export, correctness and timing. Run untrusted code only in isolated NPU workers with resource/network limits. Git snapshot repositories and PG must be backed up; HF generated binaries are independently versioned. Use Prometheus/OpenTelemetry for scheduler/builder telemetry, with admin access.
+CPU CI tests Git intake with a local upstream Git fixture, per-kernel snapshot commits and protected refs and commit-only revisions, YAML validation, adapter preflight, fake binary artifacts, PostgreSQL/Redis/private artifact service integration and fault recovery. Hardware tests use protected internal runners on A3 and A5 and verify real build/export, correctness and timing. Run untrusted code only in isolated NPU workers with resource/network limits. Git snapshot repositories and PG must be backed up; Private generated binaries are independently versioned. Use Prometheus/OpenTelemetry for scheduler/builder telemetry, with admin access.
 
 ## 10. PoC engineering risk
 

@@ -14,13 +14,13 @@ Build a working user journey with thin end-to-end slices. **No non-Git source in
 
 | Stage | Deliverable | Acceptance |
 |---|---|---|
-| M0 — foundations | FastAPI/Web/CLI, PostgreSQL, Redis, Git intake skeleton, fake HF storage and CPU CI | Local services boot and health checks pass |
+| M0 — foundations | FastAPI/Web/CLI, PostgreSQL, Redis, Git intake skeleton, fake artifact storage and CPU CI | Local services boot and health checks pass |
 | M1 — frozen PyTorch spec | External Git fetch and **selected-subtree Git snapshots**; verified commit/path, schema, content hash; register spec-v1 | Register spec from Git; spec is immutable and rebuildable from internal snapshot commits |
 | M2 — Git submissions | Save source binding, `submit --repo --commit --path`, `revise --commit`, user status/ETA; strict `submission.yaml` | Commit-only revision preserves prior submission and inherits frozen target |
 | M3 — Ascend C binary admission | Adapter preflight/compile/package, A5 device build and loader, binary pushed to private content-addressed staging | Pinned Git commit produces actual loadable A5 binary with hash/build metadata |
 | M4 — CATLASS binary admission | Ahead-of-publication CATLASS compilation and specialization/export proof; adapter and ABI metadata | Pinned CATLASS commit builds a loadable compatible artifact; unsupported specializations rejected |
 | M5 — correctness & benchmark | Frozen PyTorch oracle; tolerance profile validation; synchronized µs timings; geomean | Bad binary fails; passing binary has complete per-case evidence |
-| M6 — published leaderboard and consumption | Explicit publish, global vs personal submissions, device/tolerance filtering, HF pinned loader integration | Published validated binary can be downloaded and loaded; single best-so-far step history with language-colored record points |
+| M6 — published leaderboard and consumption | Explicit publish, global vs personal submissions, device/tolerance filtering, private pinned loader integration | Published validated binary can be downloaded and loaded; single best-so-far step history with language-colored record points |
 | M7 — A3 and hardening | A3 variants, separate rankings, sandbox/secret/backup and failure recovery | Repeat user journey on A3 and A5 without cross-device comparisons |
 
 M3–M5 may be developed in parallel after M2. Testing the CATLASS exported-binary path should start as an **early technical spike** even before M3 completes. Work in `cannery-kernels` occurs alongside platform work.
@@ -93,9 +93,9 @@ See [submission usage and CPU failure acceptance](submissions.md).
 ## M6 — Release, leaderboard and consumer
 
 - Explicit publication by owner/authorized reviewer after successful build + correctness + full benchmarks.
-- Package existing generated binary into HF `kernel` release layout; pin exact HF repo commit and hashes.
+- Package the validated binary into the private release layout; pin exact content hashes.
 - CANNery CLI resolves compatible binaries by device/runtime; no user source copy in HF.
-- The extended Hugging Face `get_kernel` interface loads and calls a published A5 binary.
+- The private runtime loader loads and calls a published A5 binary.
 - Global Best filters only published, valid, tolerance-eligible results; My Submissions retains failures and private work.
 - One **overall best-so-far** step line per device, markers colored by record-setting language.
 

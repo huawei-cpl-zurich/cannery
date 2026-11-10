@@ -238,7 +238,7 @@ She selects a validated revision and chooses **Publish**, or:
 cannery publish team/fa_xxx --submission sub_002
 ```
 
-CANNery packages the previously generated, validated binaries into a **private runtime-compatible release**, pins its exact HF repository commit and registers that release in PostgreSQL. No new source upload takes place. If its build cannot be represented by a compatible loadable artifact, publication must fail with a packaging diagnostic rather than publishing an unusable entry.
+CANNery packages the previously generated, validated binaries into a **private runtime-compatible release**, pins its content hash and registers that release in PostgreSQL. No new source upload takes place. If its build cannot be represented by a compatible loadable artifact, publication must fail with a packaging diagnostic rather than publishing an unusable entry.
 
 The global leaderboard includes this implementation only when it is validated **and explicitly published**, and only for tolerance profiles it has passed. A5 and A3 results have separate histories; each history contains one overall best-so-far step line with record points colored by language.
 
