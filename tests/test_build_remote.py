@@ -170,3 +170,14 @@ def test_missing_retained_job_is_cancel_fenced_before_failure(tmp_path):
         remote.operation("compile", b"print(1)", workspace="/work", runtime="cann")
     assert failure.value.exit_code == 125
     assert [call[0] for call in remote.calls] == ["run", "observe", "cancel"]
+
+
+def test_compressed_payload_executes_exact_source(tmp_path):
+    import subprocess
+    import sys
+
+    from cannery.builds.remote import script_payload
+
+    source = b"from pathlib import Path\nPath('proof').write_bytes(b'exact source')\n"
+    subprocess.run([sys.executable, "-c", script_payload(source)], cwd=tmp_path, check=True)
+    assert (tmp_path / "proof").read_bytes() == b"exact source"
