@@ -2,6 +2,8 @@ from typing import Annotated
 
 import typer
 
+from cannery.submissions.cli import install_cli
+
 app = typer.Typer(no_args_is_help=True)
 
 
@@ -112,3 +114,6 @@ def registrations(url: str = "http://127.0.0.1:8000") -> None:
             typer.echo(f"{job['id']} {job['status']}")
     except (httpx.HTTPError, ValueError, KeyError, TypeError):
         raise typer.Exit(1) from None
+
+
+install_cli(app)
