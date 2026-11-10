@@ -147,3 +147,19 @@ shared scratch recovery. It deletes upstream, runs Git GC and revalidates retain
 candidate sources, then cleans project containers, images, networks and volumes.
 Candidate fixture code raises if executed. These are source-intake proofs; no NPU
 build or numerical/performance validation is claimed. A3/A5 hardware is unnecessary.
+
+### Initial A5 native build contract (M3)
+
+Native admission requires `implementation.build.abi: unary-f32-v1`, device `a5`
+and language/adapter `ascendc`. Omitting the ABI retains the source-only M2
+behavior; a host C++ fixture is not silently interpreted as an NPU kernel.
+The ABI is part of the frozen revision binding and cannot change through revise.
+Existing manifest hashes are preserved when this optional field is absent/null.
+
+The entry point is one declared Ascend C translation unit plus optional declared
+headers. Export the selected device symbol with arguments
+`(GM_ADDR input, GM_ADDR output, uint64_t count)` for contiguous float32 buffers.
+The trusted adapter generates a one-block launch wrapper and fixed A5 compiler
+arguments. It never interprets build inputs as commands or runs author build
+scripts. Compilation must occur in the dedicated device-less sandbox; returning
+a build plan alone does not prove compilation or device execution.
