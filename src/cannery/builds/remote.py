@@ -1,5 +1,8 @@
 """Retained CPL SSH jobs and resumable synchronous SSH file transfers for M3."""
 
+import base64
+import gzip
+import hashlib
 import json
 import os
 import re
@@ -34,6 +37,16 @@ def durable_write(path: Path, data: bytes) -> None:
         os.fsync(descriptor)
     finally:
         os.close(descriptor)
+
+
+def script_payload(script: bytes) -> bytes:
+    encoded = base64.b64encode(gzip.compress(script, mtime=0)).decode()
+    return (
+        "#!/usr/bin/env python3\nimport base64,gzip,hashlib\n"
+        + f"source = gzip.decompress(base64.b64decode({encoded!r}))\n"
+        + f"assert hashlib.sha256(source).hexdigest() == {hashlib.sha256(script).hexdigest()!r}\n"
+        + "exec(compile(source, '<cannery-job>', 'exec'))\n"
+    ).encode()
 
 
 class CplRemote:
@@ -137,7 +150,8 @@ class CplRemote:
                 os.fsync(directory)
             finally:
                 os.close(directory)
-            durable_write(payload, script)
+            durable_write(payload.with_suffix(".source.py"), script)
+            durable_write(payload, script_payload(script))
             args = [
                 "run",
                 self.target,
@@ -166,6 +180,10 @@ class CplRemote:
             raise RemotePending("Dispatch receipt unavailable") from None
         result = self.call("observe", handle)
         state = result.get("state")
+        if state == "missing":
+            cancelled = self.call("cancel", handle)
+            if cancelled.get("state") == "cancelled":
+                raise RemoteFailure(125)
         if state == "completed" and result.get("exit") == 0:
             return handle
         if state in {"failed", "cancelled"}:

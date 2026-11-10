@@ -55,6 +55,8 @@ class Remote:
         (self.journal / f"{name}.json").write_text(json.dumps({"handle": handle}))
         if fresh and name == self.failure:
             raise RemotePending("lost response")
+        if fresh and name == "cleanup-0" and self.failure == "cleanup":
+            raise RemoteFailure(1)
         if name == "runtime-0" and self.failure == "busy":
             raise RemoteFailure(75)
         return handle
@@ -184,3 +186,16 @@ def test_worker_profile_change_cannot_reuse_an_old_attempt(setup_executor):
     with pytest.raises(ExecutionFailure, match="worker_profile_changed"):
         executor.execute(candidate, attempt, lambda: None)
     assert remote.started == started and not memory.puts
+
+
+def test_cleanup_retries_only_after_terminal_failed_operation(setup_executor):
+    executor, candidate, remote, memory = setup_executor
+    attempt = uuid4()
+    admitted = executor.execute(candidate, attempt, lambda: None)
+    remote.failure = "cleanup"
+    with pytest.raises(RemotePending, match="retain ownership"):
+        executor.cleanup(attempt)
+    assert (remote.journal / "cleanup-index").read_text() == "1"
+    assert executor.execute(candidate, attempt, lambda: None) == admitted
+    executor.cleanup(attempt)
+    assert {"cleanup-0", "cleanup-1"} <= remote.started

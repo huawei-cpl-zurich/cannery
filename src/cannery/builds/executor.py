@@ -8,7 +8,7 @@ from collections.abc import Callable
 from pathlib import Path
 from uuid import UUID
 
-from cannery.artifacts import ArtifactRef, ArtifactStore, digest
+from cannery.artifacts import ArtifactRef, ArtifactStore, digest, verified
 from cannery.builds.ascendc import AscendCAdapter, BuildError
 from cannery.builds.remote import CplRemote, RemoteFailure, RemotePending, durable_write
 from cannery.builds.sandbox import WorkerProfile, job_script
@@ -156,7 +156,7 @@ class BuildExecutor:
         admission = self.remote.journal / "admission.json"
         if admission.exists():
             reference = ArtifactRef.model_validate_json(admission.read_bytes())
-            self.artifacts.get(reference)
+            verified(self.artifacts.get(reference), reference)
             return reference
         fence()
         self.operation("prepare", job_script(self.profile, attempt, "prepare"))
@@ -175,8 +175,11 @@ class BuildExecutor:
         fence()
         try:
             handle = self.operation("compile", job_script(self.profile, attempt, "compile"))
-        except RemoteFailure:
-            raise ExecutionFailure("compile_failed") from None
+        except RemoteFailure as error:
+            raise ExecutionFailure(
+                "worker_unavailable" if error.exit_code == 125 else "compile_failed",
+                retryable=error.exit_code == 125,
+            ) from None
         # Trusted host supervision hashes the complete output after container exit.
         logs = self.remote.call("logs", handle, "--tail", "2")
         checksum = logs.get("content", "").strip()
@@ -232,7 +235,9 @@ class BuildExecutor:
     def cleanup(self, attempt: UUID) -> None:
         context = self.remote.journal / "context.json"
         if context.exists():
-            self.profile = WorkerProfile.model_validate(json.loads(context.read_bytes())["profile"])
+            self.profile = WorkerProfile.model_validate_json(
+                json.dumps(json.loads(context.read_bytes())["profile"])
+            )
             self.remote.target = self.profile.target
         # Do not race a retained operation after a controller/transport interruption.
         for marker in self.remote.journal.glob("*.dispatch"):
@@ -245,4 +250,12 @@ class BuildExecutor:
                 result = self.remote.call("cancel", handle)
             if result.get("state") not in {"completed", "failed", "cancelled"}:
                 raise RemotePending("Retained operation has not terminated")
-        self.operation("cleanup", job_script(self.profile, attempt, "cleanup"))
+        index_path = self.remote.journal / "cleanup-index"
+        index = int(index_path.read_text()) if index_path.exists() else 0
+        try:
+            self.operation(f"cleanup-{index}", job_script(self.profile, attempt, "cleanup"))
+        except RemoteFailure:
+            durable_write(index_path, str(index + 1).encode())
+            raise RemotePending(
+                "Cleanup failed; retain ownership and retry after recovery"
+            ) from None
