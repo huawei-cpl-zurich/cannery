@@ -147,7 +147,7 @@ else:
         marker.flush()
         os.fsync(marker.fileno())
     args += ['--group-add', str(config['device_group']), '--ulimit', 'memlock=-1:-1',
-             '--env', 'ASCEND_RT_VISIBLE_DEVICES=' + str(config['npu']),
+             '--env', 'ASCEND_RT_VISIBLE_DEVICES=0',
              '--env', 'ASCEND_VISIBLE_DEVICES=' + str(config['npu'])]
     for path in [f"/dev/davinci{config['npu']}", '/dev/davinci_manager',
                  '/dev/hisi_hdc', '/dev/ummu/tid']:
