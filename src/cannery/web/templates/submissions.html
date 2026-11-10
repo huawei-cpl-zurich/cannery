@@ -3,15 +3,19 @@
 <h1>{{ title }}</h1>
 {% if specs is defined %}
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{% if example_available %}<p><a href="/submit-implementation?example=helloworld">Use hello-world toy submission</a>.
+This is an M2 source-intake fixture with host tests; NPU build and validation are pending.</p>
+{% elif example_namespace %}<p><a href="/register-kernel?example=helloworld">Register the hello-world spec</a>
+to try its toy submission.</p>{% endif %}
 {% if specs %}
 <form method="post" action="/submit-implementation">
   <p><label>Frozen specification <select name="spec_id" required>{% for spec in specs %}
-    <option value="{{ spec.id }}">{{ spec.label }}</option>{% endfor %}</select></label></p>
+    <option value="{{ spec.id }}"{% if example and example.spec_id == spec.id %} selected{% endif %}>{{ spec.label }}</option>{% endfor %}</select></label></p>
   <p><label>Device <select name="device"><option>a5</option><option>a3</option></select></label></p>
-  <p><label>Language <select name="language"><option>catlass</option><option>ascendc</option></select></label></p>
-  <p><label>Git repository URL <input name="url" type="url" required></label></p>
-  <p><label>Full commit SHA <input name="commit" required></label></p>
-  <p><label>Source directory <input name="path" required></label></p>
+  <p><label>Language <select name="language"><option>catlass</option><option{% if example and example.language == 'ascendc' %} selected{% endif %}>ascendc</option></select></label></p>
+  <p><label>Git repository URL <input name="url" type="url" required value="{{ example.url if example else '' }}"></label></p>
+  <p><label>Full commit SHA <input name="commit" required value="{{ example.commit if example else '' }}"></label></p>
+  <p><label>Source directory <input name="path" required value="{{ example.path if example else '' }}"></label></p>
   <p><label>Shared dependency paths (space separated) <input name="dependencies"></label></p>
   <button type="submit">Submit implementation</button>
 </form>

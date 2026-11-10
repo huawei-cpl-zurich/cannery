@@ -16,12 +16,14 @@
 {% else %}
 <p>Register a specification in namespace <strong>{{ namespace }}</strong> from a pinned Git commit.</p>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
+{% if example_available %}<p><a href="/register-kernel?example=helloworld">Use hello-world example</a>
+from the public GitHub repository. Its URL must be in your operator's allowlist.</p>{% endif %}
 <form method="post" action="/register-kernel">
-  <p><label>Git repository URL <input name="url" type="url" required maxlength="2048"></label></p>
-  <p><label>Full commit SHA <input name="commit" required pattern="[0-9a-fA-F]{40}|[0-9a-fA-F]{64}"></label></p>
-  <p><label>Source directory <input name="path" required placeholder="specs/identity/"></label></p>
+  <p><label>Git repository URL <input name="url" type="url" required maxlength="2048" value="{{ example.url if example else '' }}"></label></p>
+  <p><label>Full commit SHA <input name="commit" required pattern="[0-9a-fA-F]{40}|[0-9a-fA-F]{64}" value="{{ example.commit if example else '' }}"></label></p>
+  <p><label>Source directory <input name="path" required placeholder="spec" value="{{ example.path if example else '' }}"></label></p>
   <p><label>Shared dependency paths (separated by spaces) <input name="dependencies"></label></p>
-  <p><label>Expected kernel name (optional) <input name="name"></label></p>
+  <p><label>Expected kernel name (optional) <input name="name" value="{{ example.name if example else '' }}"></label></p>
   <button type="submit">Register specification</button>
 </form>
 {% endif %}

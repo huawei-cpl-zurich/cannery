@@ -14,6 +14,7 @@ from starlette.concurrency import run_in_threadpool
 from cannery.registry.api import RegistrationRequest, identity, job_info, submit
 from cannery.registry.registrations import Registration
 from cannery.settings import Settings
+from cannery.web.examples import NAMESPACE, REGISTRATION
 
 
 def install_registration(
@@ -37,8 +38,15 @@ def install_registration(
 
     @app.get("/register-kernel", response_class=HTMLResponse, include_in_schema=False)
     def form(request: Request) -> HTMLResponse:
-        identity(settings)
-        return render(request)
+        namespace = identity(settings)
+        available = namespace == NAMESPACE
+        return render(
+            request,
+            example_available=available,
+            example=REGISTRATION
+            if available and request.query_params.get("example") == "helloworld"
+            else {},
+        )
 
     @app.post("/register-kernel", include_in_schema=False, response_model=None)
     async def register(request: Request) -> HTMLResponse | RedirectResponse:
