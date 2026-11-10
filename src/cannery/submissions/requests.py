@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from cannery.git_intake import GitSource
 from cannery.registry.models import SpecVersion
 from cannery.submissions.models import Candidate, RequestedTarget, Submission, SubmissionConflict
+from cannery.submissions.state import IntakeState
 
 
 def new_submission(
@@ -25,6 +26,7 @@ def new_submission(
         )
         session.add(request)
         session.flush()
+        session.add(IntakeState(id=request.id))
         return request.id
 
 
@@ -44,4 +46,5 @@ def revise_submission(engine: Engine, namespace: str, parent_id: UUID, commit: s
         )
         session.add(request)
         session.flush()
+        session.add(IntakeState(id=request.id))
         return request.id
