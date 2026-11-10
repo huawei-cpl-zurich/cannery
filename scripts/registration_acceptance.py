@@ -134,6 +134,17 @@ def main():
         one, two = submit(revisions["v1"]), submit(revisions["v1"])
         assert outcome(one)["spec"]["id"] == outcome(two)["spec"]["id"] == first["id"]
         print("Duplicate jobs froze one immutable version", flush=True)
+        # A real Git network outage fails one attempt, then recovers the same job.
+        compose("stop", "git-fixture")
+        recovering = submit(revisions["v1"])
+        for _ in range(40):
+            if request(f"/api/v1/registrations/{recovering}")[1]["error"] is not None:
+                break
+            time.sleep(0.5)
+        else:
+            raise AssertionError("Git outage did not exercise a failed attempt")
+        compose("start", "git-fixture")
+        outcome(recovering)
         # Admin-only semantic version update; version1 remains byte-for-byte stable.
         assert outcome(submit(revisions["v2"]), "failed")["error"] == "spec_conflict"
         key = json.loads(
