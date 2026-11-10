@@ -1,20 +1,26 @@
 # CANNery — PoC Roadmap
 
+Current M3 contract: [private binary admission](binary-admission.md). The active
+backend is self-hosted; no actual Hugging Face service is required. Ascend C A5
+`unary-f32-v1` is the initial supported binary contract. CATLASS, A3, full
+correctness/benchmarks and publication below remain proposed later milestones.
+
+
 Status: M0–M2 source workflows implemented; M3 onward planned · 2026-11-10
 
-Build a working user journey with thin end-to-end slices. **No non-Git source intake.** Every implementation commit contains a supported build contract, and binary artifacts are produced by our workers before validation and published from private HF storage. **Initial adapters: Ascend C and CATLASS DSL only**; Triton-Ascend and PyPTO are future phases.
+Build a working user journey with thin end-to-end slices. **No non-Git source intake.** Every implementation commit contains a supported build contract, and binary artifacts are produced by our workers before validation and published from private artifact storage. **Initial adapters: Ascend C and CATLASS DSL only**; Triton-Ascend and PyPTO are future phases.
 
 ## Milestone overview
 
 | Stage | Deliverable | Acceptance |
 |---|---|---|
-| M0 — foundations | FastAPI/Web/CLI, PostgreSQL, Redis, Git intake skeleton, fake HF storage and CPU CI | Local services boot and health checks pass |
+| M0 — foundations | FastAPI/Web/CLI, PostgreSQL, Redis, Git intake skeleton, fake artifact storage and CPU CI | Local services boot and health checks pass |
 | M1 — frozen PyTorch spec | External Git fetch and **selected-subtree Git snapshots**; verified commit/path, schema, content hash; register spec-v1 | Register spec from Git; spec is immutable and rebuildable from internal snapshot commits |
 | M2 — Git submissions | Save source binding, `submit --repo --commit --path`, `revise --commit`, user status/ETA; strict `submission.yaml` | Commit-only revision preserves prior submission and inherits frozen target |
-| M3 — Ascend C binary admission | Adapter preflight/compile/package, A5 device build and loader, binary pushed to private HF staging | Pinned Git commit produces actual loadable A5 binary with hash/build metadata |
+| M3 — Ascend C binary admission | Adapter preflight/compile/package, A5 device build and loader, binary pushed to private content-addressed staging | Pinned Git commit produces actual loadable A5 binary with hash/build metadata |
 | M4 — CATLASS binary admission | Ahead-of-publication CATLASS compilation and specialization/export proof; adapter and ABI metadata | Pinned CATLASS commit builds a loadable compatible artifact; unsupported specializations rejected |
 | M5 — correctness & benchmark | Frozen PyTorch oracle; tolerance profile validation; synchronized µs timings; geomean | Bad binary fails; passing binary has complete per-case evidence |
-| M6 — published leaderboard and consumption | Explicit publish, global vs personal submissions, device/tolerance filtering, HF pinned loader integration | Published validated binary can be downloaded and loaded; single best-so-far step history with language-colored record points |
+| M6 — published leaderboard and consumption | Explicit publish, global vs personal submissions, device/tolerance filtering, private pinned loader integration | Published validated binary can be downloaded and loaded; single best-so-far step history with language-colored record points |
 | M7 — A3 and hardening | A3 variants, separate rankings, sandbox/secret/backup and failure recovery | Repeat user journey on A3 and A5 without cross-device comparisons |
 
 M3–M5 may be developed in parallel after M2. Testing the CATLASS exported-binary path should start as an **early technical spike** even before M3 completes. Work in `cannery-kernels` occurs alongside platform work.
@@ -23,7 +29,7 @@ M3–M5 may be developed in parallel after M2. Testing the CATLASS exported-bina
 
 - FastAPI API + server-rendered HTMX website, Typer CLI, SQLAlchemy/Alembic, PostgreSQL, Redis/Dramatiq, Docker Compose.
 - CI: Ruff, Pytest, typing and packaging, with local bare Git fixture repositories.
-- Private Hugging Face binary-artifact adapter and fake testing store.
+- Private artifact service binary-artifact adapter and fake testing store.
 - Reserve data volumes for PostgreSQL and **internal per-kernel Git snapshot repositories**.
 - User navigation: Global Best, My Submissions, Register Kernel, Submit Implementation; worker/storage administration is role gated.
 
@@ -58,7 +64,7 @@ See [submission usage and CPU failure acceptance](submissions.md).
 - Select A5 worker with matching CANN compiler/runtime.
 - Implement typed `AscendCAdapter.preflight/build/package`.
 - Produce shared-library or runtime-compatible binary plus generated loader metadata, hashes and ABI/toolchain fingerprint.
-- Upload the generated artifact to private HF staging; PostgreSQL indexes pinned HF revision.
+- Upload the generated artifact to private content-addressed staging; PostgreSQL indexes pinned artifact hash.
 - Verify that a minimal `cannery-kernels` runtime can load/call this binary on A5.
 - Compilation logs and failures are private job records.
 
@@ -80,34 +86,34 @@ See [submission usage and CPU failure acceptance](submissions.md).
 - Run PyTorch reference and built binary against frozen mandatory cases; persist case-level errors and tolerance-profile outcomes.
 - Pin reference baseline, capture warmup and synchronized NPU timings in **µs**, compute speedup per case and geometric mean across all cases.
 - Version spec/suite/device/tolerance/environment cohorts. Evaluate untested tolerance profiles on demand.
-- Save run logs/raw timing and generated binaries in private HF; outcomes and searchable aggregates in PostgreSQL.
+- Save run logs/raw timing and generated binaries in private artifact; outcomes and searchable aggregates in PostgreSQL.
 
 **Acceptance:** failed correctness never produces a globally eligible performance score; valid submissions are privately inspectable.
 
 ## M6 — Release, leaderboard and consumer
 
 - Explicit publication by owner/authorized reviewer after successful build + correctness + full benchmarks.
-- Package existing generated binary into HF `kernel` release layout; pin exact HF repo commit and hashes.
+- Package the validated binary into the private release layout; pin exact content hashes.
 - CANNery CLI resolves compatible binaries by device/runtime; no user source copy in HF.
-- The extended Hugging Face `get_kernel` interface loads and calls a published A5 binary.
+- The private runtime loader loads and calls a published A5 binary.
 - Global Best filters only published, valid, tolerance-eligible results; My Submissions retains failures and private work.
 - One **overall best-so-far** step line per device, markers colored by record-setting language.
 
-**Acceptance:** end user finds, selects and loads binary from private HF using pinned revision, while source inspection points to external Git SHA/path.
+**Acceptance:** end user finds, selects and loads binary from private artifact using pinned revision, while source inspection points to external Git SHA/path.
 
 ## M7 — A3 and operations
 
 - Add A3 worker and matching Ascend C/CATLASS binary variants; completely separate A3 rankings/history.
 - Apply device leases, idempotent dispatch, heartbeat recovery, restricted Git intake, sandbox execution, credential scoping and artifact cleanup.
-- Back up **PostgreSQL and internal Git snapshot repositories**, test restore, reconcile orphaned HF staging artifacts.
+- Back up **PostgreSQL and internal Git snapshot repositories**, test restore, reconcile orphaned private staging artifacts.
 - Role gate workers/storage/Git snapshot admin UI; expose only user-relevant submission ETA.
 
 ## Parallel `cannery-kernels` deliverables
 
-1. Confirm Hugging Face kernel repository/metadata and ABI packaging contract for CANN backend.
+1. Confirm private package metadata and ABI contract for CANN backend.
 2. Load one pinned Ascend C binary in A5; record exact loader and trust behavior.
 3. Add CATLASS exported binary/adapter loading; handle supported specialization keys.
-4. Provide A3/A5 and CANN/torch_npu/Python compatibility matching and pinned HF revisions.
+4. Provide A3/A5 and CANN/torch_npu/Python compatibility matching and pinned artifact hashes.
 5. Contribute relevant Ascend support upstream when independently reusable.
 
 ## Beyond PoC
@@ -116,9 +122,9 @@ Triton-Ascend and PyPTO become additional **versioned build adapters** with inde
 
 ## Infrastructure and risks
 
-Starting resources: control-plane VM 8 vCPU/32 GB with PostgreSQL + Redis; persistent **Git snapshot volume initially budgeted at 20–50 GB**, adjusted to measured imported file sizes and separate DB/temporary storage; one A3 and one A5 worker host with sufficient CANN/toolchain scratch; private HF binary/results storage ~100–500 GB. Scale mirror, artifacts and worker disk based on measured source and compiled artifact sizes.
+Starting resources: control-plane VM 8 vCPU/32 GB with PostgreSQL + Redis; persistent **Git snapshot volume initially budgeted at 20–50 GB**, adjusted to measured imported file sizes and separate DB/temporary storage; one A3 and one A5 worker host with sufficient CANN/toolchain scratch; private binary/results storage ~100–500 GB. Scale mirror, artifacts and worker disk based on measured source and compiled artifact sizes.
 
-Main risks: CATLASS specialized JIT binaries may not be generally exportable, Ascend C callable ABI packaging, arbitrary Git source security, correct device timing, and public/private HF permissions. Gate milestones on real compile→store→load→execute demonstrations rather than mocked binaries.
+Main risks: CATLASS specialized JIT binaries may not be generally exportable, Ascend C callable ABI packaging, arbitrary Git source security, correct device timing, and private artifact permissions. Gate milestones on real compile→store→load→execute demonstrations rather than mocked binaries.
 
 See [System Architecture](architecture.md), [Implementation](implementation.md) and [User Story](user-story.md).
 

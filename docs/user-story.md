@@ -1,10 +1,16 @@
 # CANNery — End-to-End User Story
 
+Current M3 contract: [private binary admission](binary-admission.md). The active
+backend is self-hosted; no actual Hugging Face service is required. Ascend C A5
+`unary-f32-v1` is the initial supported binary contract. CATLASS, A3, full
+correctness/benchmarks and publication below remain proposed later milestones.
+
+
 Status: proposed PoC journey · 2026-11-09
 
-All **user-authored source code stays in Git**. The platform only accepts pinned Git commits and source paths. During admission it creates a reproducible **generated binary** with one of the supported language adapters. The binary and benchmark evidence are stored in CANNery's private Hugging Face repositories; source never goes into a HF source archive.
+All **user-authored source code stays in Git**. The platform only accepts pinned Git commits and source paths. During admission it creates a reproducible **generated binary** with one of the supported language adapters. The binary and benchmark evidence are stored in CANNery's self-hosted private artifact backend; source never goes into a artifact source archive.
 
-Commands and REST responses below are **proposed CANNery APIs**, not implemented endpoints. Hugging Face APIs are marked separately.
+Commands and REST responses below are **proposed CANNery APIs**, not implemented endpoints. Private artifact APIs are documented separately.
 
 ## 1. Alice registers a new operator using the website
 
@@ -162,7 +168,7 @@ CANNery's scheduler matches the submission to a worker with A5 + CATLASS build/e
 
 1. The CATLASS build adapter compiles the declared supported specializations into **binary candidate(s)**. For frameworks whose compilation is JIT-dependent, the adapter must proactively compile/export each supported specialization using the real framework API. If it cannot export a loadable artifact, the submission cannot be advertised as a prebuilt binary.
 2. A build manifest captures source Git SHA/tree digest, adapter version, CANN, torch_npu, target device, ABI, supported shapes/dtypes and output checksums.
-3. The generated binary and build report go to **private HF staging**. CANNery stores only their pinned URI/hash in PostgreSQL.
+3. The generated binary and build report go to **private content-addressed staging**. CANNery stores only their pinned URI/hash in PostgreSQL.
 4. Correctness runs the frozen PyTorch reference and compiled candidate on the same mandatory cases. It evaluates stored tolerance profiles. Failures retain private logs and never get a valid public performance score.
 5. After correctness passes, the worker times kernel executions on A5, reports median/p95 in **µs** by case and geomean of baseline-to-candidate speedups.
 
@@ -198,7 +204,7 @@ External Git --fetch--> Per-kernel internal Git snapshots (canonical retained so
                                |
              +-----------------+------------------+
              v                                    v
- Private Hugging Face                       PostgreSQL
+ Private artifact service                       PostgreSQL
  generated binary + build and raw logs      source refs + states + scores
 ```
 
@@ -232,7 +238,7 @@ She selects a validated revision and chooses **Publish**, or:
 cannery publish team/fa_xxx --submission sub_002
 ```
 
-CANNery packages the previously generated, validated binaries into a **Hugging Face kernels-compatible release**, pins its exact HF repository commit and registers that release in PostgreSQL. No new source upload takes place. If its build cannot be represented by a compatible loadable artifact, publication must fail with a packaging diagnostic rather than publishing an unusable entry.
+CANNery packages the previously generated, validated binaries into a **private runtime-compatible release**, pins its content hash and registers that release in PostgreSQL. No new source upload takes place. If its build cannot be represented by a compatible loadable artifact, publication must fail with a packaging diagnostic rather than publishing an unusable entry.
 
 The global leaderboard includes this implementation only when it is validated **and explicitly published**, and only for tolerance profiles it has passed. A5 and A3 results have separate histories; each history contains one overall best-so-far step line with record points colored by language.
 
@@ -241,7 +247,7 @@ The global leaderboard includes this implementation only when it is validated **
 Bob visits **Global Best**, selects `team/fa_xxx`, **A5** and his tolerance. He sees a published validated release, case-level µs, geomean speedup, errors, and two distinct links:
 
 - **Source (Git):** the external repository + full SHA + path (or authorized internal snapshot repository URL). No source files are served from Hugging Face.
-- **Binary (Hugging Face):** the exact release repository and immutable HF revision with validated binary and callable packaging.
+- **Binary (private storage):** the exact private blob reference and immutable artifact hash with validated binary and callable packaging.
 
 CLI examples:
 
@@ -251,24 +257,14 @@ cannery source team/fa_xxx --revision r002
 cannery get team/fa_xxx --device a5 --lang catlass
 ```
 
-### Load and run through Hugging Face
+### Load the private admitted package
 
-Hugging Face provides the existing `get_kernel` Python interface, but an end-to-end A3/A5 CANN binary loader/build packaging remains work for our `cannery-kernels` fork. Target example:
-
-```python
-from kernels import get_kernel
-
-release = get_kernel(
-    "cannery-org/fa-xxx-a5-release",
-    revision="<immutable-hf-commit-sha>",
-    backend="cann",
-    trust_remote_code=["cannery-org/fa-xxx-a5-release"],
-)
-
-out = release.forward(q, k, v)
-```
-
-The HF repository ID/revision and `forward` export are proposed packaging conventions. The upstream `get_kernel` API exists; executing these particular Ascend binaries requires our added loader support. Only allowlist trusted release repositories under the organization's code-execution policy. Reference: https://huggingface.co/docs/kernels/en/api/kernels.
+M3 provides `cannery_kernels.load_cannery_package(package_bytes, pinned_sha256,
+trust_remote_code=True)` from the standalone `cannery-runtime` distribution.
+The caller obtains bytes through authorized private storage, verifies the pinned
+reference and explicitly trusts execution of the native binary. Its initial
+`forward(x)` contract is float32 unary A5; general release resolution and
+publication remain future work. No actual Hugging Face endpoint is used.
 
 ### Inspect the original source
 
@@ -279,7 +275,7 @@ git checkout fedcba9876543210fedcba9876543210fedcba98
 ls implementations/fa_xxx/
 ```
 
-Source access is subject to Git permissions, while binary download is subject to HF repository permissions. The admitted source tree is retained as an internal Git snapshot commit if the developer's remote disappears. Private Git source access need not be granted to binary consumers.
+Source access is subject to Git permissions, while binary download is subject to private storage permissions. The admitted source tree is retained as an internal Git snapshot commit if the developer's remote disappears. Private Git source access need not be granted to binary consumers.
 
 ## 7. PoC completion conditions
 
@@ -288,7 +284,7 @@ Source access is subject to Git permissions, while binary download is subject to
 - Frozen PyTorch YAML/reference/cases live in internal Git snapshots and PostgreSQL digests, never mutable in place.
 - Each accepted implementation declares a supported, reproducible build plan; build runs automatically at admission.
 - PoC adapters support **Ascend C** and **CATLASS DSL** only; Triton and PyPTO are future integrations.
-- Generated binary plus build/environment manifest is stored as a pinned private HF artifact.
+- Generated binary plus build/environment manifest is stored as a pinned private content-addressed artifact.
 - Validation and benchmark use built candidate, not an author's arbitrary supplied binary.
 - Per-case latency, accuracy and geomean are recorded; provisional/failed results do not enter Global Best.
-- A consumer can follow Git to inspect source and use the pinned Hugging Face `kernels` interface to load a published A3/A5 binary once loader support is implemented.
+- A consumer can follow Git to inspect source and use the pinned private `cannery-runtime` interface to load a published A3/A5 binary once loader support is implemented.

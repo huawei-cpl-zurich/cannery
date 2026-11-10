@@ -1,0 +1,58 @@
+# Trusted coordinator only. Author code runs in separate restricted remote jobs.
+services:
+  builder:
+    build:
+      context: .
+      target: builder
+      args:
+        OPERATOR_UID: ${CANNERY_OPERATOR_UID:?Set the operator UID}
+        OPERATOR_GID: ${CANNERY_OPERATOR_GID:?Set the operator GID}
+    group_add:
+      - ${CANNERY_DOCKER_GID:?Set the Docker socket group ID}
+    environment:
+      HOME: ${CANNERY_OPERATOR_HOME:?Set the operator home}
+      CANNERY_DATABASE_URL: postgresql+psycopg://cannery:cannery@postgres:5432/cannery
+      CANNERY_REDIS_URL: redis://redis:6379/0
+      CANNERY_ARTIFACT_BACKEND: private
+      CANNERY_ARTIFACT_URL: http://artifacts:8000
+      CANNERY_ARTIFACT_READ_TOKEN: ${CANNERY_ARTIFACT_READ_TOKEN:?Set a private read token}
+      CANNERY_ARTIFACT_WRITE_TOKEN: ${CANNERY_ARTIFACT_WRITE_TOKEN:?Set a private write token}
+      CANNERY_SNAPSHOT_ROOT: /var/lib/cannery/snapshots
+      CANNERY_BUILD_PROFILE: /etc/cannery/worker.json
+      CANNERY_BUILD_LOADER_WHEEL: ${CANNERY_LOADER_WHEEL:?Set the pinned loader wheel path}
+      CANNERY_BUILD_LOADER_SHA256: ${CANNERY_BUILD_LOADER_SHA256:?Pin the loader wheel digest}
+      CANNERY_BUILD_CONTROL_ROOT: /var/lib/cannery/builds
+      CANNERY_BUILD_REMOTE_CLIENT: ${CANNERY_REMOTE_SKILL_ROOT:?Set the installed remote-access skill path}/scripts/cpl-remote
+      CANNERY_BUILD_REMOTE_REGISTRY: ${CANNERY_OPERATOR_HOME}/.config/cpl/remotes.yaml
+    volumes:
+      - git-snapshots:/var/lib/cannery/snapshots:ro
+      - build-control:/var/lib/cannery/builds
+      - ${CANNERY_WORKER_PROFILE:?Set a trusted worker profile}:/etc/cannery/worker.json:ro
+      - ${CANNERY_LOADER_WHEEL}:${CANNERY_LOADER_WHEEL}:ro
+      - ${CANNERY_REMOTE_SKILL_ROOT}:${CANNERY_REMOTE_SKILL_ROOT}:ro
+      - ${CANNERY_OPERATOR_HOME}/.config/cpl:${CANNERY_OPERATOR_HOME}/.config/cpl:ro
+      - ${CANNERY_OPERATOR_HOME}/.local/state/cpl/remote-access:${CANNERY_OPERATOR_HOME}/.local/state/cpl/remote-access:ro
+      - ${CANNERY_OPERATOR_HOME}/.ssh:${CANNERY_OPERATOR_HOME}/.ssh:ro
+      - ${CANNERY_OPERATOR_HOME}/.ssh:/home/cannery/.ssh:ro
+      - /var/run/docker.sock:/var/run/docker.sock
+    depends_on:
+      build-control-init:
+        condition: service_completed_successfully
+      migrate:
+        condition: service_completed_successfully
+      artifacts:
+        condition: service_started
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: 2
+    pids_limit: 128
+  build-control-init:
+    build:
+      context: .
+      target: app
+    user: "0:0"
+    volumes:
+      - build-control:/var/lib/cannery/builds
+    command: ["chown", "${CANNERY_OPERATOR_UID}:${CANNERY_OPERATOR_GID}", "/var/lib/cannery/builds"]
+volumes:
+  build-control:

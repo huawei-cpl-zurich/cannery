@@ -4,7 +4,9 @@
 {% if specs is defined %}
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 {% if example_available %}<p><a href="/submit-implementation?example=helloworld">Use hello-world toy submission</a>.
-This is an M2 source-intake fixture with host tests; NPU build and validation are pending.</p>
+This is an M2 source-intake fixture with host tests.</p>
+<p><a href="/submit-implementation?example=helloworld-native">Use native A5 add-one submission</a>.
+Requires a configured A5 builder; binary admission leaves correctness and benchmarks pending.</p>
 {% elif example_namespace %}<p><a href="/register-kernel?example=helloworld">Register the hello-world spec</a>
 to try its toy submission.</p>{% endif %}
 {% if specs %}

@@ -21,7 +21,7 @@ from cannery.submissions.api import (
     revise,
     submit,
 )
-from cannery.web.examples import NAMESPACE, SPEC_LABEL, SUBMISSION
+from cannery.web.examples import NAMESPACE, NATIVE_SUBMISSION, SPEC_LABEL, SUBMISSION
 
 
 async def form_data(request: Request, allowed: set[str]) -> dict[str, str]:
@@ -100,14 +100,16 @@ def install_submission_web(
     def form(request: Request) -> HTMLResponse:
         choices = specs()
         sample = next((spec for spec in choices if spec["label"] == SPEC_LABEL), None)
-        selected = sample is not None and request.query_params.get("example") == "helloworld"
+        example_id = request.query_params.get("example")
+        selected = sample is not None and example_id in {"helloworld", "helloworld-native"}
+        values = NATIVE_SUBMISSION if example_id == "helloworld-native" else SUBMISSION
         return render(
             request,
             "Submit Implementation",
             specs=choices,
             example_available=sample is not None,
             example_namespace=settings.dev_namespace == NAMESPACE,
-            example={**SUBMISSION, "spec_id": sample["id"]} if selected and sample else {},
+            example={**values, "spec_id": sample["id"]} if selected and sample else {},
         )
 
     @app.post("/submit-implementation", include_in_schema=False, response_model=None)

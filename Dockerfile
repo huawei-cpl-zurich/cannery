@@ -14,3 +14,12 @@ CMD ["uvicorn", "cannery.api:create_app", "--factory", "--host", "0.0.0.0", "--p
 FROM app AS registrar
 COPY --from=docker:29-cli /usr/local/bin/docker /usr/bin/docker
 USER root
+
+FROM registrar AS builder
+ARG OPERATOR_UID=10001
+ARG OPERATOR_GID=10001
+RUN usermod --uid "$OPERATOR_UID" cannery && groupmod --gid "$OPERATOR_GID" cannery
+RUN apt-get update && apt-get install -y --no-install-recommends openssh-client rsync \
+    && rm -rf /var/lib/apt/lists/*
+USER cannery
+CMD ["python", "-m", "cannery.builds.coordinator"]

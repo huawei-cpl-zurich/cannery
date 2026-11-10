@@ -1,6 +1,7 @@
 from html.parser import HTMLParser
 from uuid import UUID
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 from test_registration_api import client as client
@@ -13,7 +14,7 @@ from cannery.registry.registrations import Registration
 from cannery.settings import Settings
 
 REPO = "https://github.com/huawei-cpl-zurich/helloworld-kernel.git"
-SHA = "99a8a1a9fd0d1b471e6520bafbbb1020fcdc198d"
+SHA = "d838f3fd8e4715388df240c0653b197d7a093c49"
 
 
 class Fields(HTMLParser):
@@ -76,7 +77,14 @@ def test_public_registration_preset_queues_verified_source(client):
         assert job.namespace == "team" and job.expected_name == "helloworld"
 
 
-def test_toy_preset_selects_required_spec_and_target(client, monkeypatch):
+@pytest.mark.parametrize(
+    "preset,path",
+    [
+        ("helloworld", "candidates/helloworld"),
+        ("helloworld-native", "candidates/helloworld_ascendc"),
+    ],
+)
+def test_toy_preset_selects_required_spec_and_target(client, monkeypatch, preset, path):
     engine = client.app.state.test_engine
     with Session(engine) as session, session.begin():
         key = kernel_key("team", "helloworld")
@@ -97,14 +105,14 @@ def test_toy_preset_selects_required_spec_and_target(client, monkeypatch):
     seed(client)  # A newer unrelated spec would otherwise be the default option.
     monkeypatch.setattr("cannery.submissions.api.publish_submission", lambda *a: None)
     assert Fields(client.get("/submit-implementation").text).values["url"] == ""
-    fields = Fields(client.get("/submit-implementation?example=helloworld").text).values
+    fields = Fields(client.get(f"/submit-implementation?example={preset}").text).values
     assert fields == {
         "spec_id": expected,
         "device": "a5",
         "language": "ascendc",
         "url": REPO,
         "commit": SHA,
-        "path": "candidates/helloworld",
+        "path": path,
         "dependencies": "",
     }
     response = client.post(
