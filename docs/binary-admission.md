@@ -95,10 +95,11 @@ SHA, after registering `team/helloworld@spec-v1` and allowlisting the exact Git 
 cannery submit team/helloworld --spec-version 1 --device a5 --lang ascendc \
   --repo https://github.com/huawei-cpl-zurich/helloworld-kernel.git \
   --commit FULL_COMMIT_SHA --path candidates/helloworld_ascendc \
-  --url http://localhost:8095 --wait-build
+  --url http://localhost:8095 --wait-build --timeout 900
 ```
 
-`--wait-build` also waits for intake. Inspect build status in the API, CLI or web
+`--wait-build` also waits for intake. A CLI timeout leaves the admission job
+running; inspect the printed submission ID rather than submitting a duplicate. Inspect build status in the API, CLI or web
 submission view. Logs and worker coordinates stay in private evidence, not public
 status. There are at most three attempts and a 30-minute admission deadline.
 Transport uncertainty resumes the same retained handle; it never blindly repeats
