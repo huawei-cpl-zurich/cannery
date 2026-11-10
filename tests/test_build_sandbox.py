@@ -124,7 +124,15 @@ def test_stale_device_owner_requires_explicit_cleanup(tmp_path, monkeypatch):
 
 
 def test_profile_cannot_mount_broad_or_relative_paths(tmp_path):
-    for path in ("/", "/home", "../secret", "/root/../secret", "/var/lib,extra"):
+    for path in (
+        "/",
+        "/home",
+        "../secret",
+        "/root/../secret",
+        "/var/lib,extra",
+        "/var/run/docker.sock",
+        "/home/user/.ssh",
+    ):
         with pytest.raises(ValueError):
             profile(tmp_path).model_validate(
                 profile(tmp_path).model_dump() | {"readonly_mounts": [path]}

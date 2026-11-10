@@ -31,6 +31,18 @@ class WorkerProfile(StrictModel):
                 or any(c in value for c in "\n\r\x00,")
             ):
                 raise ValueError("Expected a specific absolute worker path")
+        if any(
+            not value.startswith(
+                (
+                    "/usr/local/Ascend/driver",
+                    "/usr/local/dcmi",
+                    "/usr/lib64/",
+                    "/usr/lib/aarch64-linux-gnu/",
+                )
+            )
+            for value in self.readonly_mounts
+        ):
+            raise ValueError("Only driver and runtime library mounts are supported")
         if set(self.fingerprint) != {"machine", "python", "torch", "torch_npu", "cann", "soc"}:
             raise ValueError("Incomplete runtime fingerprint")
         if (
