@@ -1,12 +1,15 @@
 """Database-only fixtures for the disposable Compose acceptance project."""
 
 import json
+from datetime import UTC, datetime
 from pathlib import Path
+from uuid import uuid4
 
 from sqlalchemy import delete, select, update
 from sqlalchemy.exc import DBAPIError
 from sqlalchemy.orm import Session
 
+from cannery.builds.state import BuildAttempt, BuildResult
 from cannery.database import make_engine
 from cannery.git_intake import GitSource
 from cannery.git_intake.snapshots import SelectedTree, SnapshotStore
@@ -119,6 +122,34 @@ try:
             assert getattr(error.orig, "sqlstate", None) == "P0001"
         else:
             raise AssertionError("PostgreSQL accepted immutable submission mutation")
-    print("PASS: PostgreSQL frozen spec, submission and candidate mutation guards")
+    attempt = uuid4()
+    with Session(engine) as session, session.begin():
+        session.add(
+            BuildAttempt(id=attempt, candidate_id=request, number=1, started_at=datetime.now(UTC))
+        )
+        session.flush()
+        session.add(
+            BuildResult(
+                id=attempt,
+                status="failed",
+                artifact=None,
+                error="fixture",
+                finished_at=datetime.now(UTC),
+            )
+        )
+    for statement in (
+        update(BuildAttempt).where(BuildAttempt.id == attempt).values(number=99),
+        delete(BuildAttempt).where(BuildAttempt.id == attempt),
+        update(BuildResult).where(BuildResult.id == attempt).values(error="changed"),
+        delete(BuildResult).where(BuildResult.id == attempt),
+    ):
+        try:
+            with engine.begin() as connection:
+                connection.execute(statement)
+        except DBAPIError as error:
+            assert getattr(error.orig, "sqlstate", None) == "P0001"
+        else:
+            raise AssertionError("PostgreSQL accepted immutable build mutation")
+    print("PASS: PostgreSQL spec, submission, candidate and build mutation guards")
 finally:
     engine.dispose()
