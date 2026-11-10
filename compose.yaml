@@ -4,6 +4,8 @@ x-app: &app
     CANNERY_DATABASE_URL: postgresql+psycopg://cannery:cannery@postgres:5432/cannery
     CANNERY_REDIS_URL: redis://redis:6379/0
     CANNERY_DEV_IDENTITY_ENABLED: ${CANNERY_DEV_IDENTITY_ENABLED:-false}
+    CANNERY_DEV_NAMESPACE: ${CANNERY_DEV_NAMESPACE:-team}
+    CANNERY_DEV_ROLE: ${CANNERY_DEV_ROLE:-user}
   depends_on:
     postgres:
       condition: service_healthy

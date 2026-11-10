@@ -54,6 +54,7 @@ class GitSource(BaseModel):
     @field_validator("path")
     @classmethod
     def source_path(cls, value: str) -> str:
+        value = value[:-1] if value.endswith("/") else value
         return value if value == "." else relative_source_path(value)
 
     @field_validator("dependencies")

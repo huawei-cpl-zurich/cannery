@@ -4,6 +4,8 @@ from typing import Literal
 from pydantic import SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from cannery.registry.manifest import Name
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CANNERY_", extra="ignore")
@@ -22,3 +24,5 @@ class Settings(BaseSettings):
     artifact_root: Path = Path("/tmp/cannery-artifacts")
     hf_repository: str | None = None
     hf_token: SecretStr | None = None
+
+    dev_namespace: Name = "team"
