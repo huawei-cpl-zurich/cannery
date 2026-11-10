@@ -80,3 +80,12 @@ Git intake currently supplies types and local bare-repository fixtures only. M1
 must implement restricted remote access, safe selected-file export, synthetic
 snapshot lineage and upstream/internal SHA mapping; it must not retain upstream
 history or rely on a temporary checkout after admission.
+
+## M1 registration
+
+See [registration](registration.md) for the strict manifest/environment lock, operator
+HTTPS repository rules, local development identity, CLI/API and web flow.
+Run `python scripts/registration_acceptance.py` for private Git, two registrars,
+actual CPU PyTorch diagnostics, immutable versions and service/lease recovery.
+The test-only Compose override contains synthetic credentials and cleans its own
+project resources. NPU validation is outside M1.
