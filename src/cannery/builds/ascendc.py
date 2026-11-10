@@ -45,8 +45,8 @@ class AscendCAdapter:
         wrapper = f'''#include <cstdint>
 #include "{entry}"
 extern "C" void cannery_launch(void* stream, void* input, void* output, uint64_t count) {{
-    {symbol}<<<1, nullptr, stream>>>(static_cast<GM_ADDR>(input),
-                                   static_cast<GM_ADDR>(output), count);
+    {symbol}<<<1, nullptr, stream>>>((GM_ADDR)input,
+                                   (GM_ADDR)output, count);
 }}
 '''
         optimization = (
