@@ -18,10 +18,13 @@ Authors register a frozen, versioned, Git-backed PyTorch specification and subse
 
 ## Status
 
-M0 foundations and M1 Git-backed specification registration are implemented.
+M0 foundations, M1 Git-backed specification registration and M2 source submissions
+and commit-only revisions are implemented.
 The API, CLI and web form register immutable versions through durable workers,
 retain selected Git snapshots and run isolated CPU reference diagnostics. See
 [registration](docs/registration.md) for source format, configuration and usage,
-and [local development](docs/development.md) for setup and validation.
-Implementation submission, NPU builds, numerical validation and publication are
-later milestones. CPU diagnostics do not independently prove correctness.
+[submissions and revisions](docs/submissions.md) for M2 usage, and
+[local development](docs/development.md) for setup and validation.
+Retained submissions await build with unknown ETA. NPU builds, numerical
+validation and publication are later milestones. CPU diagnostics do not independently
+prove correctness.

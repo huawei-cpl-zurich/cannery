@@ -1,6 +1,6 @@
 # CANNery — Implementation and Library Plan
 
-Status: revised PoC implementation contract · 2026-11-09
+Status: M0–M2 source workflows implemented; build/evaluation/publication below are planned · 2026-11-10
 
 See [Architecture](architecture.md) for services, data movement and storage; [User Story](user-story.md) for UI, CLI, REST and Hugging Face consumption; [Design](design.md) for product requirements; [Roadmap](roadmap.md) for milestones.
 
@@ -102,6 +102,10 @@ Git intake: authorize remote and namespace, validate full SHA and path, fetch th
 A changed PyTorch spec YAML/reference/cases creates `spec-v2`; it does not mutate an accepted `spec-v1`. An implementation-only SHA change creates a new submission inheriting frozen fields. Optionally deduplicate identical built binary hashes while retaining separate submission records.
 
 ## 6. Build contract and adapters
+
+M2 validates and freezes the typed source declaration. Its successful jobs remain
+`awaiting_build`; the compiler/execution interfaces below are the M3/M4 contract.
+See [implemented submission usage](submissions.md).
 
 The checked-in implementation `submission.yaml` declares source files, entrypoint, target and an allowlisted adapter with typed options. Example:
 

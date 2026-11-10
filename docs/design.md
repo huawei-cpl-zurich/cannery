@@ -88,7 +88,7 @@ spec:
     default_atol: 0.0001
 ```
 
-The registration API resolves and verifies all referenced paths, freezes the YAML, code, cases and dependency lock, computes a SHA-256 content digest, records its source provenance, and publishes the immutable spec bundle in artifact storage. A source Git ref must resolve to a **full commit SHA**; tags and branches are not stable identities.
+The registration API resolves and verifies all referenced paths, freezes the YAML, code, cases and dependency lock, computes a SHA-256 content digest, records its source provenance, and retains selected spec files in protected internal Git snapshots with PostgreSQL metadata. A source Git ref must resolve to a **full commit SHA**; tags and branches are not stable identities.
 
 Suggested CLI:
 ```bash
@@ -114,19 +114,27 @@ implementation:
   device: a5
   language: catlass
   entrypoint: kernel.py:forward
+  build:
+    adapter: catlass
+    inputs: [kernel.py]
+    artifact: fa_xxx_a5
+    options: {optimization: release}
 validation:
   requested_rtol: 0.001
   requested_atol: 0.0001
 ```
 
 ```bash
-cannery submit team/fa_xxx ./candidate/
 cannery submit team/fa_xxx --spec-version 1 --device a5 --lang catlass \
   --repo https://git.example.org/team/kernels.git \
   --commit <full-sha> --path attention/fa_xxx/
 ```
 
 On intake, resolve Git refs server-side, import the selected folder and declared build dependencies as a new immutable internal Git snapshot commit, verify the selected tree and manifest, then schedule a **mandatory build**. Record Git URL, resolved full commit, path, tree digest, build adapter, author and implementation lineage. **No local source uploads or HF source archives.** Generated binary candidates and build evidence are uploaded to HF storage.
+
+M2 implements source retention and immutable revisions, ending at `awaiting_build`
+with unknown ETA. The binary build, numerical evaluation and publication workflows
+below describe later milestones. See [implemented submission usage](submissions.md).
 
 ## 6. Correctness, tolerance and scoring
 

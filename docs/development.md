@@ -1,8 +1,9 @@
 # Local development and CPU acceptance
 
 M0 supplies the CPU control-plane foundation; M1 adds Git-backed immutable
-specification registration and isolated CPU reference diagnostics. Implementation
-submission, NPU builds, benchmarks and publication remain later milestones.
+specification registration and isolated CPU reference diagnostics. M2 adds Git-only
+source submissions and commit-only revisions. NPU builds, benchmarks and publication
+remain later milestones.
 No source-upload endpoint exists. No A3/A5 access is needed for these checks.
 
 ## Install and check
@@ -58,7 +59,7 @@ cleans its containers, volumes and generated images afterward. It tests migratio
 web/CLI, fake artifacts, two workers, duplicate deliveries, lost dispatch, Redis
 outage and PostgreSQL pause/recovery. Ordinary `docker compose down` preserves
 local data; add `--volumes` only when intentionally discarding that project's data.
-CPU CI runs this script, CPU reference and registration acceptance, and Python
+CPU CI runs this script, CPU reference/registration/submission acceptance, and Python
 3.12/3.13 lint, typing, tests and wheel installation checks. Tests also simulate HF retry delays, cache contention and
 corruption without live credentials, using a disposable SDK process with a deadline.
 
@@ -90,3 +91,12 @@ Run `python scripts/registration_acceptance.py` for private Git, two registrars,
 actual CPU PyTorch diagnostics, immutable versions and service/lease recovery.
 The test-only Compose override contains synthetic credentials and cleans its own
 project resources. NPU validation is outside M1.
+
+## M2 submissions
+
+See [submissions and revisions](submissions.md) for strict `submission.yaml`,
+CLI/API/web usage and the inherited source binding.
+`python scripts/submission_acceptance.py` runs the actual user journey with two
+registrars, private Git, outages, stale leases and retained-source recovery.
+Intake success is `awaiting_build` with unknown ETA; no candidate code executes.
+Rebuild local services with your existing operator environment to use merged changes.
