@@ -50,7 +50,11 @@ def send(
                     result["status"] == "awaiting_build"
                     or result.get("stages", {}).get("intake") == "complete"
                 ):
-                    typer.echo("Source retained; awaiting build observation. ETA unknown.")
+                    typer.echo(
+                        "Source retained; awaiting build. ETA unknown."
+                        if result["status"] == "awaiting_build"
+                        else "Source retained; intake complete. ETA unknown."
+                    )
                     return
                 if wait_build and result["status"] == "awaiting_validation":
                     typer.echo("Binary admitted; awaiting validation. ETA unknown.")
@@ -92,7 +96,7 @@ def install_cli(app: typer.Typer) -> None:
         wait_build: bool = False,
         timeout: Annotated[float, typer.Option(min=1, max=900)] = 180,
     ) -> None:
-        """Submit Git source for a frozen kernel; --wait waits only for source intake."""
+        """Submit Git source; --wait observes intake, --wait-build observes binary admission."""
         try:
             TypeAdapter(KernelPath).validate_python(kernel)
             namespace, name = kernel.split("/")
