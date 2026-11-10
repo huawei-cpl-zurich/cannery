@@ -28,6 +28,7 @@ services:
       - ${CANNERY_OPERATOR_HOME}/.config/cpl:${CANNERY_OPERATOR_HOME}/.config/cpl:ro
       - ${CANNERY_OPERATOR_HOME}/.local/state/cpl/remote-access:${CANNERY_OPERATOR_HOME}/.local/state/cpl/remote-access:ro
       - ${CANNERY_OPERATOR_HOME}/.ssh:${CANNERY_OPERATOR_HOME}/.ssh:ro
+      - ${CANNERY_OPERATOR_HOME}/.ssh:/root/.ssh:ro
       - /var/run/docker.sock:/var/run/docker.sock
     depends_on:
       migrate:
