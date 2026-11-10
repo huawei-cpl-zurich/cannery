@@ -47,6 +47,7 @@ def run(
     timeout: float = 30,
     max_output: int = 16 * 1024 * 1024,
     git_limits: bool = True,
+    check: bool = True,
 ) -> bytes:
     nested = os.environ.get("CANNERY_ATTEMPT_GROUP") == str(os.getpgrp())
     with TemporaryFile() as output, TemporaryFile() as errors:
@@ -74,7 +75,7 @@ def run(
                 pass
             process.communicate()
             raise IntakeError("Intake process interrupted or deadline exceeded") from None
-        if process.returncode != 0 or output.tell() > max_output:
+        if (check and process.returncode != 0) or output.tell() > max_output:
             try:
                 os.killpg(os.getpgrp() if nested else process.pid, signal.SIGKILL)
             except ProcessLookupError:
