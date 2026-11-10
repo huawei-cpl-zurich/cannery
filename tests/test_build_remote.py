@@ -111,3 +111,22 @@ def test_unavailable_preflight_does_not_create_ambiguous_dispatch_marker(tmp_pat
     with pytest.raises(RemotePending, match="capabilities"):
         remote.operation("compile", b"print(1)", workspace="/work", runtime="cann")
     assert not (tmp_path / "compile.dispatch").exists()
+
+
+def test_async_transfer_backend_is_rejected_before_any_dispatch(tmp_path):
+    remote = FakeCpl(
+        tmp_path,
+        [
+            {
+                "state": "available",
+                "backend": "remote-agent",
+                "capabilities": dict.fromkeys(
+                    ["run", "observe", "upload", "download", "cancel"], True
+                ),
+            }
+        ],
+    )
+    remote._available = False
+    with pytest.raises(ValueError, match="SSH"):
+        remote.transfer("upload", "local", "/remote")
+    assert [call[0] for call in remote.calls] == ["capabilities"]

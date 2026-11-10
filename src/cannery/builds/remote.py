@@ -1,4 +1,4 @@
-"""Retained CPL operations with durable dispatch fences and bounded observation."""
+"""Retained CPL SSH jobs and resumable synchronous SSH file transfers for M3."""
 
 import json
 import os
@@ -83,6 +83,8 @@ class CplRemote:
             for name in ("run", "observe", "upload", "download", "cancel")
         ):
             raise RemotePending("Required remote capabilities unavailable")
+        if capabilities.get("backend") != "ssh":
+            raise ValueError("M3 requires the validated SSH worker transport")
         if self.call("preflight", self.target).get("state") != "completed":
             raise RemotePending("Remote preflight unavailable")
         self._available = True
@@ -157,6 +159,7 @@ class CplRemote:
         raise RemotePending("Retained operation is not terminal")
 
     def transfer(self, direction: str, source: str, destination: str) -> None:
+        """Resume the same synchronous rsync route; async transfer backends are rejected."""
         if direction not in {"upload", "download"}:
             raise ValueError("Invalid transfer direction")
         self.preflight()
