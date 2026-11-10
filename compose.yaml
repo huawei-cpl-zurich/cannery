@@ -43,7 +43,7 @@ services:
     volumes:
       - git-snapshots:/var/lib/cannery/snapshots
       - /var/run/docker.sock:/var/run/docker.sock
-    command: ["dramatiq", "cannery.registration_worker", "--processes", "1", "--threads", "1"]
+    command: ["dramatiq", "cannery.registration_worker", "cannery.submission_worker", "--processes", "1", "--threads", "1"]
   postgres:
     image: postgres:17
     environment:
