@@ -1,5 +1,7 @@
 x-app: &app
-  build: .
+  build:
+    context: .
+    target: app
   environment:
     CANNERY_DATABASE_URL: postgresql+psycopg://cannery:cannery@postgres:5432/cannery
     CANNERY_REDIS_URL: redis://redis:6379/0
@@ -15,6 +17,31 @@ x-runtime: &runtime
     migrate:
       condition: service_completed_successfully
 services:
+  reference:
+    build:
+      context: .
+      dockerfile: Dockerfile.smoke
+    command: ["true"]
+  registrar:
+    <<: *runtime
+    build:
+      context: .
+      target: registrar
+    environment:
+      CANNERY_DATABASE_URL: postgresql+psycopg://cannery:cannery@postgres:5432/cannery
+      CANNERY_REDIS_URL: redis://redis:6379/0
+      CANNERY_GIT_REMOTES: ${CANNERY_GIT_REMOTES:-[]}
+      CANNERY_SNAPSHOT_ROOT: /var/lib/cannery/snapshots
+      CANNERY_SMOKE_IMAGE: ${COMPOSE_PROJECT_NAME}-reference
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      reference:
+        condition: service_completed_successfully
+    volumes:
+      - git-snapshots:/var/lib/cannery/snapshots
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: ["dramatiq", "cannery.registration_worker", "--processes", "1", "--threads", "1"]
   postgres:
     image: postgres:17
     environment:

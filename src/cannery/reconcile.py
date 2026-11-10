@@ -8,6 +8,8 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from cannery.database import make_engine
 from cannery.jobs import reconcile_probes
+from cannery.registry.dispatch import publish_registration
+from cannery.registry.registrations import due_registrations
 from cannery.worker import probe, settings
 
 
@@ -18,8 +20,10 @@ def main() -> None:
             try:
                 for key in reconcile_probes(engine):
                     probe.send(key)
+                for key in due_registrations(engine):
+                    publish_registration(settings.redis_url.get_secret_value(), key)
             except (SQLAlchemyError, RedisError):
-                logging.warning("Probe reconciliation unavailable; retrying in 5 seconds")
+                logging.warning("Job reconciliation unavailable; retrying in 5 seconds")
             time.sleep(5)
     finally:
         engine.dispose()
