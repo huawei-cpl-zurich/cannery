@@ -17,6 +17,7 @@ class WorkerProfile(StrictModel):
     npu: int = Field(ge=0, le=63)
     device_group: int = Field(ge=0)
     readonly_mounts: tuple[str, ...]
+    transport_devices: tuple[str, ...] = ()
     fingerprint: dict[str, str]
     compiler: str = Field(min_length=1, max_length=4096)
 
@@ -31,6 +32,13 @@ class WorkerProfile(StrictModel):
                 or any(c in value for c in "\n\r\x00,")
             ):
                 raise ValueError("Expected a specific absolute worker path")
+        import re
+
+        if any(
+            not re.fullmatch(r"/dev/uburma/udmac[0-9]+d[0-9]+e[0-9]+", value)
+            for value in self.transport_devices
+        ):
+            raise ValueError("Unsupported Unified Bus transport device")
         driver_roots = ("/usr/local/Ascend/driver", "/usr/local/dcmi")
         allowed_prefixes = tuple(value + "/" for value in driver_roots) + (
             "/usr/lib64/",
@@ -154,9 +162,13 @@ else:
         os.fsync(marker.fileno())
     args += ['--group-add', str(config['device_group']), '--ulimit', 'memlock=-1:-1',
              '--env', 'ASCEND_RT_VISIBLE_DEVICES=0',
+             '--env', 'CANNERY_PHYSICAL_DEVICE=' + str(config['npu']),
+             '--tmpfs', '/ascend:rw,noexec,nosuid,nodev,size=32m,mode=1777',
              '--env', 'ASCEND_VISIBLE_DEVICES=' + str(config['npu'])]
     for path in [f"/dev/davinci{config['npu']}", '/dev/davinci_manager',
                  '/dev/hisi_hdc', '/dev/ummu/tid']:
+        args += ['--device', path]
+    for path in config['transport_devices']:
         args += ['--device', path]
     for path in config['readonly_mounts']:
         args += ['--mount', f'type=bind,src={path},dst={path},readonly']
@@ -203,7 +215,7 @@ shutil.copyfile(work / 'kernel.so', '/output/kernel.so')
 """
 
 RUNTIME = r"""
-import hashlib, json, pathlib, subprocess, sys
+import ctypes, hashlib, json, os, pathlib, subprocess, sys
 wheels = list(pathlib.Path('/input').glob('*.whl'))
 assert len(wheels) == 1
 subprocess.run([sys.executable, '-m', 'pip', 'install', '--no-index', '--no-deps',
@@ -212,6 +224,13 @@ sys.path.insert(0, '/tmp/loader')
 import torch, torch_npu
 from cannery_kernels import load_cannery_package
 assert torch.npu.device_count() == 1, 'runtime device mask failed'
+acl = ctypes.CDLL(os.environ['ASCEND_HOME_PATH'] + '/lib64/libascendcl.so')
+get_physical = getattr(acl, 'aclrtGetPhyDevIdByUserDevId', acl.aclrtGetPhyDevIdByLogicDevId)
+get_physical.argtypes = [ctypes.c_int32, ctypes.POINTER(ctypes.c_int32)]
+get_physical.restype = ctypes.c_int
+physical = ctypes.c_int32(-1)
+assert get_physical(0, ctypes.byref(physical)) == 0
+assert physical.value == int(os.environ['CANNERY_PHYSICAL_DEVICE']), 'physical device mismatch'
 torch.npu.set_device(0)
 package = pathlib.Path('/input/admitted.tar').read_bytes()
 reference = json.loads(pathlib.Path('/input/artifact.json').read_text())
