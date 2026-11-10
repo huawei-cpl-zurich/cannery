@@ -13,7 +13,7 @@ class IntakeError(ValueError):
 
 
 def clean_environment() -> dict[str, str]:
-    return {
+    env = {
         "PATH": "/usr/bin:/bin",
         "LANG": "C.UTF-8",
         "HOME": "/nonexistent",
@@ -22,6 +22,20 @@ def clean_environment() -> dict[str, str]:
         "GIT_TERMINAL_PROMPT": "0",
         "GIT_ALLOW_PROTOCOL": "https",
     }
+    if os.environ.get("CANNERY_ATTEMPT_GROUP") == str(os.getpgrp()):
+        env["CANNERY_ATTEMPT_GROUP"] = str(os.getpgrp())
+    return env
+
+
+def attempt_budget(seconds: int = 140) -> None:
+    """Called only inside a fresh supervised attempt session, never in the API."""
+    if not 1 <= seconds <= 140:
+        raise IntakeError("Invalid attempt deadline")
+    if os.getpid() != os.getpgrp():
+        raise IntakeError("Attempt must run in its own process session")
+    os.environ["CANNERY_ATTEMPT_GROUP"] = str(os.getpgrp())
+    signal.signal(signal.SIGALRM, lambda *_: os.killpg(os.getpgrp(), signal.SIGKILL))
+    signal.alarm(seconds)
 
 
 def run(
@@ -33,6 +47,7 @@ def run(
     timeout: float = 30,
     max_output: int = 16 * 1024 * 1024,
 ) -> bytes:
+    nested = os.environ.get("CANNERY_ATTEMPT_GROUP") == str(os.getpgrp())
     with TemporaryFile() as output, TemporaryFile() as errors:
         process = subprocess.Popen(
             [sys.executable, "-m", "cannery.git_intake.limits", *argv],
@@ -41,25 +56,31 @@ def run(
             stdin=subprocess.PIPE,
             stdout=output,
             stderr=errors,
-            start_new_session=True,
+            start_new_session=not nested,
         )
         try:
             process.communicate(data, timeout=timeout)
         except BaseException:
             try:
-                os.killpg(process.pid, signal.SIGKILL)
+                os.killpg(os.getpgrp() if nested else process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
             process.communicate()
             raise IntakeError("Intake process interrupted or deadline exceeded") from None
         if process.returncode != 0 or output.tell() > max_output:
+            if nested:
+                os.killpg(os.getpgrp(), signal.SIGKILL)
             raise IntakeError("Intake process failed or exceeded output budget")
         output.seek(0)
         return output.read()
 
 
 def git(
-    repository: Path, *args: str, data: bytes | None = None, env: dict[str, str] | None = None
+    repository: Path,
+    *args: str,
+    data: bytes | None = None,
+    env: dict[str, str] | None = None,
+    max_output: int = 16 * 1024 * 1024,
 ) -> bytes:
     return run(
         [
@@ -81,4 +102,5 @@ def git(
         ],
         data=data,
         env=env,
+        max_output=max_output,
     )

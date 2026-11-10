@@ -27,33 +27,51 @@ class SelectedTree:
 
 def safe_path(path: str) -> str:
     relative_source_path(path)
+    if len(path.encode()) > 4096 or any(len(part.encode()) > 255 for part in path.split("/")):
+        raise IntakeError("Selected path exceeds filesystem budget")
     if any(part.lower() == ".git" for part in path.split("/")):
         raise IntakeError("Git administration paths are forbidden")
     return path
 
 
 def read_tree(repository: Path, revision: str, paths: tuple[str, ...] = ()) -> SelectedTree:
-    records = git(repository, "ls-tree", "-r", "-z", "--full-tree", revision, "--", *paths)
+    records = git(repository, "ls-tree", "-r", "-l", "-z", "--full-tree", revision, "--", *paths)
     entries = [record for record in records.split(b"\0") if record]
     if not entries or len(entries) > MAX_FILES:
         raise IntakeError("Selected tree exceeds file-count budget or is empty")
-    files = {}
-    modes = {}
+    metadata = []
     total = 0
     for entry in entries:
-        metadata, raw_path = entry.split(b"\t", 1)
-        mode, kind, oid = metadata.decode("ascii").split()
+        raw_info, raw_path = entry.split(b"\t", 1)
+        mode, kind, oid, raw_size = raw_info.decode("ascii").split()
         try:
             name = safe_path(raw_path.decode("utf-8"))
         except (UnicodeError, ValueError):
             raise IntakeError("Selected tree contains unsafe paths") from None
         if kind != "blob" or mode not in ("100644", "100755"):
             raise IntakeError("Symlinks and submodules are unsupported")
-        size = int(git(repository, "cat-file", "-s", oid).strip())
-        total += size
+        total += int(raw_size)
         if total > MAX_BYTES:
             raise IntakeError("Selected tree exceeds byte budget")
-        data = git(repository, "cat-file", "blob", oid)
+        metadata.append((name, mode, oid, int(raw_size)))
+    blobs = git(
+        repository,
+        "cat-file",
+        "--batch",
+        data="".join(oid + "\n" for _, _, oid, _ in metadata).encode(),
+        max_output=MAX_BYTES + MAX_FILES * 128,
+    )
+    offset = 0
+    files, modes = {}, {}
+    for name, mode, oid, size in metadata:
+        header_end = blobs.index(b"\n", offset)
+        if blobs[offset:header_end] != f"{oid} blob {size}".encode():
+            raise IntakeError("Git batch object metadata mismatch")
+        offset = header_end + 1
+        data = blobs[offset : offset + size]
+        if len(data) != size or blobs[offset + size : offset + size + 1] != b"\n":
+            raise IntakeError("Git batch object is truncated")
+        offset += size + 1
         if data.startswith(b"version https://git-lfs.github.com/spec/v1"):
             raise IntakeError("Git LFS pointers are unsupported")
         files[name], modes[name] = data, mode
@@ -91,7 +109,8 @@ def kernel_lock(root: Path, key: str) -> Iterator[None]:
 
 
 class SnapshotStore:
-    def __init__(self, root: Path) -> None:
+    def __init__(self, root: Path, scratch: Path | None = None) -> None:
+        self.scratch = scratch
         self.root = root
         self.root.mkdir(parents=True, exist_ok=True)
 
@@ -122,6 +141,15 @@ class SnapshotStore:
         with kernel_lock(self.root, key):
             if not repository.exists():
                 git(repository, "init", "--bare", str(repository))
+            # All store writers hold kernel_lock. Recover only this store's
+            # exclusive ref namespace and loose-object temporary files.
+            stale = [
+                repository / "refs/heads/accepted.lock",
+                *repository.glob("refs/cannery/snapshots/*.lock"),
+                *repository.glob("objects/[0-9a-f][0-9a-f]/tmp_obj_*"),
+            ]
+            for path in stale:
+                path.unlink(missing_ok=True)
             refs = git(repository, "for-each-ref", "--format=%(refname) %(objectname)")
             existing = dict(line.split() for line in refs.decode().splitlines())
             if reference in existing:
@@ -134,19 +162,28 @@ class SnapshotStore:
                     GIT_AUTHOR_EMAIL="cannery@localhost",
                     GIT_COMMITTER_EMAIL="cannery@localhost",
                 )
-                with TemporaryDirectory(dir=self.root) as temporary:
+                with TemporaryDirectory(dir=self.scratch) as temporary:
                     env["GIT_INDEX_FILE"] = str(Path(temporary) / "index")
-                    records = []
+                    staged = []
                     for name, data in sorted(selected.files.items()):
-                        oid = git(repository, "hash-object", "-w", "--stdin", data=data).strip()
-                        records.append(
-                            selected.modes[name].encode()
-                            + b" "
-                            + oid
-                            + b"\t"
-                            + name.encode()
-                            + b"\0"
-                        )
+                        target = Path(temporary) / "files" / name
+                        target.parent.mkdir(parents=True, exist_ok=True)
+                        target.write_bytes(data)
+                        staged.append(str(target))
+                    hashes = git(
+                        repository,
+                        "hash-object",
+                        "-w",
+                        "--no-filters",
+                        "--stdin-paths",
+                        data=("\n".join(staged) + "\n").encode(),
+                    ).splitlines()
+                    if len(hashes) != len(staged):
+                        raise IntakeError("Git object batch is incomplete")
+                    records = [
+                        selected.modes[name].encode() + b" " + oid + b"\t" + name.encode() + b"\0"
+                        for name, oid in zip(sorted(selected.files), hashes, strict=True)
+                    ]
                     git(
                         repository,
                         "update-index",
