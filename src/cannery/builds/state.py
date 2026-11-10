@@ -42,6 +42,7 @@ class BuildResult(Base):
     id: Mapped[UUID] = mapped_column(ForeignKey("build_attempts.id"), primary_key=True)
     status: Mapped[str]
     artifact: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
+    evidence: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict)
     error: Mapped[str | None]
     finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
@@ -173,6 +174,7 @@ def finish_build(
     artifact: ArtifactRef | None = None,
     error: str | None = None,
     retryable: bool = False,
+    evidence: dict[str, Any] | None = None,
 ) -> bool:
     if (artifact is None) == (error is None):
         raise BuildError("Exactly one artifact or error is required")
@@ -189,6 +191,7 @@ def finish_build(
                 id=claim.attempt,
                 status="complete" if artifact else "failed",
                 artifact=artifact.model_dump(mode="json") if artifact else None,
+                evidence=evidence or {},
                 error=error,
                 finished_at=datetime.now(UTC),
             )
