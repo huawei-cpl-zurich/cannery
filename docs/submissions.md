@@ -164,3 +164,11 @@ arguments. Author inputs are materialized beneath `source/`, separately from
 the generated `launch.asc` and output library. It never interprets build inputs as commands or runs author build
 scripts. Compilation must occur in the dedicated device-less sandbox; returning
 a build plan alone does not prove compilation or device execution.
+
+
+`submit` and `revise` accept `--wait-build` to wait for binary admission once an
+M3 worker is configured. It implies `--wait`; source-only contracts fail promptly
+with an explanatory message. Ordinary `--wait` continues to mean intake completion,
+even when a build has already finished. `awaiting_validation` means a binary was
+admitted; correctness, benchmark and publication are still pending. API/web status
+includes build attempts and a pinned artifact digest without exposing worker routes.

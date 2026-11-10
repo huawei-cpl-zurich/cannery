@@ -21,15 +21,19 @@ to try its toy submission.</p>{% endif %}
 </form>
 {% else %}<p><a href="/register-kernel">Register a specification</a> before submitting an implementation.</p>{% endif %}
 {% elif job %}
-<section id="submission"{% if job.status in ['queued','intaking'] %}
+<section id="submission"{% if job.status in ['queued','intaking','build_queued','building'] %}
  hx-get="{{ request.url.path }}" hx-trigger="every 2s" hx-select="#submission" hx-swap="outerHTML"{% endif %}>
   <p>Submission <code>{{ job.id }}</code>: <strong>{{ job.status }}</strong>. ETA: Unknown.</p>
   <p>{{ job.kernel.namespace }}/{{ job.kernel.name }}@spec-v{{ job.spec_version }} · {{ job.target.device }} · {{ job.target.language }}</p>
   <p>Source: {{ job.source.url }} · <code>{{ job.source.commit }}</code> · {{ job.source.path }}</p>
   {% if job.parent_id %}<p>Revision of <a href="/submissions/{{ job.parent_id }}">{{ job.parent_id }}</a></p>{% endif %}
-  {% if job.error %}<p role="alert">Intake failed: {{ job.error }}.</p>{% endif %}
+  {% if job.error %}<p role="alert">{% if job.status == 'failed' %}Submission failed: {{ job.error }}.
+  {% else %}Previous attempt failed: {{ job.error }}. Retry pending.{% endif %}</p>{% endif %}
   {% if job.candidate %}
-    <p>Source retained. Build, correctness and benchmark are pending.</p>
+    {% if job.build %}
+    <p>Source retained. Build: {{ job.stages.build }}. Correctness and benchmark: {{ job.stages.correctness }}.</p>
+    {% if job.build.artifact %}<p>Binary SHA256: <code>{{ job.build.artifact.sha256 }}</code>. Awaiting validation.</p>{% endif %}
+    {% else %}<p>Source retained. Build, correctness and benchmark are pending.</p>{% endif %}
     <p>Content SHA256: <code>{{ job.candidate.content_sha256 }}</code></p>
     <form method="post" action="/submissions/{{ job.id }}/revisions">
       <label>New full commit SHA <input name="commit" required></label>
