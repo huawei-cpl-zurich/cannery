@@ -199,3 +199,23 @@ def test_cleanup_retries_only_after_terminal_failed_operation(setup_executor):
     assert executor.execute(candidate, attempt, lambda: None) == admitted
     executor.cleanup(attempt)
     assert {"cleanup-0", "cleanup-1"} <= remote.started
+
+
+def test_lease_loss_during_transfer_cannot_dispatch_next_remote_stage(setup_executor):
+    executor, candidate, remote, memory = setup_executor
+    lost = []
+    original = remote.transfer
+
+    def transfer(*args):
+        original(*args)
+        lost.append(True)
+
+    remote.transfer = transfer
+
+    def fence():
+        if lost:
+            raise RemotePending("stale lease")
+
+    with pytest.raises(RemotePending, match="stale lease"):
+        executor.execute(candidate, uuid4(), fence)
+    assert remote.started == {"prepare"}

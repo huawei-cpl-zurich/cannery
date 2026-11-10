@@ -97,8 +97,10 @@ class BuildExecutor:
     ) -> None:
         self.profile, self.remote, self.snapshots = profile, remote, snapshots
         self.artifacts, self.wheel, self.wheel_sha256 = artifacts, wheel, wheel_sha256
+        self.fence: Callable[[], None] = lambda: None
 
     def operation(self, name: str, script: bytes, *, npu: int | None = None) -> str:
+        self.fence()
         return self.remote.operation(
             name, script, workspace=self.profile.workspace, runtime=self.profile.runtime, npu=npu
         )
@@ -112,6 +114,7 @@ class BuildExecutor:
                     item.size, item.mode = len(value), 0o444
                     archive.addfile(item, io.BytesIO(value))
             destination = str(Path(self.profile.workspace) / attempt.hex / bundle.name)
+            self.fence()
             self.remote.transfer("upload", str(bundle), destination)
         self.operation(
             "unpack-" + label,
@@ -121,6 +124,7 @@ class BuildExecutor:
     def execute(
         self, candidate: Candidate, attempt: UUID, fence: Callable[[], None]
     ) -> ArtifactRef:
+        self.fence = fence
         binding = SnapshotBinding.model_validate(candidate.snapshot)
         files = self.snapshots.read(binding).files
         validated = validate_submission(files, binding.source.path)
