@@ -219,3 +219,27 @@ def test_lease_loss_during_transfer_cannot_dispatch_next_remote_stage(setup_exec
     with pytest.raises(RemotePending, match="stale lease"):
         executor.execute(candidate, uuid4(), fence)
     assert remote.started == {"prepare"}
+
+
+def test_runtime_bundle_replaces_readonly_shared_loader_without_changing_source(tmp_path):
+    from cannery.builds.executor import unpack_script
+
+    config, attempt = profile(tmp_path), uuid4()
+    root = tmp_path / attempt.hex
+    root.mkdir()
+    for label, content in [("source", b"pinned loader"), ("runtime", b"pinned loader")]:
+        bundle = root / (label + ".tar.gz")
+        with tarfile.open(bundle, "w:gz") as archive:
+            item = tarfile.TarInfo("loader.whl")
+            item.size = len(content)
+            archive.addfile(item, io.BytesIO(content))
+        exec(
+            compile(
+                unpack_script(config, attempt, label, digest(bundle.read_bytes())),
+                "<unpack>",
+                "exec",
+            ),
+            {},
+        )
+        assert (root / "input/loader.whl").read_bytes() == content
+        assert (root / "input/loader.whl").stat().st_mode & 0o777 == 0o444
