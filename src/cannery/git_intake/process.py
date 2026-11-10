@@ -75,8 +75,10 @@ def run(
             process.communicate()
             raise IntakeError("Intake process interrupted or deadline exceeded") from None
         if process.returncode != 0 or output.tell() > max_output:
-            if nested:
-                os.killpg(os.getpgrp(), signal.SIGKILL)
+            try:
+                os.killpg(os.getpgrp() if nested else process.pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
             raise IntakeError("Intake process failed or exceeded output budget")
         output.seek(0)
         return output.read()
