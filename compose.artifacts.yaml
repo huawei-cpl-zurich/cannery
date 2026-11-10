@@ -1,0 +1,23 @@
+# Opt-in private binary storage; no host port and no Hugging Face dependency.
+services:
+  artifacts:
+    build:
+      context: .
+      target: app
+    user: "10001:10001"
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    environment:
+      CANNERY_ARTIFACT_ROOT: /home/cannery/artifacts
+      CANNERY_ARTIFACT_READ_TOKEN: ${CANNERY_ARTIFACT_READ_TOKEN:?Set a private read token}
+      CANNERY_ARTIFACT_WRITE_TOKEN: ${CANNERY_ARTIFACT_WRITE_TOKEN:?Set a distinct private write token}
+    volumes:
+      - artifact-data:/home/cannery/artifacts
+    command: ["uvicorn", "cannery.artifacts.service:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--limit-concurrency", "8"]
+    restart: unless-stopped
+    mem_limit: 768m
+    cpus: 1
+    pids_limit: 64
+volumes:
+  artifact-data:
