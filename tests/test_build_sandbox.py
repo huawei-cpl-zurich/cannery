@@ -68,7 +68,7 @@ def setup(tmp_path, monkeypatch, fault=None):
             return SimpleNamespace(returncode=0, stdout=text)
         if args[:2] == ["docker", "run"]:
             assert kwargs["timeout"] == 180
-            (Path(config.workspace) / token.hex / "output/kernel.so").write_bytes(b"CPU simulation")
+            kwargs["stdout"].write(b"CPU simulation")
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr("subprocess.run", run)
@@ -87,6 +87,10 @@ def test_device_less_compile_has_no_network_secrets_or_host_home(tmp_path, monke
     assert "--read-only" in args and args[args.index("--log-driver") + 1] == "none"
     assert all("docker.sock" not in arg and "TOKEN" not in arg for arg in args)
     assert "--pull" in args and "never" in args
+    mounts = [args[i + 1] for i, arg in enumerate(args) if arg == "--mount"]
+    assert not any("dst=/output" in mount for mount in mounts)
+    assert all("readonly" in mount for mount in mounts)
+    assert "size=512m" in args[args.index("--tmpfs") + 1]
 
 
 @pytest.mark.parametrize(
