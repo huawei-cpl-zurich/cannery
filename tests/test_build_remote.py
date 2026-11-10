@@ -10,6 +10,7 @@ class FakeCpl(CplRemote):
     def __init__(self, root, replies):
         super().__init__(Path("/unused/scripts/cpl-remote"), root, "test-a5")
         self.replies, self.calls = replies, []
+        self._available = True
 
     def call(self, *args):
         self.calls.append(args)
@@ -102,3 +103,11 @@ sys.exit(75)
     monkeypatch.setenv("CANNERY_ARTIFACT_WRITE_TOKEN", "secret")
     remote = CplRemote(client, tmp_path / "journal", "test-a5")
     assert remote.call("observe", "remote:test-a5:job:123") == {"state": "failed", "exit": 75}
+
+
+def test_unavailable_preflight_does_not_create_ambiguous_dispatch_marker(tmp_path):
+    remote = FakeCpl(tmp_path, [{"state": "unavailable"}])
+    remote._available = False
+    with pytest.raises(RemotePending, match="capabilities"):
+        remote.operation("compile", b"print(1)", workspace="/work", runtime="cann")
+    assert not (tmp_path / "compile.dispatch").exists()

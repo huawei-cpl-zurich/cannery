@@ -37,6 +37,7 @@ def durable_write(path: Path, data: bytes) -> None:
 class CplRemote:
     def __init__(self, client: Path, journal: Path, target: str) -> None:
         self.client, self.journal, self.target = client, journal, target
+        self._available = False
         if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_-]*", target):
             raise ValueError("Invalid remote target")
         self.journal.mkdir(mode=0o700, parents=True, exist_ok=True)
@@ -73,6 +74,19 @@ class CplRemote:
         except (IntakeError, ValueError, OSError):
             raise RemotePending("Remote observation unavailable") from None
 
+    def preflight(self) -> None:
+        if self._available:
+            return
+        capabilities = self.call("capabilities", self.target)
+        if capabilities.get("state") != "available" or not all(
+            capabilities.get("capabilities", {}).get(name)
+            for name in ("run", "observe", "upload", "download", "cancel")
+        ):
+            raise RemotePending("Required remote capabilities unavailable")
+        if self.call("preflight", self.target).get("state") != "completed":
+            raise RemotePending("Remote preflight unavailable")
+        self._available = True
+
     def operation(
         self,
         name: str,
@@ -93,6 +107,7 @@ class CplRemote:
                 raise RemotePending(
                     "Dispatch receipt pending; never resubmit an ambiguous operation"
                 )
+            self.preflight()
             # Exclusive creation fences even racing/stale coordinators before side effects.
             try:
                 with marker.open("xb") as stream:
@@ -144,6 +159,7 @@ class CplRemote:
     def transfer(self, direction: str, source: str, destination: str) -> None:
         if direction not in {"upload", "download"}:
             raise ValueError("Invalid transfer direction")
+        self.preflight()
         result = self.call(direction, self.target, source, destination)
         if result.get("state") != "completed":
             raise RemotePending("Transfer incomplete; resume the same route before dependent work")
