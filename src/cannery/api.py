@@ -8,13 +8,16 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from cannery.artifacts.factory import make_store
+from cannery.database import make_engine
 from cannery.health import postgres_ready
+from cannery.registry.api import install_registry
 from cannery.settings import Settings
 from cannery.web import install_web
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     config = settings if settings is not None else Settings()
+    engine = make_engine(config)
     redis = Redis.from_url(
         config.redis_url.get_secret_value(),
         socket_connect_timeout=1,
@@ -26,6 +29,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         yield
         await redis.aclose()
+        engine.dispose()
 
     app = FastAPI(title=config.service_name, lifespan=lifespan)
 
@@ -49,5 +53,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     app.state.artifacts = make_store(config)
+    install_registry(app, config, engine)
     install_web(app, config)
     return app

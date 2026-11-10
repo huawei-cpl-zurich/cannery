@@ -5,6 +5,7 @@ from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from cannery.git_intake.transport import RemoteRule
+from cannery.registry.manifest import Name
 
 
 class Settings(BaseSettings):
@@ -25,6 +26,7 @@ class Settings(BaseSettings):
     hf_repository: str | None = None
     hf_token: SecretStr | None = None
 
+    dev_namespace: Name = "team"
     git_remotes: tuple[RemoteRule, ...] = ()
     snapshot_root: Path = Path("/var/lib/cannery/snapshots")
     intake_scratch: Path = Path("/tmp/cannery-intake")
