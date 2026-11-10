@@ -36,7 +36,7 @@ def test_scratch_path_is_owned_by_validated_handle():
     )
 
 
-@pytest.mark.parametrize("cleanup_fails", [False, True])
+@pytest.mark.parametrize("cleanup_fails", [False, True, "interrupted"])
 def test_registration_attempt_freezes_and_completes_atomically(
     monkeypatch, tmp_path, cleanup_fails
 ):
@@ -92,9 +92,21 @@ def test_registration_attempt_freezes_and_completes_atomically(
             }
         ).encode()
 
-    monkeypatch.setattr(worker, "run", admitted)
+    first_run = True
+
+    def interrupted(argv, **kwargs):
+        nonlocal first_run
+        if first_run:
+            first_run = False
+            calls.append(__import__("json").loads(kwargs["data"])["handle"])
+            from cannery.git_intake.process import IntakeError
+
+            raise IntakeError("client killed; creation outcome unknown")
+        return admitted(argv, **kwargs)
+
+    monkeypatch.setattr(worker, "run", interrupted if cleanup_fails == "interrupted" else admitted)
     original = worker.discard_scratch
-    if cleanup_fails:
+    if cleanup_fails is True:
         monkeypatch.setattr(worker, "discard_scratch", MagicMock(side_effect=OSError("temporary")))
     worker.register_spec.fn(str(key))
     if cleanup_fails:
@@ -103,7 +115,8 @@ def test_registration_attempt_freezes_and_completes_atomically(
         with Session(engine) as session, session.begin():
             row = session.get(Registration, key)
             assert row.status == "queued" and row.cleanup_handle == calls[0]
-            assert list(config.intake_scratch.iterdir())
+            if cleanup_fails is True:
+                assert list(config.intake_scratch.iterdir())
             row.due_at = datetime.now(UTC)
         monkeypatch.setattr(worker, "discard_scratch", original)
         worker.register_spec.fn(str(key))

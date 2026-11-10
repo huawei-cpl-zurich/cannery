@@ -89,6 +89,7 @@ def register_spec(identifier: str) -> None:
             "timeout": settings.smoke_timeout,
             "handle": handle,
         }
+        admitted = False
         try:
             raw = run(
                 [sys.executable, "-m", "cannery.registry.admit"],
@@ -96,11 +97,13 @@ def register_spec(identifier: str) -> None:
                 timeout=150,
                 git_limits=False,
             )
+            result = json.loads(raw)
+            admitted = "binding" in result and "evidence" in result
         finally:
             remove_smoke(handle)
             discard_scratch(settings.intake_scratch, handle)
-            clear_cleanup(engine, key, handle)
-        result = json.loads(raw)
+            if admitted:
+                clear_cleanup(engine, key, handle)
         if "error" in result:
             codes = {
                 "invalid_spec",
