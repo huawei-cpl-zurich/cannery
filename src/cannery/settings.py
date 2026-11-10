@@ -21,8 +21,11 @@ class Settings(BaseSettings):
     dev_identity_enabled: bool = False
     dev_role: Literal["user", "admin"] = "user"
 
-    artifact_backend: Literal["fake", "hf"] = "fake"
+    artifact_backend: Literal["fake", "hf", "private"] = "fake"
     artifact_root: Path = Path("/tmp/cannery-artifacts")
+    artifact_url: str = "http://artifacts:8000"
+    artifact_read_token: SecretStr | None = None
+    artifact_write_token: SecretStr | None = None
     hf_repository: str | None = None
     hf_token: SecretStr | None = None
 
