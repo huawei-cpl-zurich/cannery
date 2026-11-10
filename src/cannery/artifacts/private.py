@@ -9,7 +9,11 @@ MAX_BYTES = 64 * 1024 * 1024
 
 class PrivateArtifactStore:
     def __init__(
-        self, url: str, token: str, *, write_token: str | None = None,
+        self,
+        url: str,
+        token: str,
+        *,
+        write_token: str | None = None,
         transport: httpx.BaseTransport | None = None,
     ) -> None:
         self.url = url.rstrip("/")
@@ -19,13 +23,18 @@ class PrivateArtifactStore:
 
     def _request(self, method: str, checksum: str, data: bytes | None = None) -> bytes:
         try:
+            token = self.write_token if method == "PUT" else self.token
             with httpx.Client(
-                transport=self.transport, timeout=30, follow_redirects=False,
+                transport=self.transport,
+                timeout=30,
+                follow_redirects=False,
                 trust_env=False,
             ) as client:
                 with client.stream(
-                    method, f"{self.url}/v1/blobs/{checksum}", content=data,
-                    headers={"Authorization": f"Bearer {self.write_token if method == 'PUT' else self.token}"},
+                    method,
+                    f"{self.url}/v1/blobs/{checksum}",
+                    content=data,
+                    headers={"Authorization": f"Bearer {token}"},
                 ) as response:
                     response.raise_for_status()
                     result = bytearray()
@@ -35,7 +44,9 @@ class PrivateArtifactStore:
                             raise ArtifactError("Artifact exceeds size limit")
                     return bytes(result)
         except httpx.HTTPError:
-            raise ArtifactError("Private artifact service unavailable or request rejected") from None
+            raise ArtifactError(
+                "Private artifact service unavailable or request rejected"
+            ) from None
 
     def put(self, path: str, data: bytes) -> ArtifactRef:
         if not self.write_token:
@@ -44,7 +55,10 @@ class PrivateArtifactStore:
             raise ArtifactError("Artifact exceeds size limit")
         checksum = digest(data)
         reference = ArtifactRef(
-            repository="private", revision=checksum, path=path, sha256=checksum,
+            repository="private",
+            revision=checksum,
+            path=path,
+            sha256=checksum,
         )
         self._request("PUT", checksum, data)
         # Successful admission requires independent read-back, including after retries.

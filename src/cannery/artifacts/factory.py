@@ -12,9 +12,13 @@ def make_store(settings: Settings) -> ArtifactStore:
         from cannery.artifacts.private import PrivateArtifactStore
 
         return PrivateArtifactStore(
-            settings.artifact_url, settings.artifact_read_token.get_secret_value(),
-            write_token=(settings.artifact_write_token.get_secret_value()
-                         if settings.artifact_write_token else None),
+            settings.artifact_url,
+            settings.artifact_read_token.get_secret_value(),
+            write_token=(
+                settings.artifact_write_token.get_secret_value()
+                if settings.artifact_write_token
+                else None
+            ),
         )
     if not settings.hf_repository or not settings.hf_token:
         raise ArtifactError("HF backend requires a repository and explicit credentials")

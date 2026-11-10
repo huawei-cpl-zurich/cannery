@@ -1,5 +1,6 @@
 """Private binary blob service. No source ingestion or code execution."""
 
+import asyncio
 import hashlib
 import hmac
 import os
@@ -39,7 +40,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.put("/v1/blobs/{checksum}", status_code=204)
     async def put(
-        checksum: str, request: Request,
+        checksum: str,
+        request: Request,
         authorization: Annotated[str | None, Header()] = None,
     ) -> None:
         authorize(authorization, write=True)
@@ -50,12 +52,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 temporary = Path(stream.name)
                 size = 0
                 digest = hashlib.sha256()
-                async for chunk in request.stream():
-                    size += len(chunk)
-                    if size > MAX_BYTES:
-                        raise HTTPException(413, "Artifact exceeds size limit")
-                    digest.update(chunk)
-                    stream.write(chunk)
+                async with asyncio.timeout(30):
+                    async for chunk in request.stream():
+                        size += len(chunk)
+                        if size > MAX_BYTES:
+                            raise HTTPException(413, "Artifact exceeds size limit")
+                        digest.update(chunk)
+                        stream.write(chunk)
                 if digest.hexdigest() != checksum:
                     raise HTTPException(422, "Artifact checksum mismatch")
                 stream.flush()
@@ -70,6 +73,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 os.fsync(directory)
             finally:
                 os.close(directory)
+        except TimeoutError:
+            raise HTTPException(408, "Artifact upload deadline exceeded") from None
         except OSError:
             raise HTTPException(503, "Artifact storage unavailable") from None
         finally:
@@ -78,7 +83,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/v1/blobs/{checksum}")
     def get(
-        checksum: str, authorization: Annotated[str | None, Header()] = None,
+        checksum: str,
+        authorization: Annotated[str | None, Header()] = None,
     ) -> FileResponse:
         authorize(authorization)
         path = target(checksum)
