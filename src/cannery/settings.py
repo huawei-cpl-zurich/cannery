@@ -35,3 +35,10 @@ class Settings(BaseSettings):
     intake_scratch: Path = Path("/tmp/cannery-intake")
     smoke_image: str = "cannery-reference:local"
     smoke_timeout: float = Field(default=30, gt=0, le=60)
+
+    build_profile: Path | None = None
+    build_loader_wheel: Path | None = None
+    build_loader_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    build_control_root: Path = Path("/var/lib/cannery/build-control")
+    build_remote_client: Path = Path.home() / ".agents/skills/remote-access/scripts/cpl-remote"
+    build_remote_registry: Path = Path.home() / ".config/cpl/remotes.yaml"
