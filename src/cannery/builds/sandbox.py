@@ -73,6 +73,7 @@ def remove_containers():
 if phase == 'prepare':
     attempt.mkdir(mode=0o700, exist_ok=True)
     source.mkdir(mode=0o755, exist_ok=True)
+    source.chmod(0o755)
     output.mkdir(mode=0o777, exist_ok=True)
     output.chmod(0o777)
     raise SystemExit(0)
@@ -99,6 +100,7 @@ args = ['docker', 'run', '--rm', '--init', '--pull', 'never', '--name', names[ph
         else '/tmp:rw,noexec,nosuid,nodev,size=512m', '--shm-size', '512m', '--cpus', '4',
         '--memory', '8g' if phase == 'runtime' else '4g', '--pids-limit', '256',
         '--ulimit', 'fsize=67108864:67108864', '--env', 'HOME=/tmp',
+        '--env', 'ASCEND_PROCESS_LOG_PATH=/tmp/ascend/log',
         '--mount', f'type=bind,src={source},dst=/input,readonly',
         '--mount', f'type=bind,src={cann},dst={cann},readonly']
 for key in ['PATH', 'LD_LIBRARY_PATH', 'ASCEND_HOME_PATH',
@@ -175,6 +177,10 @@ finally:
 COMPILE = r"""
 import json, pathlib, shutil, subprocess
 plan = json.loads(pathlib.Path('/input/build.json').read_text())
+version = subprocess.run(['bisheng', '--version'], capture_output=True, text=True,
+                         check=True, timeout=10).stdout
+assert plan['compiler'] in version, 'compiler fingerprint mismatch'
+print(version[:4096], flush=True)
 work = pathlib.Path('/tmp/work')
 work.mkdir()
 (work / 'source').symlink_to('/input/tree/' + plan['path'], target_is_directory=True)

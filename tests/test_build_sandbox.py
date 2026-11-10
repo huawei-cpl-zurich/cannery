@@ -138,3 +138,17 @@ def test_profile_cannot_mount_broad_or_relative_paths(tmp_path):
             profile(tmp_path).model_validate(
                 profile(tmp_path).model_dump() | {"readonly_mounts": [path]}
             )
+
+
+def test_prepare_makes_input_readable_despite_private_supervisor_umask(tmp_path):
+    import os
+
+    config, token = profile(tmp_path / "worker"), uuid4()
+    previous = os.umask(0o077)
+    try:
+        execute(config, token, "prepare")
+    finally:
+        os.umask(previous)
+    root = Path(config.workspace) / token.hex
+    assert root.stat().st_mode & 0o777 == 0o700
+    assert (root / "input").stat().st_mode & 0o777 == 0o755
