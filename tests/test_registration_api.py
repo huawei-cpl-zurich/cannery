@@ -86,3 +86,69 @@ def test_database_outage_is_safe_and_retryable(client, monkeypatch):
     monkeypatch.setattr("cannery.registry.api.create_registration", unavailable)
     response = client.post("/api/v1/kernels", json=payload())
     assert response.status_code == 503 and "credential" not in response.text
+
+
+def test_web_registration_queues_and_polls_owned_status(client):
+    form = {
+        "url": "https://example.com/repo.git",
+        "commit": "a" * 40,
+        "path": "spec/",
+        "dependencies": "shared",
+        "name": "identity",
+    }
+    response = client.post(
+        "/register-kernel",
+        data=form,
+        headers={"Origin": "http://testserver"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 303
+    status = client.get(response.headers["location"])
+    assert status.status_code == 200 and 'hx-trigger="every 2s"' in status.text
+    assert "queued" in status.text
+    assert "cleanup_handle" not in status.text and "internal_snapshot" not in status.text
+
+
+def test_web_form_validation_and_same_origin(client):
+    assert '<form method="post"' in client.get("/register-kernel").text
+    assert client.post("/register-kernel", data={"path": "spec"}).status_code == 403
+    assert (
+        client.post(
+            "/register-kernel", data={}, headers={"Origin": "https://evil.example"}
+        ).status_code
+        == 403
+    )
+    response = client.post(
+        "/register-kernel",
+        data={"url": "<script>alert(1)</script>"},
+        headers={"Origin": "http://testserver"},
+    )
+    assert response.status_code == 200 and "Enter a Git repository" in response.text
+    assert "<script>alert" not in response.text
+    response = client.post(
+        "/register-kernel",
+        content="x=" + "a" * 17000,
+        headers={
+            "Origin": "http://testserver",
+            "Content-Type": "application/x-www-form-urlencoded",
+        },
+    )
+    assert response.status_code == 413
+
+
+def test_web_status_stops_polling_at_terminal_state_and_hides_foreign_job(client):
+    from uuid import UUID
+
+    from sqlalchemy.orm import Session
+
+    from cannery.registry.registrations import Registration
+
+    key = client.post("/api/v1/kernels", json=payload()).json()["id"]
+    with Session(client.app.state.test_engine) as session, session.begin():
+        job = session.get(Registration, UUID(key))
+        job.status, job.error = "failed", "reference_failed"
+    response = client.get(f"/registrations/{key}")
+    assert "reference_failed" in response.text and 'hx-trigger="every 2s"' not in response.text
+    with Session(client.app.state.test_engine) as session, session.begin():
+        session.get(Registration, UUID(key)).namespace = "other"
+    assert client.get(f"/registrations/{key}").status_code == 404
