@@ -12,6 +12,7 @@ from cannery.database import make_engine
 from cannery.health import postgres_ready
 from cannery.registry.api import install_registry
 from cannery.settings import Settings
+from cannery.submissions.api import install_submissions
 from cannery.web import install_web
 
 
@@ -54,5 +55,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.state.artifacts = make_store(config)
     install_registry(app, config, engine)
+    install_submissions(app, config, engine)
     install_web(app, config, engine)
     return app
