@@ -46,11 +46,18 @@ def run(
     env: dict[str, str] | None = None,
     timeout: float = 30,
     max_output: int = 16 * 1024 * 1024,
+    git_limits: bool = True,
 ) -> bytes:
     nested = os.environ.get("CANNERY_ATTEMPT_GROUP") == str(os.getpgrp())
     with TemporaryFile() as output, TemporaryFile() as errors:
         process = subprocess.Popen(
-            [sys.executable, "-m", "cannery.git_intake.limits", *argv],
+            [
+                sys.executable,
+                "-m",
+                "cannery.git_intake.limits",
+                *([] if git_limits else ["--coordinator"]),
+                *argv,
+            ],
             cwd=cwd,
             env=clean_environment() if env is None else env,
             stdin=subprocess.PIPE,

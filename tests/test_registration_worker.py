@@ -1,6 +1,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock
 
+import pytest
+
 from cannery import registration_worker as worker
 
 
@@ -34,7 +36,10 @@ def test_scratch_path_is_owned_by_validated_handle():
     )
 
 
-def test_registration_attempt_freezes_and_completes_atomically(monkeypatch, tmp_path):
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+def test_registration_attempt_freezes_and_completes_atomically(
+    monkeypatch, tmp_path, cleanup_fails
+):
     import json
 
     from spec_fixtures import spec_files
@@ -64,6 +69,7 @@ def test_registration_attempt_freezes_and_completes_atomically(monkeypatch, tmp_
         payload = json.loads(kwargs["data"])
         assert payload["source"] == source.model_dump(mode="json")
         assert kwargs["timeout"] == 150
+        assert kwargs["git_limits"] is False
         calls.append(payload["handle"])
         files = spec_files()
         store = SnapshotStore(config.snapshot_root)
@@ -87,9 +93,22 @@ def test_registration_attempt_freezes_and_completes_atomically(monkeypatch, tmp_
         ).encode()
 
     monkeypatch.setattr(worker, "run", admitted)
+    original = worker.discard_scratch
+    if cleanup_fails:
+        monkeypatch.setattr(worker, "discard_scratch", MagicMock(side_effect=OSError("temporary")))
     worker.register_spec.fn(str(key))
+    if cleanup_fails:
+        from datetime import UTC, datetime
+
+        with Session(engine) as session, session.begin():
+            row = session.get(Registration, key)
+            assert row.status == "queued" and row.cleanup_handle == calls[0]
+            assert list(config.intake_scratch.iterdir())
+            row.due_at = datetime.now(UTC)
+        monkeypatch.setattr(worker, "discard_scratch", original)
+        worker.register_spec.fn(str(key))
     worker.register_spec.fn(str(key))
-    assert len(calls) == 1
+    assert len(calls) == (2 if cleanup_fails else 1)
     with Session(engine) as session:
         row = session.get(Registration, key)
         assert row.status == "complete" and row.spec_id is not None
@@ -97,3 +116,38 @@ def test_registration_attempt_freezes_and_completes_atomically(monkeypatch, tmp_
         assert len(session.scalars(select(SpecVersion)).all()) == 1
     assert list(config.intake_scratch.iterdir()) == []
     engine.dispose()
+
+
+def test_coordinator_preserves_docker_address_space_budget():
+    import json
+    import resource
+    import sys
+
+    from cannery.git_intake.process import run
+
+    probe = "import resource,json; print(json.dumps(resource.getrlimit(resource.RLIMIT_AS)))"
+    result = json.loads(run([sys.executable, "-c", probe], git_limits=False))
+    assert result == list(resource.getrlimit(resource.RLIMIT_AS))
+    assert json.loads(run([sys.executable, "-c", probe])) == [512 * 1024 * 1024] * 2
+
+
+def test_scratch_cleanup_failure_keeps_recovery_handle(monkeypatch, tmp_path):
+    from cannery.registry.sandbox import new_handle
+
+    engine = MagicMock()
+    handle = new_handle()
+    monkeypatch.setattr(worker, "make_engine", lambda _: engine)
+    monkeypatch.setattr(worker, "pending_cleanup", lambda *a: handle)
+    monkeypatch.setattr(worker, "remove_smoke", lambda *a: None)
+    cleared = MagicMock()
+    monkeypatch.setattr(worker, "clear_cleanup", cleared)
+
+    def broken(*args):
+        raise OSError("temporary deletion failure")
+
+    monkeypatch.setattr(worker, "discard_scratch", broken)
+    worker.register_spec.fn("a" * 32)
+    cleared.assert_not_called()
+    monkeypatch.setattr(worker, "discard_scratch", lambda *a: None)
+    worker.register_spec.fn("a" * 32)
+    cleared.assert_called_once_with(engine, __import__("uuid").UUID("a" * 32), handle)

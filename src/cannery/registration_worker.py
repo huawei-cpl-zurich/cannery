@@ -94,13 +94,12 @@ def register_spec(identifier: str) -> None:
                 [sys.executable, "-m", "cannery.registry.admit"],
                 data=json.dumps(payload).encode(),
                 timeout=150,
+                git_limits=False,
             )
         finally:
-            try:
-                remove_smoke(handle)
-                clear_cleanup(engine, key, handle)
-            finally:
-                discard_scratch(settings.intake_scratch, handle)
+            remove_smoke(handle)
+            discard_scratch(settings.intake_scratch, handle)
+            clear_cleanup(engine, key, handle)
         result = json.loads(raw)
         if "error" in result:
             codes = {
