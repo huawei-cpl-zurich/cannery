@@ -73,6 +73,7 @@ def remove_containers():
 if phase == 'prepare':
     attempt.mkdir(mode=0o700, exist_ok=True)
     source.mkdir(mode=0o755, exist_ok=True)
+    source.chmod(0o755)
     output.mkdir(mode=0o777, exist_ok=True)
     output.chmod(0o777)
     raise SystemExit(0)
