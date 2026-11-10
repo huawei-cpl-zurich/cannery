@@ -230,6 +230,10 @@ class BuildExecutor:
         return reference
 
     def cleanup(self, attempt: UUID) -> None:
+        context = self.remote.journal / "context.json"
+        if context.exists():
+            self.profile = WorkerProfile.model_validate(json.loads(context.read_bytes())["profile"])
+            self.remote.target = self.profile.target
         # Do not race a retained operation after a controller/transport interruption.
         for marker in self.remote.journal.glob("*.dispatch"):
             receipt = marker.with_suffix(".json")
