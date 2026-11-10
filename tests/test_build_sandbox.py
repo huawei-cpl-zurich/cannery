@@ -103,11 +103,14 @@ def test_unhealthy_busy_or_unresponsive_device_never_launches(tmp_path, monkeypa
 
 def test_runtime_exposes_one_physical_device_and_releases_owned_lease(tmp_path, monkeypatch):
     config, token, calls = setup(tmp_path, monkeypatch)
+    config = config.model_copy(update={"toolchain_read_group": 0})
     supervise(config, token, "runtime")
     args = next(call for call in calls if call[:2] == ["docker", "run"])
     devices = [args[index + 1] for index, arg in enumerate(args) if arg == "--device"]
     assert "/dev/davinci1" in devices and "/dev/davinci0" not in devices
     assert "ASCEND_RT_VISIBLE_DEVICES=0" in args
+    groups = [args[i + 1] for i, arg in enumerate(args) if arg == "--group-add"]
+    assert groups == ["0", "1000"]
     assert args[args.index("--tmpfs") + 1] == "/tmp:rw,exec,nosuid,nodev,size=512m"
     assert not (Path(config.workspace) / "device-1.owner").exists()
     assert calls[-1][:3] == ["docker", "rm", "-f"]

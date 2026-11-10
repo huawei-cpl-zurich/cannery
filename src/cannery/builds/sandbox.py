@@ -17,6 +17,7 @@ class WorkerProfile(StrictModel):
     image: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
     npu: int = Field(ge=0, le=63)
     device_group: int = Field(ge=0)
+    toolchain_read_group: int | None = Field(default=None, ge=0)
     readonly_mounts: tuple[str, ...]
     transport_devices: tuple[str, ...] = ()
     fingerprint: dict[str, str]
@@ -123,6 +124,8 @@ args = ['docker', 'run', '--rm', '--init', '--pull', 'never', '--name', names[ph
 for key in ['PATH', 'LD_LIBRARY_PATH', 'ASCEND_HOME_PATH',
             'ASCEND_TOOLKIT_HOME', 'ASCEND_OPP_PATH']:
     args += ['--env', key]
+if config['toolchain_read_group'] is not None:
+    args += ['--group-add', str(config['toolchain_read_group'])]
 held = None
 if phase == 'compile':
     args += ['--mount', f'type=bind,src={output},dst=/output']
