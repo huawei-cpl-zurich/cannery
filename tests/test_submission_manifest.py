@@ -76,3 +76,68 @@ def test_manifest_formatting_does_not_change_digest_but_options_do():
     manifest["implementation"]["build"]["options"]["optimization"] = "debug"
     files["candidate/submission.yaml"] = yaml.safe_dump(manifest).encode()
     assert validate_submission(files, "candidate").content_sha256 != first.content_sha256
+
+
+def test_legacy_canonical_digest_stays_unchanged_with_new_abi():
+    import hashlib
+    import json
+
+    files = submission_files("ascendc")
+    result = validate_submission(files, "candidate")
+    manifest = result.manifest.model_dump(mode="json")
+    assert "abi" not in manifest["implementation"]["build"]
+    expected = hashlib.sha256(
+        json.dumps(
+            {
+                "manifest": manifest,
+                "files": {
+                    k: v for k, v in result.file_sha256.items() if not k.endswith("submission.yaml")
+                },
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
+    assert (
+        result.content_sha256
+        == expected
+        == ("39eefce3783628a2ba850889709d49409a731f8947b0ee77e3210f3325c90299")
+    )
+    declared = yaml.safe_load(files["candidate/submission.yaml"])
+    declared["implementation"]["build"]["abi"] = None
+    files["candidate/submission.yaml"] = yaml.safe_dump(declared).encode()
+    assert validate_submission(files, "candidate").content_sha256 == expected
+
+
+def test_explicit_a5_abi_and_trusted_build_plan():
+    from cannery.builds.ascendc import AscendCAdapter, BuildError
+
+    files = submission_files("ascendc")
+    manifest = yaml.safe_load(files["candidate/submission.yaml"])
+    legacy = validate_submission(files, "candidate")
+    with pytest.raises(BuildError, match="Unsupported"):
+        AscendCAdapter().build(legacy.manifest)
+    manifest["implementation"]["device"] = "a5"
+    manifest["implementation"]["build"]["abi"] = "unary-f32-v1"
+    files["candidate/submission.yaml"] = yaml.safe_dump(manifest).encode()
+    native = validate_submission(files, "candidate")
+    plan = AscendCAdapter().build(native.manifest)
+    assert native.content_sha256 != legacy.content_sha256
+    assert 'extern "C" void cannery_launch' in plan.wrapper
+    assert plan.command[0] == "bisheng" and "--npu-arch=dav-3510" in plan.command
+    manifest["implementation"]["device"] = "a3"
+    files["candidate/submission.yaml"] = yaml.safe_dump(manifest).encode()
+    with pytest.raises(SubmissionError):
+        validate_submission(files, "candidate")
+
+
+def test_generated_wrapper_is_separate_from_author_launch_filename():
+    from cannery.builds.ascendc import AscendCAdapter
+    from cannery.submissions.manifest import SubmissionManifest
+
+    manifest = yaml.safe_load(submission_files("ascendc")["candidate/submission.yaml"])
+    manifest["implementation"].update(device="a5", entrypoint="launch.asc:forward")
+    manifest["implementation"]["build"].update(abi="unary-f32-v1", inputs=["launch.asc"])
+    plan = AscendCAdapter().build(SubmissionManifest.model_validate(manifest))
+    assert '#include "source/launch.asc"' in plan.wrapper
+    assert plan.command[plan.command.index("-I") + 1] == "source"
