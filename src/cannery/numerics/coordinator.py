@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from cannery.artifacts import ArtifactError, ArtifactRef
 from cannery.builds.coordinator import evidence
 from cannery.builds.executor import ExecutionFailure
-from cannery.builds.remote import RemoteFailure, RemotePending, durable_write
+from cannery.builds.remote import RemoteFailure, RemotePending, durable_write, operation_receipts
 from cannery.builds.sandbox import WorkerProfile
 from cannery.builds.state import BuildResult, BuildState
 from cannery.git_intake import SnapshotBinding
@@ -171,28 +171,35 @@ def process(
     with LeaseKeeper(engine, claim) as keeper:
         try:
             executor = factory(claim)
+            executor.fence = keeper.fence
+            failure_path = executor.remote.journal / "numerical-failure.json"
             try:
+                if failure_path.exists():
+                    stored = json.loads(failure_path.read_bytes())
+                    if stored["blocked"]:
+                        raise BaselineUnavailable(stored["error"])
+                    raise ExecutionFailure(stored["error"], retryable=stored["retryable"])
                 data = retained(engine, key, executor)
                 report = executor.validate(attempt=claim.attempt, fence=keeper.fence, **data)
             except (ExecutionFailure, RemoteFailure, BaselineUnavailable) as failure:
-                if list(executor.remote.journal.glob("*.dispatch")):
-                    executor.cleanup(claim.attempt)
-                details = evidence(executor)
-                keeper.fence()
-                if finish_numerical(
-                    engine,
-                    claim,
-                    error=str(failure)
+                outcome: dict[str, Any] = {
+                    "error": str(failure)
                     if isinstance(failure, BaselineUnavailable)
                     else failure.code
                     if isinstance(failure, ExecutionFailure)
                     else "worker_failed",
-                    retryable=failure.retryable
+                    "retryable": failure.retryable
                     if isinstance(failure, ExecutionFailure)
                     else isinstance(failure, RemoteFailure),
-                    blocked=isinstance(failure, BaselineUnavailable),
-                    evidence=details,
-                ):
+                    "blocked": isinstance(failure, BaselineUnavailable),
+                }
+                keeper.fence()
+                durable_write(failure_path, json.dumps(outcome, sort_keys=True).encode())
+                if list(executor.remote.journal.glob("*.dispatch")):
+                    executor.cleanup(claim.attempt)
+                details = evidence(executor)
+                keeper.fence()
+                if finish_numerical(engine, claim, evidence=details, **outcome):
                     prune(executor.remote.journal)
                 return
             executor.cleanup(claim.attempt)
@@ -243,11 +250,11 @@ def cleanup_finished(
             executor = factory(NumericalClaim(result.candidate_id, result.id, result.id))
             context = journal / "context.json"
             if context.exists():
-                executor.profile = WorkerProfile.model_validate(
-                    json.loads(context.read_bytes())["profile"]
+                executor.profile = WorkerProfile.model_validate_json(
+                    json.dumps(json.loads(context.read_bytes())["profile"])
                 )
                 executor.remote.target = executor.profile.target
-            for receipt in journal.glob("*.json"):
+            for receipt in operation_receipts(journal):
                 data = json.loads(receipt.read_bytes())
                 if "handle" in data:
                     state = executor.remote.call("observe", data["handle"]).get("state")
