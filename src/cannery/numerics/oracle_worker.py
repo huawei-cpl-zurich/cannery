@@ -55,6 +55,29 @@ for line in sys.stdin:
 
 SUPERVISOR = r"""
 
+def publish(result):
+    encoded=json.dumps(result).encode()
+    if RESULT_FILE is None:
+        print(encoded.decode(),flush=True)
+        return
+    path=Path(RESULT_FILE)
+    temporary=path.with_suffix('.tmp')
+    with temporary.open('wb') as stream:
+        stream.write(encoded)
+        stream.flush()
+        os.fsync(stream.fileno())
+    temporary.chmod(0o400)
+    temporary.replace(path)
+    descriptor=os.open(path.parent,os.O_RDONLY|os.O_DIRECTORY)
+    try:os.fsync(descriptor)
+    finally:os.close(descriptor)
+
+
+def expired(*_):
+    if RESULT_FILE is not None:publish({'error':'reference_timeout'})
+    os._exit(124)
+
+
 def demote():
     os.setgroups([])
     os.setgid(10001)
@@ -62,7 +85,7 @@ def demote():
 
 
 def main(plan):
-    signal.signal(signal.SIGALRM,lambda *_:os._exit(124))
+    signal.signal(signal.SIGALRM,expired)
     signal.alarm(70)
     assert sys.byteorder=='little'
     assert f'{sys.version_info.major}.{sys.version_info.minor}'==plan['environment']['python']
@@ -113,19 +136,24 @@ def main(plan):
     finally:
         worker.kill()
         worker.wait(timeout=2)
-    print(json.dumps({'outputs':outputs}),flush=True)
+    publish({'outputs':outputs})
 
 
-main(json.loads(Path('/input/plan.json').read_bytes()))
+try:
+    main(json.loads(Path('/input/plan.json').read_bytes()))
+except Exception:
+    if RESULT_FILE is not None:publish({'error':'reference_failed'})
+    raise
 """
 
 
-def worker_source() -> str:
+def worker_source(*, checkpoint: bool = False) -> str:
     return (
         "from __future__ import annotations\n"
         "import base64,hashlib,importlib.metadata,json,math,os,secrets,signal,struct\n"
         "import subprocess,sys\n"
         "from pathlib import Path\nfrom types import SimpleNamespace\n"
+        + f"RESULT_FILE={'/output/result.json' if checkpoint else None!r}\n"
         + f"CHILD={CHILD!r}\n"
         + inspect.getsource(_generate)
         + SUPERVISOR
