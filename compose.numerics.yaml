@@ -1,0 +1,19 @@
+# Requires compose.artifacts.yaml and compose.builds.yaml; private CPU/A5 validation.
+services:
+  registrar:
+    environment:
+      CANNERY_BASELINE_ROOT: /var/lib/cannery/baselines
+      CANNERY_BASELINE_VOLUME: ${COMPOSE_PROJECT_NAME}-baseline-control
+      CANNERY_ARTIFACT_BACKEND: private
+      CANNERY_ARTIFACT_URL: http://artifacts:8000
+      CANNERY_ARTIFACT_READ_TOKEN: ${CANNERY_ARTIFACT_READ_TOKEN:?Set a private read token}
+      CANNERY_ARTIFACT_WRITE_TOKEN: ${CANNERY_ARTIFACT_WRITE_TOKEN:?Set a private write token}
+    volumes:
+      - baseline-control:/var/lib/cannery/baselines
+  validator:
+    extends:
+      service: builder
+    command: ["python", "-m", "cannery.numerics.worker"]
+volumes:
+  baseline-control:
+    name: ${COMPOSE_PROJECT_NAME}-baseline-control
