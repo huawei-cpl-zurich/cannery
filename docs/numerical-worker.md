@@ -38,7 +38,7 @@ checks. Both the spec default and submission-requested `atol + rtol * abs(ref)`
 checks must pass, along with unchanged input hashes. Numerical success means
 `awaiting_benchmark`; benchmarking, scoring and publication are not implemented.
 
-Before upgrading the worker supervision contract, drain active binary builds.
+Before upgrading the worker supervision contract, drain active binary builds and numerical validations.
 Apply database migrations, then restart services while preserving all data and
 control volumes. A coordinator restart resumes the retained attempt and remote
 handle; uncertain operations are observed rather than resubmitted.
