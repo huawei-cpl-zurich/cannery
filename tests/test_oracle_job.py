@@ -19,6 +19,7 @@ class Docker:
         self.creates = self.starts = 0
         self.fault = None
         self.reply = b""
+        self.result_path = None
 
     def __call__(self, args, limit=1024 * 1024):
         self.calls.append(args)
@@ -59,6 +60,9 @@ class Docker:
         self.reply = json.dumps(
             {"outputs": {k: base64.b64encode(v).decode() for k, v in outputs.items()}}
         ).encode()
+        self.result_path.write_bytes(self.reply)
+        # Docker auto-removes the completed container after the durable result.
+        self.info = None
 
 
 @pytest.fixture
@@ -82,6 +86,7 @@ def setup_job(tmp_path, monkeypatch):
         )
 
     def progress():
+        docker.result_path = job().journal / "output/result.json"
         return job().progress(spec, suite, files, "spec")
 
     return job, progress, docker, memory, spec, suite, outputs, files
@@ -105,9 +110,12 @@ def test_detached_lifecycle_restarts_controller_without_rerunning_reference(setu
     args = next(c for c in docker.calls if c[0] == "create")
     assert "--device" not in args and args[args.index("--network") + 1] == "none"
     assert any("volume-subpath=" in a and a.endswith("/input") for a in args)
+    assert "--rm" in args and args[args.index("--log-driver") + 1] == "none"
+    assert any("dst=/output" in a and ",readonly" not in a for a in args)
     assert "--read-only" in args and "--cap-drop" in args
     assert (job().journal / "artifact.json").exists()
-    assert set((job().journal / "input").iterdir()) == {job().journal / "input/plan.json"}
+    assert not list((job().journal / "input").iterdir())
+    assert not list((job().journal / "output").iterdir())
 
 
 @pytest.mark.parametrize("fault", ["create", "start"])
@@ -152,6 +160,11 @@ def test_private_upload_failure_reuses_completed_reference_output(setup_job):
 def test_cleanup_failure_preserves_private_checkpoint_without_new_forward(setup_job):
     job, progress, docker, memory = complete(setup_job)
     docker.fault = "cleanup"
+    docker.info = {
+        "Id": "id",
+        "Config": {"Labels": {"cannery.oracle.owner": job().attempt.hex}},
+        "State": {"Status": "exited", "ExitCode": 0},
+    }
     with pytest.raises(OraclePending, match="cleanup"):
         progress()
     assert (job().journal / "artifact.json").exists()
@@ -193,3 +206,17 @@ def test_lost_lease_prevents_new_docker_dispatch(setup_job):
     with pytest.raises(OraclePending, match="lease lost"):
         job(lost).progress(spec, suite, files, "spec")
     assert not docker.calls
+
+
+@pytest.mark.parametrize("error", ["reference_failed", "reference_timeout", None])
+def test_failed_or_missing_result_never_restarts_reference(setup_job, error):
+    job, progress, docker, memory, *_ = setup_job
+    for _ in range(2):
+        with pytest.raises(OraclePending):
+            progress()
+    docker.info = None
+    if error:
+        (job().journal / "output/result.json").write_text(json.dumps({"error": error}))
+    with pytest.raises(OracleFailure if error else OraclePending):
+        progress()
+    assert docker.starts == docker.creates == 1 and memory.puts == 0

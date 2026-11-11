@@ -125,7 +125,11 @@ class OracleJob:
             "files": {k: base64.b64encode(v).decode() for k, v in files.items()},
         }
         context = json.dumps(
-            {"plan": plan, "image": self.image, "worker_sha256": digest(worker_source().encode())},
+            {
+                "plan_sha256": digest(json.dumps(plan, sort_keys=True).encode()),
+                "image": self.image,
+                "worker_sha256": digest(worker_source(checkpoint=True).encode()),
+            },
             sort_keys=True,
         ).encode()
         frozen = self.journal / "context.json"
@@ -147,6 +151,21 @@ class OracleJob:
                 environment=spec.environment,
             )
             self.cleanup()
+            (self.journal / "output/result.json").unlink(missing_ok=True)
+            (self.journal / "input/plan.json").unlink(missing_ok=True)
+            return reference
+        result = self.journal / "output/result.json"
+        if result.exists():
+            if (
+                result.is_symlink()
+                or not result.is_file()
+                or result.stat().st_size > MAX_PACKAGE_BYTES * 2
+            ):
+                raise OracleFailure("Invalid reference output checkpoint")
+            reference = self.publish(spec, suite, result.read_bytes())
+            self.cleanup()
+            result.unlink()
+            (self.journal / "input/plan.json").unlink(missing_ok=True)
             return reference
         info = self.inspect()
         if info is None:
@@ -155,6 +174,7 @@ class OracleJob:
                 raise OraclePending("Ambiguous oracle creation; do not repeat reference")
             source = self.journal / "input"
             source.mkdir(mode=0o755, exist_ok=True)
+            (self.journal / "output").mkdir(mode=0o700, exist_ok=True)
             durable_write(source / "plan.json", json.dumps(plan, sort_keys=True).encode())
             self.fence()
             durable_write(dispatch, b"dispatching\n")
@@ -162,6 +182,7 @@ class OracleJob:
                 [
                     "create",
                     "--init",
+                    "--rm",
                     "--pull",
                     "never",
                     "--name",
@@ -190,22 +211,20 @@ class OracleJob:
                     "--pids-limit",
                     "64",
                     "--log-driver",
-                    "json-file",
-                    "--log-opt",
-                    "max-size=64m",
-                    "--log-opt",
-                    "max-file=1",
+                    "none",
                     "--tmpfs",
                     "/work:rw,noexec,nosuid,nodev,size=32m,mode=755",
                     "--tmpfs",
                     "/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777",
                     "--mount",
                     f"type=volume,src={self.volume},dst=/input,readonly,volume-subpath={self.relative}/input",
+                    "--mount",
+                    f"type=volume,src={self.volume},dst=/output,volume-subpath={self.relative}/output",
                     self.image,
                     "python",
                     "-I",
                     "-c",
-                    worker_source(),
+                    worker_source(checkpoint=True),
                 ]
             )
             raise OraclePending("Oracle container creation submitted")
@@ -220,20 +239,26 @@ class OracleJob:
             raise OraclePending("Oracle reference running")
         if state["Status"] not in ("exited", "dead"):
             raise OraclePending("Oracle reference running")
-        if state["ExitCode"] != 0:
-            self.cleanup()
-            raise OracleFailure("CPU reference failed")
-        code, data = docker(["logs", info["Id"]], MAX_PACKAGE_BYTES * 2)
-        if code:
-            raise OraclePending("Completed oracle output unavailable")
+        self.cleanup()
+        raise OracleFailure("CPU reference exited without an output checkpoint")
+
+    def publish(self, spec: ValidatedSpec, suite: RecipeSuite, data: bytes) -> ArtifactRef:
         try:
             reply = json.loads(data)
+            if set(reply) == {"error"} and reply["error"] in (
+                "reference_failed",
+                "reference_timeout",
+            ):
+                raise OracleFailure("CPU reference failed: " + reply["error"])
             if set(reply) != {"outputs"} or not isinstance(reply["outputs"], dict):
                 raise ValueError
             outputs = {k: base64.b64decode(v, validate=True) for k, v in reply["outputs"].items()}
             package = pack_baseline(
                 spec.content_sha256, suite, spec.environment, self.image, outputs
             )
+        except OracleFailure:
+            self.cleanup()
+            raise
         except (ValueError, TypeError):
             self.cleanup()
             raise OracleFailure("Invalid CPU reference output") from None
@@ -244,6 +269,5 @@ class OracleJob:
         if verified(self.artifacts.get(reference), reference) != package:
             raise OracleFailure("Baseline private readback mismatch")
         self.fence()
-        durable_write(saved, reference.model_dump_json().encode())
-        self.cleanup()
+        durable_write(self.journal / "artifact.json", reference.model_dump_json().encode())
         return reference
