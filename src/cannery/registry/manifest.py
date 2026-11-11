@@ -38,6 +38,15 @@ class Entrypoint(StrictModel):
         return relative_source_path(value)
 
 
+class RecipeEntrypoint(StrictModel):
+    recipe_file: str
+
+    @field_validator("recipe_file")
+    @classmethod
+    def safe_recipe(cls, value: str) -> str:
+        return relative_source_path(value)
+
+
 class Interface(StrictModel):
     inputs: tuple[Name, ...] = Field(min_length=1, max_length=32)
     outputs: tuple[Name, ...] = Field(min_length=1, max_length=32)
@@ -62,7 +71,7 @@ class Validation(StrictModel):
 class SpecDefinition(StrictModel):
     version: int = Field(ge=1)
     reference: Entrypoint
-    cases: Entrypoint
+    cases: Entrypoint | RecipeEntrypoint
     interface: Interface
     validation: Validation
     environment_lock: str = "environment.lock"
@@ -146,7 +155,9 @@ def validate_spec(files: dict[str, bytes], source_path: str) -> ValidatedSpec:
         manifest = parse_manifest(files[manifest_path])
         required = [
             manifest.spec.reference.file,
-            manifest.spec.cases.file,
+            manifest.spec.cases.recipe_file
+            if isinstance(manifest.spec.cases, RecipeEntrypoint)
+            else manifest.spec.cases.file,
             manifest.spec.environment_lock,
         ]
         for name in required:
@@ -162,6 +173,20 @@ def validate_spec(files: dict[str, bytes], source_path: str) -> ValidatedSpec:
             relative_source_path(path)
             if ".git" in PurePosixPath(path).parts:
                 raise SpecError("Git administration paths are forbidden")
+        if isinstance(manifest.spec.cases, RecipeEntrypoint):
+            # Import lazily: recipes reuse the manifest's strict identifier/YAML helpers.
+            from cannery.numerics.recipes import parse_recipes
+
+            recipes = parse_recipes(files[prefix + manifest.spec.cases.recipe_file])
+            if (
+                len(manifest.spec.interface.inputs) != 1
+                or len(manifest.spec.interface.outputs) != 1
+            ):
+                raise SpecError("Numerical recipes require unary tensor input/output")
+            if any(
+                set(case.inputs) != set(manifest.spec.interface.inputs) for case in recipes.cases
+            ):
+                raise SpecError("Recipe input names do not match frozen interface")
         hashes = {name: hashlib.sha256(data).hexdigest() for name, data in sorted(files.items())}
         normalized = manifest.model_dump(mode="json")
         normalized["kernel"].pop("description")
