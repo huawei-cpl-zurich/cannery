@@ -7,6 +7,7 @@ from test_submission_api import payload, seed
 
 from cannery.artifacts import ArtifactRef
 from cannery.builds.state import BuildState, claim_build, finish_build
+from cannery.numerics.state import NumericalState
 from cannery.submissions.models import Candidate
 from cannery.submissions.state import IntakeState
 
@@ -56,4 +57,10 @@ def test_owned_build_progress_artifact_and_terminal_web_polling(client):
     assert str(claim.token) not in str(info) and str(claim.attempt) not in str(info)
     assert client.get("/api/v1/submissions/mine").json()[0] == info
     page = client.get(f"/submissions/{key}").text
-    assert "hx-trigger=" not in page and "Binary SHA256" in page
+    assert "hx-trigger=" in page and "Binary SHA256" in page
+    with Session(engine) as session, session.begin():
+        session.add(NumericalState(id=key, status="blocked", error="recipe_baseline_required"))
+    page = client.get(f"/submissions/{key}").text
+    assert "hx-trigger=" not in page and "Validation blocked: recipe_baseline_required" in page
+    assert "Retry pending" not in page
+    assert 'hx-trigger="every 3s"' not in client.get("/my-submissions").text
