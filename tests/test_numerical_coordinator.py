@@ -97,6 +97,9 @@ def test_terminal_cleanup_retains_uncertain_remote_ownership(operation, tmp_path
     journal = tmp_path / claim.attempt.hex
     journal.mkdir()
     executor.remote.journal = journal
+    (journal / "context.json").write_text(
+        json.dumps({"profile": executor.profile.model_dump(mode="json")})
+    )
     (journal / "runtime-0.dispatch").write_text("uncertain")
     executor.cleanup = MagicMock(side_effect=RemotePending("uncertain"))
     coordinator.cleanup_finished(engine, tmp_path, lambda _: executor)
