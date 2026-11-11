@@ -25,6 +25,8 @@ def metadata(count=17):
 def binary(count=17):
     value = bytearray(64)
     value[:7] = b"\x7fELF\x02\x01\x01"
+    value[16:18] = (2).to_bytes(2, "little")
+    value[18:20] = (4137).to_bytes(2, "little")
     value[8] = count  # Stub-only marker; no device object is executed in CPU tests.
     return bytes(value)
 
@@ -32,7 +34,15 @@ def binary(count=17):
 def test_actual_compiler_descriptor_and_bounded_native_objects():
     variant = validate_export(17, binary(), metadata())
     assert variant.count == 17 and variant.entrypoint == "forward"
-    for count, data in [(0, binary()), (True, binary()), (1048577, binary()), (17, b"bad")]:
+    host_binary = bytearray(binary())
+    host_binary[18:20] = (183).to_bytes(2, "little")
+    for count, data in [
+        (0, binary()),
+        (True, binary()),
+        (1048577, binary()),
+        (17, b"bad"),
+        (17, bytes(host_binary)),
+    ]:
         with pytest.raises(BuildError):
             validate_export(count, data, metadata())
 

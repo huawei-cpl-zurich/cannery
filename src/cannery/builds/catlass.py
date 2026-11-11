@@ -9,6 +9,17 @@ from cannery.builds.ascendc import BuildError
 MAX_OBJECT_BYTES = 8 * 1024 * 1024
 
 
+def _native_object(binary: bytes) -> bool:
+    # Observed ELF contract of the pinned A5 compiler, not a host shared library.
+    return (
+        type(binary) is bytes
+        and 64 <= len(binary) <= MAX_OBJECT_BYTES
+        and binary[:7] == b"\x7fELF\x02\x01\x01"
+        and int.from_bytes(binary[16:18], "little") == 2
+        and int.from_bytes(binary[18:20], "little") == 4137
+    )
+
+
 @dataclass(frozen=True)
 class NativeVariant:
     count: int
@@ -18,12 +29,7 @@ class NativeVariant:
 
 def validate_export(count: int, binary: bytes, metadata: dict[str, Any]) -> NativeVariant:
     """Admit only an AIV kernel whose public launch ABI is two static pointers."""
-    if (
-        type(count) is not int
-        or not 1 <= count <= 1048576
-        or not 64 <= len(binary) <= MAX_OBJECT_BYTES
-        or binary[:6] != b"\x7fELF\x02\x01"
-    ):
+    if type(count) is not int or not 1 <= count <= 1048576 or not _native_object(binary):
         raise BuildError("Invalid CATLASS native object")
     try:
         if set(metadata) != {
@@ -99,8 +105,7 @@ def native_wrapper(variants: list[NativeVariant]) -> str:
             type(variant.count) is not int
             or not 1 <= variant.count <= 1048576
             or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", variant.entrypoint) is None
-            or not 64 <= len(variant.binary) <= MAX_OBJECT_BYTES
-            or variant.binary[:6] != b"\x7fELF\x02\x01"
+            or not _native_object(variant.binary)
         ):
             raise BuildError("Invalid native variant")
         declarations.append(
