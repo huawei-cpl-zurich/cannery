@@ -86,6 +86,15 @@ def advance_baseline(
 ) -> BaselineEvidence:
     if key != baseline_key(spec.content_sha256, suite, spec.environment):
         raise BaselineUnavailable("baseline_identity_mismatch")
+
+    def terminal_cleanup() -> None:
+        try:
+            cleanup_baseline(
+                engine, key, root=root, volume=volume, artifacts=artifacts, fence=fence
+            )
+        except (OraclePending, ArtifactError, OSError):
+            raise BaselinePending("baseline_cleanup_pending") from None
+
     fence()
     with Session(engine) as session:
         row = session.get(BaselineState, key)
@@ -94,9 +103,7 @@ def advance_baseline(
         if row.status == "ready":
             return cached_evidence(row, spec, suite, artifacts)
         if row.status == "failed":
-            cleanup_baseline(
-                engine, key, root=root, volume=volume, artifacts=artifacts, fence=fence
-            )
+            terminal_cleanup()
             raise BaselineUnavailable(row.error or "baseline_failed")
         binding = SnapshotBinding.model_validate(row.snapshot)
     claim = claim_baseline(engine, key)
@@ -104,9 +111,7 @@ def advance_baseline(
         with Session(engine) as session:
             latest = session.get(BaselineState, key)
             if latest is not None and latest.status == "failed":
-                cleanup_baseline(
-                    engine, key, root=root, volume=volume, artifacts=artifacts, fence=fence
-                )
+                terminal_cleanup()
                 raise BaselineUnavailable(latest.error or "baseline_failed")
         raise BaselinePending("baseline_busy")
 

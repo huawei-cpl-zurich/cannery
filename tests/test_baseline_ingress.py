@@ -62,6 +62,8 @@ def ingress(tmp_path, monkeypatch):
 
         def cleanup(self):
             control["cleanups"] += 1
+            if control.get("cleanup_failure"):
+                raise control["cleanup_failure"]
 
     monkeypatch.setattr("cannery.numerics.baselines.OracleJob", Job)
     monkeypatch.setattr("cannery.numerics.baselines.docker", image)
@@ -222,3 +224,18 @@ def test_expired_baseline_cleans_retained_job_after_docker_recovers(ingress, mon
     with pytest.raises(BaselineUnavailable, match="deadline_exceeded"):
         advance()
     assert control["cleanups"] == 1 and control["calls"] == 1
+
+
+@pytest.mark.parametrize("failure", [OraclePending("Docker offline"), OSError("volume offline")])
+def test_terminal_cleanup_outage_recovers_without_reference_execution(ingress, failure):
+    advance, _, _, control, _, _ = ingress
+    control["mode"] = "failed"
+    with pytest.raises(BaselineUnavailable):
+        advance()
+    control["cleanup_failure"] = failure
+    with pytest.raises(BaselinePending, match="cleanup_pending"):
+        advance()
+    control["cleanup_failure"] = None
+    with pytest.raises(BaselineUnavailable, match="reference_failed"):
+        advance()
+    assert control["calls"] == 1
