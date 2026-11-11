@@ -161,10 +161,13 @@ def finish_numerical(
     report: dict[str, Any] | None = None,
     error: str | None = None,
     retryable: bool = False,
+    blocked: bool = False,
     evidence: dict[str, Any] | None = None,
 ) -> bool:
     if (report is None) == (error is None):
         raise ValueError("Exactly one numerical report or error is required")
+    if blocked and (report is not None or retryable):
+        raise ValueError("Blocked validation requires a terminal error")
     if report is not None and type(report.get("passed")) is not bool:
         raise ValueError("Numerical report requires a boolean outcome")
     with Session(engine) as session, session.begin():
@@ -191,6 +194,8 @@ def finish_numerical(
             if retryable and error and row.attempts < 3
             else "failed"
         )
+        if blocked:
+            row.status = "blocked"
         row.error = error or (None if passed else "numerical_mismatch")
         row.lease = row.lease_until = None
         if row.status == "queued":
