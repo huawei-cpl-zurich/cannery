@@ -54,7 +54,19 @@ def spec_info(spec: SpecVersion) -> dict[str, Any]:
         "content_sha256": spec.content_sha256,
         "file_sha256": spec.file_sha256,
         "source": spec.snapshot["source"],
-        "smoke": {"assurance": "diagnostic", "case_responses": spec.smoke["cases"]},
+        "smoke": {
+            "assurance": spec.smoke.get("assurance", "diagnostic"),
+            "case_responses": spec.smoke["cases"],
+        },
+        "baseline": None
+        if spec.smoke.get("assurance") != "cached_cpu_reference"
+        else {
+            "key": spec.smoke["baseline_key"],
+            "suite_sha256": spec.smoke["suite_sha256"],
+            "generator": spec.smoke["generator"],
+            "output_sha256": spec.smoke["artifact"]["sha256"],
+            "cases": spec.smoke["cases"],
+        },
     }
 
 
