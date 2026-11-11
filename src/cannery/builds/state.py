@@ -20,7 +20,8 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Mapped, Mapper, Session, mapped_column
 
 from cannery.artifacts import ArtifactRef
-from cannery.builds.ascendc import AscendCAdapter, BuildError
+from cannery.builds.ascendc import BuildError
+from cannery.builds.catlass_compile import adapter_for
 from cannery.database import Base
 from cannery.registry.registrations import aware
 from cannery.submissions.manifest import SubmissionManifest
@@ -89,7 +90,7 @@ class BuildClaim:
 def queue_build(session: Session, candidate: Candidate) -> bool:
     """Explicit ABI opt-in only; no author code is imported during discovery."""
     try:
-        AscendCAdapter().preflight(SubmissionManifest.model_validate(candidate.manifest))
+        adapter_for(SubmissionManifest.model_validate(candidate.manifest))
     except ValueError:
         return False
     if session.get(BuildState, candidate.id) is None:

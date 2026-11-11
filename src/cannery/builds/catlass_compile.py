@@ -5,7 +5,7 @@ import json
 import math
 
 from cannery.builds import catlass
-from cannery.builds.ascendc import BuildError, BuildPlan
+from cannery.builds.ascendc import AscendCAdapter, BuildError, BuildPlan
 from cannery.submissions.manifest import SubmissionManifest
 
 
@@ -122,3 +122,11 @@ if __name__ == '__main__':
     compile_exports(json.loads(Path('/input/build.json').read_bytes()),
                     Path('source'), Path('kernel.so'))
 """
+
+
+def adapter_for(manifest: SubmissionManifest) -> "CatlassAdapter | AscendCAdapter":
+    adapter = (
+        CatlassAdapter() if manifest.implementation.language == "catlass" else AscendCAdapter()
+    )
+    adapter.preflight(manifest)
+    return adapter

@@ -9,12 +9,13 @@ from pathlib import Path
 from uuid import UUID
 
 from cannery.artifacts import ArtifactRef, ArtifactStore, digest, verified
-from cannery.builds.ascendc import AscendCAdapter, BuildError
+from cannery.builds.ascendc import BuildError
+from cannery.builds.catlass_compile import adapter_for
 from cannery.builds.remote import CplRemote, RemoteFailure, RemotePending, durable_write
 from cannery.builds.sandbox import WorkerProfile, job_script
 from cannery.git_intake import SnapshotBinding
 from cannery.git_intake.snapshots import SnapshotStore
-from cannery.submissions.manifest import validate_submission
+from cannery.submissions.manifest import SubmissionManifest, validate_submission
 from cannery.submissions.models import Candidate
 
 
@@ -24,7 +25,9 @@ class ExecutionFailure(BuildError):
         super().__init__(code)
 
 
-def binary_package(binary: bytes, source: str, profile: WorkerProfile) -> bytes:
+def binary_package(
+    binary: bytes, source: str, profile: WorkerProfile, manifest: SubmissionManifest | None = None
+) -> bytes:
     if (
         not 64 <= len(binary) <= 63 * 1024 * 1024
         or binary[:6] != b"\x7fELF\x02\x01"
@@ -42,6 +45,25 @@ def binary_package(binary: bytes, source: str, profile: WorkerProfile) -> bytes:
         "runtime": profile.fingerprint,
         "compiler": profile.compiler,
     }
+    if manifest is not None and manifest.implementation.build.abi == "catlass-unary-f32-v1":
+        adapter_for(manifest)
+        if profile.catlass is None:
+            raise ExecutionFailure("catlass_toolchain_unavailable")
+        build = manifest.implementation.build
+        assert build.specializations is not None
+        metadata.update(
+            schema_version=2,
+            abi=build.abi,
+            specializations=[s.model_dump(mode="json") for s in build.specializations],
+            compiler=json.dumps(
+                {
+                    "bisheng": profile.compiler,
+                    "catlass": profile.catlass.model_dump(exclude={"bitcode_root"}),
+                },
+                sort_keys=True,
+                separators=(",", ":"),
+            ),
+        )
     encoded = json.dumps(metadata, sort_keys=True, separators=(",", ":")).encode()
     if len(encoded) > 16384:
         raise ExecutionFailure("invalid_worker_profile")
@@ -135,7 +157,18 @@ class BuildExecutor:
             or validated.manifest.model_dump(mode="json") != candidate.manifest
         ):
             raise ExecutionFailure("retained_source_mismatch")
-        plan = AscendCAdapter().build(validated.manifest)
+        plan = adapter_for(validated.manifest).build(validated.manifest)
+        catlass = plan.wrapper_name == "launch.py"
+        if catlass and self.profile.catlass is None:
+            raise ExecutionFailure("catlass_toolchain_unavailable")
+        compile_options = (
+            {
+                "wrapper_name": plan.wrapper_name,
+                "catlass": self.profile.catlass.model_dump(mode="json"),
+            }
+            if catlass and self.profile.catlass is not None
+            else {}
+        )
         if self.wheel.stat().st_size > 2 * 1024 * 1024:
             raise ExecutionFailure("loader_size_limit")
         wheel = self.wheel.read_bytes()
@@ -150,6 +183,7 @@ class BuildExecutor:
                 "wheel": self.wheel_sha256,
                 "wrapper": plan.wrapper,
                 "command": plan.command,
+                **compile_options,
                 "job_contract": digest(job_script(self.profile, attempt, "runtime")),
             },
             sort_keys=True,
@@ -172,6 +206,7 @@ class BuildExecutor:
                 "wrapper": plan.wrapper,
                 "command": plan.command,
                 "compiler": self.profile.compiler,
+                **compile_options,
             }
         ).encode()
         inputs[self.wheel.name] = wheel
@@ -202,7 +237,7 @@ class BuildExecutor:
         binary = library.read_bytes()
         if digest(binary) != checksum:
             raise ExecutionFailure("compiled_digest_mismatch")
-        package = binary_package(binary, candidate.content_sha256, self.profile)
+        package = binary_package(binary, candidate.content_sha256, self.profile, validated.manifest)
         fence()
         reference = self.artifacts.put("builds/" + attempt.hex + "/package.tar", package)
         downloaded = self.artifacts.get(reference)
