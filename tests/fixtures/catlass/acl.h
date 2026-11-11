@@ -4,17 +4,25 @@
 #include <cstring>
 #include <cstddef>
 using aclError = int;
+static int fault = 0, loads = 0, launches = 0;
 using aclrtBinHandle = void*;
 using aclrtFuncHandle = void*;
 using aclrtArgsHandle = void*;
 using aclrtParamHandle = void*;
 using aclrtStream = void*;
+using aclrtContext = void*;
+static uintptr_t current_context = 1;
+extern "C" void test_context(int id) { current_context = id; }
+static aclError aclrtGetCurrentContext(aclrtContext* context) {
+    if (fault == 7) return 107;
+    *context = reinterpret_cast<void*>(current_context);
+    return 0;
+}
 constexpr int ACL_RT_BINARY_LOAD_OPT_MAGIC = 2;
 constexpr uint32_t ACL_RT_BINARY_MAGIC_ELF_VECTOR_CORE = 0x41415246;
 struct aclrtBinaryLoadOption { int type; union { uint32_t magic; } value; };
 struct aclrtBinaryLoadOptions { aclrtBinaryLoadOption* options; size_t numOpt; };
 struct aclrtLaunchKernelCfg { int unused; };
-static int fault = 0, loads = 0, launches = 0;
 struct Arguments { void* pointers[2]; };
 static Arguments payload;
 extern "C" void test_fault(int stage) { fault = stage; }

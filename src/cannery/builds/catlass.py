@@ -132,12 +132,18 @@ def native_wrapper(variants: list[NativeVariant]) -> str:
 
 ACL_BRIDGE = r"""
 static std::mutex launch_mutex;
+static aclrtContext bound_context = nullptr;
 extern "C" int cannery_launch(void* stream, void* input, void* output, uint64_t count) {
     if (count == 0) return 0;
     std::lock_guard<std::mutex> guard(launch_mutex);
     Variant* selected = nullptr;
     for (auto& variant : variants) if (variant.count == count) selected = &variant;
     if (!selected) return -1;
+    aclrtContext context = nullptr;
+    const auto context_status = aclrtGetCurrentContext(&context);
+    if (context_status) return static_cast<int>(context_status);
+    if (!context || (bound_context && bound_context != context)) return -2;
+    bound_context = context;
     auto& v = *selected;
     if (v.error) return v.error;
     auto check = [&v](aclError status) { v.error = static_cast<int>(status); return v.error; };

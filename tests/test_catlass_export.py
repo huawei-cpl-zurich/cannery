@@ -144,3 +144,27 @@ def test_acl_failure_propagates_and_never_blindly_retries(bridge, tmp_path, stag
     lib.test_fault(0)
     assert call(lib, 17)[0] == 100 + stage
     assert lib.test_loads() == 1 and lib.test_launches() == 0
+
+
+def test_context_switch_is_rejected_without_poisoning_original_context(bridge, tmp_path):
+    lib = load(bridge, tmp_path)
+    assert call(lib, 17)[0] == 0
+    lib.test_context(2)
+    assert call(lib, 17)[0] == -2
+    assert call(lib, 21)[0] == -2
+    assert lib.test_loads() == 1 and lib.test_launches() == 1
+    lib.test_context(1)
+    assert call(lib, 17)[0] == 0
+    assert lib.test_loads() == 1 and lib.test_launches() == 2
+
+
+def test_missing_or_failed_context_does_not_create_binary_handles(bridge, tmp_path):
+    lib = load(bridge, tmp_path)
+    lib.test_context(0)
+    assert call(lib, 17)[0] == -2
+    lib.test_fault(7)
+    assert call(lib, 17)[0] == 107
+    assert lib.test_loads() == 0 and lib.test_launches() == 0
+    lib.test_context(1)
+    lib.test_fault(0)
+    assert call(lib, 17)[0] == 0
