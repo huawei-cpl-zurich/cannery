@@ -45,8 +45,8 @@ to try its toy submission.</p>{% endif %}
     {% if job.numerical %}
     <p>Numerical validation: {{ job.numerical.status }} · attempts: {{ job.numerical.attempts }}.</p>
     {% if job.numerical.report %}
-    <table><thead><tr><th>Case</th><th>Input unchanged</th><th>Spec default</th><th>Requested</th><th>Max absolute error</th><th>RMS error</th></tr></thead><tbody>
-    {% for case in job.numerical.report.cases %}<tr><td>{{ case.id }}</td><td>{{ case.input_unchanged }}</td><td>{{ case.spec_default.passed }}</td><td>{{ case.submission_requested.passed }}</td><td>{{ case.spec_default.max_absolute_error }}</td><td>{{ case.spec_default.rms_error }}</td></tr>{% endfor %}
+    <table><thead><tr><th>Case</th><th>Input unchanged</th><th>Spec default (rtol, atol)</th><th>Requested (rtol, atol)</th><th>Max absolute error</th><th>Max relative error</th><th>RMS error</th><th>Nonfinite mismatches</th></tr></thead><tbody>
+    {% for case in job.numerical.report.cases %}<tr><td>{{ case.id }}</td><td>{{ case.input_unchanged }}</td><td>{{ case.spec_default.passed }} ({{ case.spec_default.rtol }}, {{ case.spec_default.atol }})</td><td>{{ case.submission_requested.passed }} ({{ case.submission_requested.rtol }}, {{ case.submission_requested.atol }})</td><td>{{ case.spec_default.max_absolute_error }}</td><td>{{ case.spec_default.max_relative_error if case.spec_default.max_relative_error is not none else "undefined" }}</td><td>{{ case.spec_default.rms_error }}</td><td>{{ case.spec_default.nonfinite_mismatches }}</td></tr>{% endfor %}
     </tbody></table>
     {% endif %}
     {% endif %}
