@@ -151,7 +151,17 @@ def install_submission_web(
             "My Submissions",
             jobs=jobs,
             pending=any(
-                job["status"] in ("queued", "intaking", "build_queued", "building") for job in jobs
+                job["status"]
+                in (
+                    "queued",
+                    "intaking",
+                    "build_queued",
+                    "building",
+                    "awaiting_validation",
+                    "validation_queued",
+                    "validating",
+                )
+                for job in jobs
             ),
         )
 

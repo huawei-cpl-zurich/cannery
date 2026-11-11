@@ -25,19 +25,28 @@ to try its toy submission.</p>{% endif %}
 </form>
 {% else %}<p><a href="/register-kernel">Register a specification</a> before submitting an implementation.</p>{% endif %}
 {% elif job %}
-<section id="submission"{% if job.status in ['queued','intaking','build_queued','building'] %}
+<section id="submission"{% if job.status in ['queued','intaking','build_queued','building','awaiting_validation','validation_queued','validating'] %}
  hx-get="{{ request.url.path }}" hx-trigger="every 2s" hx-select="#submission" hx-swap="outerHTML"{% endif %}>
   <p>Submission <code>{{ job.id }}</code>: <strong>{{ job.status }}</strong>. ETA: Unknown.</p>
   <p>{{ job.kernel.namespace }}/{{ job.kernel.name }}@spec-v{{ job.spec_version }} · {{ job.target.device }} · {{ job.target.language }}</p>
   <p>Source: {{ job.source.url }} · <code>{{ job.source.commit }}</code> · {{ job.source.path }}</p>
   {% if job.parent_id %}<p>Revision of <a href="/submissions/{{ job.parent_id }}">{{ job.parent_id }}</a></p>{% endif %}
   {% if job.error %}<p role="alert">{% if job.status == 'failed' %}Submission failed: {{ job.error }}.
+  {% elif job.numerical and job.numerical.status == 'blocked' %}Validation blocked: {{ job.error }}.
   {% else %}Previous attempt failed: {{ job.error }}. Retry pending.{% endif %}</p>{% endif %}
   {% if job.candidate %}
     {% if job.build %}
-    <p>Source retained. Build: {{ job.stages.build }}. Correctness and benchmark: {{ job.stages.correctness }}.</p>
-    {% if job.build.artifact %}<p>Binary SHA256: <code>{{ job.build.artifact.sha256 }}</code>. Awaiting validation.</p>{% endif %}
+    <p>Source retained. Build: {{ job.stages.build }}. Correctness: {{ job.stages.correctness }}. Benchmark: {{ job.stages.benchmark }}.</p>
+    {% if job.build.artifact %}<p>Binary SHA256: <code>{{ job.build.artifact.sha256 }}</code>.</p>{% endif %}
     {% else %}<p>Source retained. Build, correctness and benchmark are pending.</p>{% endif %}
+    {% if job.numerical %}
+    <p>Numerical validation: {{ job.numerical.status }} · attempts: {{ job.numerical.attempts }}.</p>
+    {% if job.numerical.report %}
+    <table><thead><tr><th>Case</th><th>Input unchanged</th><th>Spec default</th><th>Requested</th><th>Max absolute error</th><th>RMS error</th></tr></thead><tbody>
+    {% for case in job.numerical.report.cases %}<tr><td>{{ case.id }}</td><td>{{ case.input_unchanged }}</td><td>{{ case.spec_default.passed }}</td><td>{{ case.submission_requested.passed }}</td><td>{{ case.spec_default.max_absolute_error }}</td><td>{{ case.spec_default.rms_error }}</td></tr>{% endfor %}
+    </tbody></table>
+    {% endif %}
+    {% endif %}
     <p>Content SHA256: <code>{{ job.candidate.content_sha256 }}</code></p>
     <form method="post" action="/submissions/{{ job.id }}/revisions">
       <label>New full commit SHA <input name="commit" required></label>

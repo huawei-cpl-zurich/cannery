@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session
 
 from cannery.builds.state import BuildResult, BuildState
 from cannery.git_intake import GitSource
+from cannery.numerics.state import NumericalResult, NumericalState
 from cannery.registry.api import identity
 from cannery.registry.dispatch import publish_submission
 from cannery.registry.freeze import kernel_key
@@ -80,12 +81,23 @@ def revise(settings: Settings, engine: Engine, identifier: UUID, commit: str) ->
 
 def query(namespace: str) -> Select[*tuple[Any, ...]]:
     return (
-        select(Submission, IntakeState, Candidate, SpecVersion, BuildState, BuildResult)
+        select(
+            Submission,
+            IntakeState,
+            Candidate,
+            SpecVersion,
+            BuildState,
+            BuildResult,
+            NumericalState,
+            NumericalResult,
+        )
         .join(IntakeState, IntakeState.id == Submission.id)
         .outerjoin(Candidate, Candidate.id == Submission.id)
         .join(SpecVersion, SpecVersion.id == Submission.spec_id)
         .outerjoin(BuildState, BuildState.id == Candidate.id)
         .outerjoin(BuildResult, BuildResult.id == BuildState.attempt_id)
+        .outerjoin(NumericalState, NumericalState.id == Candidate.id)
+        .outerjoin(NumericalResult, NumericalResult.id == NumericalState.attempt_id)
         .where(Submission.namespace == namespace)
     )
 
@@ -97,6 +109,8 @@ def describe(
     spec: SpecVersion,
     build: BuildState | None = None,
     result: BuildResult | None = None,
+    numerical: NumericalState | None = None,
+    numerical_result: NumericalResult | None = None,
 ) -> dict[str, Any]:
     failed = state.status == "failed" or (build is not None and build.status == "failed")
     status = (
@@ -104,6 +118,12 @@ def describe(
         if build is None
         else ("build_queued" if build.status == "queued" else build.status)
     )
+    if numerical is not None:
+        if numerical.status != "blocked":
+            status = {"queued": "validation_queued", "passed": "awaiting_benchmark"}.get(
+                numerical.status, numerical.status
+            )
+        failed = failed or numerical.status == "failed"
     return {
         "id": str(request.id),
         "parent_id": str(request.parent_id) if request.parent_id else None,
@@ -113,7 +133,7 @@ def describe(
         "source": request.source,
         "target": request.target,
         "status": status,
-        "error": build.error if build else state.error,
+        "error": numerical.error if numerical else build.error if build else state.error,
         "created_at": request.created_at.isoformat(),
         "eta_seconds": None,
         "stages": {
@@ -127,14 +147,24 @@ def describe(
             else "blocked"
             if failed
             else "pending",
-            "correctness": "blocked" if failed else "pending",
-            "benchmark": "blocked" if failed else "pending",
+            "correctness": numerical.status if numerical else "blocked" if failed else "pending",
+            "benchmark": "blocked"
+            if failed or (numerical is not None and numerical.status == "blocked")
+            else "pending",
         },
         "build": None
         if build is None
         else {
             "attempts": build.attempts,
             "artifact": result.artifact if result and result.status == "complete" else None,
+        },
+        "numerical": None
+        if numerical is None
+        else {
+            "status": numerical.status,
+            "attempts": numerical.attempts,
+            "baseline_key": numerical.baseline_key,
+            "report": numerical_result.report if numerical_result else None,
         },
         "candidate": None
         if candidate is None
@@ -150,12 +180,12 @@ def get_info(session: Session, namespace: str, identifier: UUID) -> dict[str, An
     row = session.execute(query(namespace).where(Submission.id == identifier)).one_or_none()
     if row is None:
         raise HTTPException(404, "Submission not found")
-    return describe(row[0], row[1], row[2], row[3], row[4], row[5])
+    return describe(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7])
 
 
 def list_info(session: Session, namespace: str) -> list[dict[str, Any]]:
     return [
-        describe(row[0], row[1], row[2], row[3], row[4], row[5])
+        describe(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7])
         for row in session.execute(
             query(namespace).order_by(Submission.created_at.desc()).limit(50)
         )
