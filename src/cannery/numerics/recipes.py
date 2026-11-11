@@ -83,6 +83,11 @@ def generate(recipe: TensorRecipe, case_id: str, input_name: str) -> bytes:
     """
     # Validate identifiers even for direct callers; NUL is a framing delimiter.
     RecipeCase.model_validate({"id": case_id, "inputs": {input_name: recipe}})
+    return _generate(recipe, case_id, input_name)
+
+
+def _generate(recipe: TensorRecipe, case_id: str, input_name: str) -> bytes:
+    """Pure stdlib implementation copied into isolated trusted supervisors."""
     count = math.prod(recipe.shape)
     if recipe.distribution == "zeros_f32":
         data = bytes(4 * count)
