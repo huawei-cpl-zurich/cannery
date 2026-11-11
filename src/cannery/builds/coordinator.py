@@ -44,7 +44,9 @@ def discover(engine: Engine) -> None:
         candidates = session.scalars(
             select(Candidate)
             .where(
-                Candidate.manifest["implementation"]["build"]["abi"].as_string() == "unary-f32-v1",
+                Candidate.manifest["implementation"]["build"]["abi"]
+                .as_string()
+                .in_(("unary-f32-v1", "catlass-unary-f32-v1")),
                 ~select(BuildState.id).where(BuildState.id == Candidate.id).exists(),
             )
             .order_by(Candidate.id)

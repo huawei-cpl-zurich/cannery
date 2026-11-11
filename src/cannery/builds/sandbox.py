@@ -287,9 +287,11 @@ package = pathlib.Path('/input/admitted.tar').read_bytes()
 reference = json.loads(pathlib.Path('/input/artifact.json').read_text())
 assert hashlib.sha256(package).hexdigest() == reference['sha256']
 kernel = load_cannery_package(package, reference['sha256'], trust_remote_code=True)
-for shape in [(17,), (0,), (3, 7)]:
+shapes = ([tuple(item['shape']) for item in kernel.metadata['specializations']]
+          if kernel.metadata['abi'] == 'catlass-unary-f32-v1' else [(17,), (0,), (3, 7)])
+for shape in shapes:
     x = torch.arange(torch.tensor(shape).prod().item(), dtype=torch.float32).reshape(shape).npu()
-    if x.ndim == 2:
+    if x.ndim == 2 and kernel.metadata['abi'] == 'unary-f32-v1':
         x = x.t()
     result = kernel.forward(x)
     torch.npu.synchronize()
