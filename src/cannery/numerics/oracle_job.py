@@ -2,6 +2,7 @@
 
 import base64
 import json
+import os
 import re
 import subprocess
 from collections.abc import Callable
@@ -21,6 +22,14 @@ from cannery.numerics.baseline_format import (
 from cannery.numerics.oracle_worker import worker_source
 from cannery.numerics.recipes import RecipeSuite, parse_recipes
 from cannery.registry.manifest import RecipeEntrypoint, ValidatedSpec, validate_spec
+
+CPU_FLAGS = (
+    "create --init --rm --pull never --network none --read-only --user 0:0 "
+    "--cap-drop ALL --cap-add SETUID --cap-add SETGID --cap-add KILL "
+    "--security-opt no-new-privileges --memory 2g --cpus 1 --pids-limit 64 --log-driver none "
+    "--tmpfs /work:rw,noexec,nosuid,nodev,size=32m,mode=755 "
+    "--tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777"
+).split()
 
 
 class OraclePending(Exception):
@@ -62,6 +71,8 @@ class OracleJob:
             or re.fullmatch(r"sha256:[a-f0-9]{64}", image) is None
         ):
             raise ValueError("Invalid trusted oracle job configuration")
+        if os.geteuid() == 10001:
+            raise ValueError("Oracle controller UID must differ from reserved author UID 10001")
         self.key, self.attempt, self.volume, self.image = key, attempt, volume, image
         self.artifacts, self.fence = artifacts, fence
         self.relative = key + "/" + attempt.hex
@@ -119,6 +130,7 @@ class OracleJob:
             raise OracleFailure("Oracle recipe identity mismatch")
         plan = {
             "path": path,
+            "output_owner": [os.geteuid(), os.getegid()],
             "spec": spec.manifest.spec.model_dump(mode="json"),
             "suite": suite.model_dump(mode="json"),
             "environment": spec.environment.model_dump(mode="json"),
@@ -174,48 +186,19 @@ class OracleJob:
                 raise OraclePending("Ambiguous oracle creation; do not repeat reference")
             source = self.journal / "input"
             source.mkdir(mode=0o755, exist_ok=True)
+            source.chmod(0o755)
             (self.journal / "output").mkdir(mode=0o700, exist_ok=True)
             durable_write(source / "plan.json", json.dumps(plan, sort_keys=True).encode())
+            (source / "plan.json").chmod(0o444)
             self.fence()
             durable_write(dispatch, b"dispatching\n")
             docker(
-                [
-                    "create",
-                    "--init",
-                    "--rm",
-                    "--pull",
-                    "never",
+                CPU_FLAGS
+                + [
                     "--name",
                     self.name,
                     "--label",
                     "cannery.oracle.owner=" + self.attempt.hex,
-                    "--network",
-                    "none",
-                    "--read-only",
-                    "--user",
-                    "0:0",
-                    "--cap-drop",
-                    "ALL",
-                    "--cap-add",
-                    "SETUID",
-                    "--cap-add",
-                    "SETGID",
-                    "--cap-add",
-                    "KILL",
-                    "--security-opt",
-                    "no-new-privileges",
-                    "--memory",
-                    "2g",
-                    "--cpus",
-                    "1",
-                    "--pids-limit",
-                    "64",
-                    "--log-driver",
-                    "none",
-                    "--tmpfs",
-                    "/work:rw,noexec,nosuid,nodev,size=32m,mode=755",
-                    "--tmpfs",
-                    "/tmp:rw,noexec,nosuid,nodev,size=64m,mode=1777",
                     "--mount",
                     f"type=volume,src={self.volume},dst=/input,readonly,volume-subpath={self.relative}/input",
                     "--mount",
@@ -239,6 +222,8 @@ class OracleJob:
             raise OraclePending("Oracle reference running")
         if state["Status"] not in ("exited", "dead"):
             raise OraclePending("Oracle reference running")
+        if (self.journal / "output/result.json").exists():
+            return self.progress(spec, suite, files, path)
         self.cleanup()
         raise OracleFailure("CPU reference exited without an output checkpoint")
 

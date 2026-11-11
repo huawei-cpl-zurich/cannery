@@ -220,3 +220,21 @@ def test_failed_or_missing_result_never_restarts_reference(setup_job, error):
     with pytest.raises(OracleFailure if error else OraclePending):
         progress()
     assert docker.starts == docker.creates == 1 and memory.puts == 0
+
+
+def test_checkpoint_published_during_terminal_inspection_is_not_lost(setup_job, monkeypatch):
+    _, progress, docker, _, _, _, outputs, _ = setup_job
+    for _ in range(2):
+        with pytest.raises(OraclePending):
+            progress()
+    docker.info["State"]["Status"] = "exited"
+    original = docker.__call__
+
+    def inspect_race(args, limit=1024 * 1024):
+        result = original(args, limit)
+        if args[0] == "inspect":
+            docker.complete(outputs)
+        return result
+
+    monkeypatch.setattr("cannery.numerics.oracle_job.docker", inspect_race)
+    assert progress().sha256 and docker.starts == 1
