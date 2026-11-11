@@ -66,3 +66,13 @@ jobs:
         with:
           python-version: "3.12"
       - run: python scripts/submission_acceptance.py
+
+  numerical-ingress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python scripts/numerical_ingress_acceptance.py
