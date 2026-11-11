@@ -51,3 +51,21 @@ field and generator version. Input identity hashes the canonical shape/dtype/
 layout descriptor, a NUL separator and logical float32 bytes. Persist those
 identities and recipes, not input tensor contents. Empty tensors have no value
 bytes but still bind shape and layout in their input hash.
+
+## Specification declaration
+
+Select a retained recipe file instead of a Python generator:
+
+```yaml
+spec:
+  cases: {recipe_file: recipes.yaml}
+```
+
+The reference remains the declared Python entrypoint in its pinned CPU environment.
+Intake checks the recipe suite and exact input-name agreement without importing
+reference code. Recipe files participate in the spec's semantic content hash.
+The initial numerical ABI requires exactly one input and one output. Existing
+`cases: {file: cases.py, function: generate_cases}` declarations keep their old
+serialization and hashes; changing a frozen spec to recipes requires a new version.
+A recipe declaration alone does not generate a baseline: numerical ingress must
+be configured before it can complete registration.
