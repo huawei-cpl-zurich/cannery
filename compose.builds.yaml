@@ -1,6 +1,8 @@
 # Trusted coordinator only. Author code runs in separate restricted remote jobs.
 services:
   builder:
+    # Reap orphaned transport subprocesses during retries and disconnects.
+    init: true
     build:
       context: .
       target: builder
