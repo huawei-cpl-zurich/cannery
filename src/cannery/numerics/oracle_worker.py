@@ -11,7 +11,7 @@ import torch
 
 
 def raw(value):
-    contiguous=value.detach().contiguous()
+    contiguous=value.detach().resolve_conj().resolve_neg().contiguous()
     return ctypes.string_at(contiguous.data_ptr(),contiguous.numel()*4)
 
 
@@ -33,7 +33,10 @@ for line in sys.stdin:
         x=(torch.frombuffer(bytearray(data),dtype=torch.float32).clone().reshape(shape)
            if data else torch.empty(shape,dtype=torch.float32))
         if request['layout']=='transpose':
-            x=x.t().contiguous().t()
+            backing=torch.empty(tuple(reversed(shape)),dtype=torch.float32)
+            view=backing.t()
+            view.copy_(x)
+            x=view
         strides=x.stride()
         with torch.no_grad():
             output=forward(**{request['input_name']:x})
