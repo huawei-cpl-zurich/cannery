@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     smoke_image: str = "cannery-reference:local"
     smoke_timeout: float = Field(default=30, gt=0, le=60)
 
+    baseline_volume: str | None = None
+    baseline_root: Path = Path("/var/lib/cannery/baselines")
+
     build_profile: Path | None = None
     build_loader_wheel: Path | None = None
     build_loader_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
