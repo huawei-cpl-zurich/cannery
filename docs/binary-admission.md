@@ -8,6 +8,10 @@ a uint64 element count and the current NPU stream. Author code defines
 The loader materializes noncontiguous input and preserves shape, dtype and device.
 Only one source translation unit plus headers is supported.
 
+M4 also supports [static CATLASS binary admission](catlass-admission.md) with
+explicit specializations and a separately pinned compiler toolchain. Both paths
+use the same private artifact and isolated runtime workflow.
+
 The coordinator reads the retained Git snapshot, checks the frozen binding,
 compiles through the installed `remote-access` skill, stages a hashed package in
 the [private backend](private-artifacts.md), reads it back and runs an isolated

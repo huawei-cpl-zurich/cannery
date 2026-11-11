@@ -14,7 +14,7 @@ from cannery.registry.registrations import Registration
 from cannery.settings import Settings
 
 REPO = "https://github.com/huawei-cpl-zurich/helloworld-kernel.git"
-SHA = "d838f3fd8e4715388df240c0653b197d7a093c49"
+SHA = "f840604437aec7f42d66bf281680a39ea2a03f04"
 
 
 class Fields(HTMLParser):
@@ -78,13 +78,14 @@ def test_public_registration_preset_queues_verified_source(client):
 
 
 @pytest.mark.parametrize(
-    "preset,path",
+    "preset,path,language",
     [
-        ("helloworld", "candidates/helloworld"),
-        ("helloworld-native", "candidates/helloworld_ascendc"),
+        ("helloworld", "candidates/helloworld", "ascendc"),
+        ("helloworld-native", "candidates/helloworld_ascendc", "ascendc"),
+        ("helloworld-catlass", "candidates/helloworld_catlass", "catlass"),
     ],
 )
-def test_toy_preset_selects_required_spec_and_target(client, monkeypatch, preset, path):
+def test_toy_preset_selects_required_spec_and_target(client, monkeypatch, preset, path, language):
     engine = client.app.state.test_engine
     with Session(engine) as session, session.begin():
         key = kernel_key("team", "helloworld")
@@ -109,7 +110,7 @@ def test_toy_preset_selects_required_spec_and_target(client, monkeypatch, preset
     assert fields == {
         "spec_id": expected,
         "device": "a5",
-        "language": "ascendc",
+        "language": language,
         "url": REPO,
         "commit": SHA,
         "path": path,
@@ -124,7 +125,7 @@ def test_toy_preset_selects_required_spec_and_target(client, monkeypatch, preset
     assert response.status_code == 303
     key = response.headers["location"].rsplit("/", 1)[-1]
     job = client.get(f"/api/v1/submissions/{key}").json()
-    assert job["kernel"]["name"] == "helloworld" and job["target"]["language"] == "ascendc"
+    assert job["kernel"]["name"] == "helloworld" and job["target"]["language"] == language
     assert job["source"]["commit"] == SHA
 
 

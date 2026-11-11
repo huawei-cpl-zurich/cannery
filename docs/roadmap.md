@@ -1,12 +1,12 @@
 # CANNery — PoC Roadmap
 
-Current M3 contract: [private binary admission](binary-admission.md). The active
-backend is self-hosted; no actual Hugging Face service is required. Ascend C A5
-`unary-f32-v1` is the initial supported binary contract. CATLASS, A3, full
+Current M4 contracts: [Ascend C binary admission](binary-admission.md) and
+[static CATLASS binary admission](catlass-admission.md) on A5. The active artifact
+backend is self-hosted; no actual Hugging Face service is required. A3, full
 correctness/benchmarks and publication below remain proposed later milestones.
 
 
-Status: M0–M2 source workflows implemented; M3 onward planned · 2026-11-10
+Status: M0–M4 source and binary admission workflows implemented; M5 onward planned · 2026-11-11
 
 Build a working user journey with thin end-to-end slices. **No non-Git source intake.** Every implementation commit contains a supported build contract, and binary artifacts are produced by our workers before validation and published from private artifact storage. **Initial adapters: Ascend C and CATLASS DSL only**; Triton-Ascend and PyPTO are future phases.
 
