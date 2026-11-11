@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from sqlalchemy import Engine, create_engine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -6,6 +8,10 @@ from cannery.settings import Settings
 
 class Base(DeclarativeBase):
     pass
+
+
+def aware(value: datetime) -> datetime:
+    return value.replace(tzinfo=UTC) if value.tzinfo is None else value
 
 
 def make_engine(settings: Settings) -> Engine:
