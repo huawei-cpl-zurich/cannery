@@ -136,7 +136,7 @@ def test_offline_bridge_dispatch_payload_stream_and_handle_reuse(bridge, tmp_pat
     assert lib.test_loads() == 2 and lib.test_launches() == 3
 
 
-@pytest.mark.parametrize("stage", range(1, 7))
+@pytest.mark.parametrize("stage", range(1, 4))
 def test_acl_failure_propagates_and_never_blindly_retries(bridge, tmp_path, stage):
     lib = load(bridge, tmp_path)
     lib.test_fault(stage)
@@ -162,8 +162,8 @@ def test_missing_or_failed_context_does_not_create_binary_handles(bridge, tmp_pa
     lib = load(bridge, tmp_path)
     lib.test_context(0)
     assert call(lib, 17)[0] == -2
-    lib.test_fault(7)
-    assert call(lib, 17)[0] == 107
+    lib.test_fault(4)
+    assert call(lib, 17)[0] == 104
     assert lib.test_loads() == 0 and lib.test_launches() == 0
     lib.test_context(1)
     lib.test_fault(0)

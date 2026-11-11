@@ -119,7 +119,7 @@ def native_wrapper(variants: list[NativeVariant]) -> str:
             + "}"
         )
     return (
-        "#include <acl/acl.h>\n#include <cstdint>\n#include <mutex>\n"
+        "#include <acl/acl.h>\n#include <cstdint>\n#include <mutex>\n#include <cstdio>\n"
         + "\n".join(declarations)
         + "\nstruct Variant { uint64_t count; const unsigned char* data; size_t size;\n"
         + "const char* symbol; aclrtBinHandle binary{}; aclrtFuncHandle function{};\n"
@@ -146,24 +146,28 @@ extern "C" int cannery_launch(void* stream, void* input, void* output, uint64_t 
     bound_context = context;
     auto& v = *selected;
     if (v.error) return v.error;
-    auto check = [&v](aclError status) { v.error = static_cast<int>(status); return v.error; };
+    auto check = [&v](aclError status, const char* operation) {
+        if (status) {
+            v.error = static_cast<int>(status);
+            std::fprintf(stderr, "CATLASS %s failed: %d\n", operation, v.error);
+        }
+        return static_cast<int>(status);
+    };
     if (!v.loaded) {
         aclrtBinaryLoadOption option{};
         option.type = ACL_RT_BINARY_LOAD_OPT_MAGIC;
         option.value.magic = ACL_RT_BINARY_MAGIC_ELF_VECTOR_CORE;
         aclrtBinaryLoadOptions options{&option, 1};
-        if (check(aclrtBinaryLoadFromData(v.data, v.size, &options, &v.binary))) return v.error;
-        if (check(aclrtBinaryGetFunction(v.binary, v.symbol, &v.function))) return v.error;
+        if (check(aclrtBinaryLoadFromData(v.data, v.size, &options, &v.binary),
+                  "binary_load")) return v.error;
+        if (check(aclrtBinaryGetFunction(v.binary, v.symbol, &v.function),
+                  "get_function")) return v.error;
         v.loaded = true;
     }
-    aclrtArgsHandle args{};
-    aclrtParamHandle parameter{};
     void* pointers[] = {input, output};
-    if (check(aclrtKernelArgsInit(v.function, &args))) return v.error;
-    if (check(aclrtKernelArgsAppend(args, pointers, sizeof(pointers), &parameter))) return v.error;
-    if (check(aclrtKernelArgsFinalize(args))) return v.error;
     aclrtLaunchKernelCfg config{};
-    return check(aclrtLaunchKernelWithConfig(v.function, 1,
-        reinterpret_cast<aclrtStream>(stream), &config, args, nullptr));
+    return check(aclrtLaunchKernelWithHostArgs(v.function, 1,
+        reinterpret_cast<aclrtStream>(stream), &config, pointers, sizeof(pointers),
+        nullptr, 0), "launch_host_args");
 }
 """

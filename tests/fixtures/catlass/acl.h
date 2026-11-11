@@ -14,7 +14,7 @@ using aclrtContext = void*;
 static uintptr_t current_context = 1;
 extern "C" void test_context(int id) { current_context = id; }
 static aclError aclrtGetCurrentContext(aclrtContext* context) {
-    if (fault == 7) return 107;
+    if (fault == 4) return 104;
     *context = reinterpret_cast<void*>(current_context);
     return 0;
 }
@@ -23,8 +23,6 @@ constexpr uint32_t ACL_RT_BINARY_MAGIC_ELF_VECTOR_CORE = 0x41415246;
 struct aclrtBinaryLoadOption { int type; union { uint32_t magic; } value; };
 struct aclrtBinaryLoadOptions { aclrtBinaryLoadOption* options; size_t numOpt; };
 struct aclrtLaunchKernelCfg { int unused; };
-struct Arguments { void* pointers[2]; };
-static Arguments payload;
 extern "C" void test_fault(int stage) { fault = stage; }
 extern "C" int test_loads() { return loads; }
 extern "C" int test_launches() { return launches; }
@@ -45,31 +43,18 @@ static aclError aclrtBinaryGetFunction(aclrtBinHandle binary, const char* symbol
     *function = binary;
     return 0;
 }
-static aclError aclrtKernelArgsInit(aclrtFuncHandle function, aclrtArgsHandle* args) {
+struct aclrtPlaceHolderInfo { uint32_t addrOffset, dataOffset; };
+static aclError aclrtLaunchKernelWithHostArgs(aclrtFuncHandle function, uint32_t blocks,
+                                             aclrtStream stream, aclrtLaunchKernelCfg* config,
+                                             void* args, size_t size,
+                                             aclrtPlaceHolderInfo* placeholders, size_t count) {
     if (fault == 3) return 103;
-    *args = &payload;
-    return 0;
-}
-static aclError aclrtKernelArgsAppend(aclrtArgsHandle args, void* source, size_t size,
-                                     aclrtParamHandle* parameter) {
-    if (fault == 4) return 104;
-    if (args != &payload || size != 16) return 199;
-    std::memcpy(payload.pointers, source, size);
-    *parameter = nullptr;
-    return 0;
-}
-static aclError aclrtKernelArgsFinalize(aclrtArgsHandle args) {
-    return fault == 5 ? 105 : 0;
-}
-static aclError aclrtLaunchKernelWithConfig(aclrtFuncHandle function, uint32_t blocks,
-                                           aclrtStream stream, aclrtLaunchKernelCfg* config,
-                                           aclrtArgsHandle args, void* reserved) {
-    if (fault == 6) return 106;
-    if (blocks != 1 || stream != reinterpret_cast<void*>(99) || !config || reserved ||
-        args != &payload) return 199;
+    if (blocks != 1 || stream != reinterpret_cast<void*>(99) || !config || placeholders ||
+        count != 0 || size != 16) return 199;
     ++launches;
-    auto* x = static_cast<float*>(payload.pointers[0]);
-    auto* y = static_cast<float*>(payload.pointers[1]);
+    auto** pointers = static_cast<void**>(args);
+    auto* x = static_cast<float*>(pointers[0]);
+    auto* y = static_cast<float*>(pointers[1]);
     for (uintptr_t i = 0; i < reinterpret_cast<uintptr_t>(function); ++i) y[i] = x[i] + 1;
     return 0;
 }
