@@ -2,6 +2,7 @@ import json
 from unittest.mock import Mock
 
 import httpx
+import pytest
 from typer.testing import CliRunner
 
 from cannery.cli import app
@@ -131,3 +132,14 @@ def test_wait_build_reports_failure_or_source_only_contract(monkeypatch):
             monkeypatch, [(202, {"id": KEY}), (200, status)], arguments() + ["--wait-build"]
         )
         assert result.exit_code == 1
+
+
+@pytest.mark.parametrize("status", ["validating", "awaiting_benchmark", "failed"])
+def test_wait_build_finishes_if_numerical_work_has_already_advanced(monkeypatch, status):
+    result, requests = invoke(
+        monkeypatch,
+        [(202, {"id": KEY}), (200, {"status": status, "stages": {"build": "complete"}})],
+        arguments() + ["--wait-build"],
+    )
+    assert result.exit_code == 0 and "Binary admitted." in result.output
+    assert f"Current status: {status}" in result.output and len(requests) == 2

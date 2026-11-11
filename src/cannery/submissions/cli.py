@@ -56,8 +56,15 @@ def send(
                         else "Source retained; intake complete. ETA unknown."
                     )
                     return
-                if wait_build and result["status"] == "awaiting_validation":
-                    typer.echo("Binary admitted; awaiting validation. ETA unknown.")
+                if wait_build and (
+                    result["status"] == "awaiting_validation"
+                    or result.get("stages", {}).get("build") == "complete"
+                ):
+                    typer.echo(
+                        "Binary admitted; awaiting validation. ETA unknown."
+                        if result["status"] == "awaiting_validation"
+                        else f"Binary admitted. Current status: {result['status']}. ETA unknown."
+                    )
                     return
                 if wait_build and result["status"] == "awaiting_build":
                     candidate = result.get("candidate")
