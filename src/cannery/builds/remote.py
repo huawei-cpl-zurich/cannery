@@ -39,6 +39,15 @@ def durable_write(path: Path, data: bytes) -> None:
         os.close(descriptor)
 
 
+def operation_receipts(journal: Path) -> list[Path]:
+    """Select controller-dispatched receipts, never candidate output JSON."""
+    return [
+        receipt
+        for marker in journal.glob("*.dispatch")
+        if (receipt := marker.with_suffix(".json")).is_file()
+    ]
+
+
 def script_payload(script: bytes) -> bytes:
     encoded = base64.b64encode(gzip.compress(script, mtime=0)).decode()
     return (
