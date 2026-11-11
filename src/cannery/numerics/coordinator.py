@@ -250,8 +250,8 @@ def cleanup_finished(
             executor = factory(NumericalClaim(result.candidate_id, result.id, result.id))
             context = journal / "context.json"
             if context.exists():
-                executor.profile = WorkerProfile.model_validate(
-                    json.loads(context.read_bytes())["profile"]
+                executor.profile = WorkerProfile.model_validate_json(
+                    json.dumps(json.loads(context.read_bytes())["profile"])
                 )
                 executor.remote.target = executor.profile.target
             for receipt in operation_receipts(journal):
