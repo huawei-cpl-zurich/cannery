@@ -172,28 +172,34 @@ def process(
         try:
             executor = factory(claim)
             executor.fence = keeper.fence
+            failure_path = executor.remote.journal / "numerical-failure.json"
             try:
+                if failure_path.exists():
+                    stored = json.loads(failure_path.read_bytes())
+                    if stored["blocked"]:
+                        raise BaselineUnavailable(stored["error"])
+                    raise ExecutionFailure(stored["error"], retryable=stored["retryable"])
                 data = retained(engine, key, executor)
                 report = executor.validate(attempt=claim.attempt, fence=keeper.fence, **data)
             except (ExecutionFailure, RemoteFailure, BaselineUnavailable) as failure:
-                if list(executor.remote.journal.glob("*.dispatch")):
-                    executor.cleanup(claim.attempt)
-                details = evidence(executor)
-                keeper.fence()
-                if finish_numerical(
-                    engine,
-                    claim,
-                    error=str(failure)
+                outcome: dict[str, Any] = {
+                    "error": str(failure)
                     if isinstance(failure, BaselineUnavailable)
                     else failure.code
                     if isinstance(failure, ExecutionFailure)
                     else "worker_failed",
-                    retryable=failure.retryable
+                    "retryable": failure.retryable
                     if isinstance(failure, ExecutionFailure)
                     else isinstance(failure, RemoteFailure),
-                    blocked=isinstance(failure, BaselineUnavailable),
-                    evidence=details,
-                ):
+                    "blocked": isinstance(failure, BaselineUnavailable),
+                }
+                keeper.fence()
+                durable_write(failure_path, json.dumps(outcome, sort_keys=True).encode())
+                if list(executor.remote.journal.glob("*.dispatch")):
+                    executor.cleanup(claim.attempt)
+                details = evidence(executor)
+                keeper.fence()
+                if finish_numerical(engine, claim, evidence=details, **outcome):
                     prune(executor.remote.journal)
                 return
             executor.cleanup(claim.attempt)

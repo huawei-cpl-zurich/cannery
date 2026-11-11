@@ -8,7 +8,7 @@ from test_build_coordinator import Executor
 from test_build_state import candidate
 from test_submission_requests import records as records
 
-from cannery.artifacts import ArtifactRef
+from cannery.artifacts import ArtifactError, ArtifactRef
 from cannery.builds.executor import ExecutionFailure
 from cannery.builds.remote import RemotePending
 from cannery.builds.state import claim_build, finish_build
@@ -175,3 +175,28 @@ def test_terminal_cleanup_ignores_untrusted_result_json(operation, tmp_path, raw
     coordinator.cleanup_finished(engine, tmp_path, lambda _: executor)
     assert executor.cleaned and (executor.remote.journal / "cleanup-complete").exists()
     assert all(c[1] == "remote:test:job:runtime-0" for c in calls)
+
+
+def test_failure_survives_evidence_outage_after_remote_cleanup(operation, monkeypatch):
+    engine, key, executor = operation
+    receipt_with_bad_output(executor, "null")
+    executor.validate.side_effect = ExecutionFailure("invalid_numerical_output")
+    original = coordinator.evidence
+    monkeypatch.setattr(coordinator, "evidence", MagicMock(side_effect=ArtifactError("offline")))
+    coordinator.process(engine, key, lambda _: executor)
+    assert executor.cleaned and (executor.remote.journal / "numerical-failure.json").exists()
+    with Session(engine) as db, db.begin():
+        row = db.get(NumericalState, key)
+        attempt = row.attempt_id
+        row.lease_until = datetime.now(UTC) - timedelta(seconds=1)
+    # Successful cleanup removed the remote outputs: validation cannot run again.
+    executor.validate.side_effect = AssertionError("remote results no longer exist")
+    monkeypatch.setattr(
+        coordinator, "retained", MagicMock(side_effect=AssertionError("already failed"))
+    )
+    monkeypatch.setattr(coordinator, "evidence", original)
+    coordinator.process(engine, key, lambda _: executor)
+    with Session(engine) as db:
+        row = db.get(NumericalState, key)
+        assert row.status == "failed" and row.attempt_id == attempt and row.attempts == 1
+        assert db.get(NumericalResult, attempt).error == "invalid_numerical_output"
