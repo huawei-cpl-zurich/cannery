@@ -81,7 +81,7 @@ def test_unconfigured_recipe_registration_fails_without_reference(registration):
 def test_terminal_registration_does_not_cancel_shared_active_oracle(registration, monkeypatch):
     engine, key, _, _, _, settings = registration
     cleanup = MagicMock()
-    monkeypatch.setattr(recipes, "OracleJob", cleanup)
+    monkeypatch.setattr("cannery.numerics.baselines.OracleJob", cleanup)
     assert recipes.cleanup_recipe(engine, "oracle:" + key, settings) is False
     cleanup.assert_not_called()
 
@@ -96,7 +96,7 @@ def test_expired_shared_oracle_is_fenced_before_owned_cleanup(registration, monk
         row.status, row.attempt, row.attempts = "generating", attempt, 1
         row.deadline = row.lease_until = datetime.now(UTC) - timedelta(seconds=1)
     cleanup = MagicMock()
-    monkeypatch.setattr(recipes, "OracleJob", cleanup)
+    monkeypatch.setattr("cannery.numerics.baselines.OracleJob", cleanup)
     assert recipes.cleanup_recipe(engine, "oracle:" + key, settings)
     cleanup.return_value.cleanup.assert_called_once()
     with Session(engine) as db:

@@ -4,13 +4,12 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
 from cannery.artifacts.factory import make_store
-from cannery.database import aware
 from cannery.git_intake import SnapshotBinding
 from cannery.git_intake.snapshots import SnapshotStore
 from cannery.numerics.baseline_format import baseline_key
-from cannery.numerics.baseline_state import BaselineState, claim_baseline, ensure_baseline
+from cannery.numerics.baseline_state import ensure_baseline
 from cannery.numerics.baselines import BaselinePending, BaselineUnavailable, advance_baseline
-from cannery.numerics.oracle_job import OracleJob, OraclePending
+from cannery.numerics.oracle_job import OraclePending
 from cannery.numerics.recipes import parse_recipes
 from cannery.registry.freeze import BaselineEvidence
 from cannery.registry.manifest import RecipeEntrypoint, ValidatedSpec
@@ -70,37 +69,18 @@ def recipe_evidence(
 
 def cleanup_recipe(engine: Engine, handle: str, settings: Settings) -> bool:
     import re
-    from datetime import UTC, datetime
+
+    from cannery.numerics.baselines import cleanup_baseline
 
     if re.fullmatch(r"oracle:[a-f0-9]{64}", handle) is None:
         raise ValueError("Invalid oracle cleanup handle")
-    key = handle[7:]
-    with Session(engine) as session:
-        row = session.get(BaselineState, key)
-        if row is None:
-            return True
-        active = row.status in ("queued", "generating")
-        expired = aware(row.deadline) <= datetime.now(UTC)
-    if active and expired:
-        claim_baseline(engine, key)  # Deadline fences any previous coordinator.
-    with Session(engine) as session:
-        row = session.get(BaselineState, key)
-        assert row is not None
-        if row.status not in ("ready", "failed"):
-            return False  # Another registration may still need this shared oracle.
-        attempt = row.attempt
-    if attempt is None:
-        return True
     if settings.baseline_volume is None:
         raise OraclePending("Oracle volume unavailable for cleanup")
-    job = OracleJob(
-        settings.baseline_root,
-        settings.baseline_volume,
-        key,
-        attempt,
-        "sha256:" + "0" * 64,
-        make_store(settings),
-        lambda: None,
+    return cleanup_baseline(
+        engine,
+        handle[7:],
+        root=settings.baseline_root,
+        volume=settings.baseline_volume,
+        artifacts=make_store(settings),
+        fence=lambda: None,
     )
-    job.cleanup()
-    return True
