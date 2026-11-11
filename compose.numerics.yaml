@@ -12,6 +12,7 @@ services:
       - baseline-control:/var/lib/cannery/baselines
   validator:
     extends:
+      file: compose.builds.yaml
       service: builder
     command: ["python", "-m", "cannery.numerics.worker"]
 volumes:
