@@ -135,3 +135,29 @@ def test_real_cpu_oracle_isolates_author_and_returns_outputs_only(tmp_path, faul
         assert {p.name for p in tmp_path.iterdir()} == {"plan.json"}
     finally:
         subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=15)
+
+
+def test_private_checkpoint_uses_declared_controller_identity(tmp_path):
+    import ast
+    from pathlib import Path
+
+    from cannery.numerics.oracle_worker import SUPERVISOR
+
+    function = next(
+        node
+        for node in ast.parse(SUPERVISOR).body
+        if isinstance(node, ast.FunctionDef) and node.name == "publish"
+    )
+    target = tmp_path / "result.json"
+    namespace = {
+        "json": json,
+        "Path": Path,
+        "os": os,
+        "RESULT_FILE": str(target),
+        "OUTPUT_OWNER": (os.geteuid(), os.getegid()),
+    }
+    exec(compile(ast.Module(body=[function], type_ignores=[]), "<checkpoint>", "exec"), namespace)
+    namespace["publish"]({"outputs": {"empty": ""}})
+    assert json.loads(target.read_bytes()) == {"outputs": {"empty": ""}}
+    assert target.stat().st_uid == os.geteuid() and target.stat().st_mode & 0o777 == 0o400
+    assert not target.with_suffix(".tmp").exists()

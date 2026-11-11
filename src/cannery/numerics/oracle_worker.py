@@ -63,17 +63,24 @@ def publish(result):
     if RESULT_FILE is None:
         print(encoded.decode(),flush=True)
         return
-    path=Path(RESULT_FILE)
-    temporary=path.with_suffix('.tmp')
-    with temporary.open('wb') as stream:
-        stream.write(encoded)
-        stream.flush()
-        os.fsync(stream.fileno())
-    temporary.chmod(0o400)
-    temporary.replace(path)
-    descriptor=os.open(path.parent,os.O_RDONLY|os.O_DIRECTORY)
-    try:os.fsync(descriptor)
-    finally:os.close(descriptor)
+    uid,gid=os.geteuid(),os.getegid()
+    try:
+        os.setegid(OUTPUT_OWNER[1])
+        os.seteuid(OUTPUT_OWNER[0])
+        path=Path(RESULT_FILE)
+        temporary=path.with_suffix('.tmp')
+        with temporary.open('wb') as stream:
+            stream.write(encoded)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.chmod(0o400)
+        temporary.replace(path)
+        descriptor=os.open(path.parent,os.O_RDONLY|os.O_DIRECTORY)
+        try:os.fsync(descriptor)
+        finally:os.close(descriptor)
+    finally:
+        os.seteuid(uid)
+        os.setegid(gid)
 
 
 def expired(*_):
@@ -88,6 +95,9 @@ def demote():
 
 
 def main(plan):
+    global OUTPUT_OWNER
+    OUTPUT_OWNER=plan.get('output_owner',[0,0])
+    assert len(OUTPUT_OWNER)==2 and all(type(v) is int and v>=0 for v in OUTPUT_OWNER)
     signal.signal(signal.SIGALRM,expired)
     signal.alarm(70)
     assert sys.byteorder=='little'
@@ -156,6 +166,7 @@ def worker_source(*, checkpoint: bool = False) -> str:
         "import base64,hashlib,importlib.metadata,json,math,os,secrets,signal,struct\n"
         "import subprocess,sys\n"
         "from pathlib import Path\nfrom types import SimpleNamespace\n"
+        + "OUTPUT_OWNER=(0,0)\n"
         + f"RESULT_FILE={'/output/result.json' if checkpoint else None!r}\n"
         + f"CHILD={CHILD!r}\n"
         + inspect.getsource(_generate)
