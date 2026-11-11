@@ -62,6 +62,8 @@ def ingress(tmp_path, monkeypatch):
 
         def cleanup(self):
             control["cleanups"] += 1
+            if control.get("cleanup_failure"):
+                raise control["cleanup_failure"]
 
     monkeypatch.setattr("cannery.numerics.baselines.OracleJob", Job)
     monkeypatch.setattr("cannery.numerics.baselines.docker", image)
@@ -148,7 +150,7 @@ def test_reference_failure_is_terminal_without_reexecution(ingress):
     for _ in range(2):
         with pytest.raises(BaselineUnavailable, match="reference_failed"):
             advance()
-    assert control["calls"] == 1 and control["cleanups"] == 1
+    assert control["calls"] == 1 and control["cleanups"] == 2
     with Session(engine) as db:
         assert db.get(BaselineState, key).status == "failed"
 
@@ -162,3 +164,78 @@ def test_registration_ownership_loss_prevents_new_reference_work(ingress):
     with pytest.raises(BaselinePending, match="lease lost"):
         advance(lost)
     assert control["calls"] == control["images"] == 0
+
+
+def test_pending_attempt_keeps_immutable_image_when_tag_moves_or_disappears(ingress, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    advance, engine, key, control, _, _ = ingress
+    control["mode"] = "pending"
+    with pytest.raises(BaselinePending):
+        advance()
+    with Session(engine) as db, db.begin():
+        row = db.get(BaselineState, key)
+        row.due_at = row.lease_until = datetime.now(UTC) - timedelta(seconds=1)
+    monkeypatch.setattr(
+        "cannery.numerics.baselines.docker",
+        lambda *a: (_ for _ in ()).throw(AssertionError("must not resolve image tag again")),
+    )
+    control["mode"] = None
+    assert advance().artifact
+    assert control["images"] == 1
+
+
+def test_transient_snapshot_failure_keeps_baseline_resumable(ingress, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    from cannery.git_intake.process import IntakeError
+    from cannery.git_intake.snapshots import SnapshotStore
+
+    advance, engine, key, control, _, _ = ingress
+    original = SnapshotStore.read
+
+    def offline(*args):
+        raise IntakeError("temporary Git interruption")
+
+    monkeypatch.setattr(SnapshotStore, "read", offline)
+    with pytest.raises(BaselinePending):
+        advance()
+    with Session(engine) as db, db.begin():
+        row = db.get(BaselineState, key)
+        attempt = row.attempt
+        assert row.status == "generating"
+        row.due_at = row.lease_until = datetime.now(UTC) - timedelta(seconds=1)
+    monkeypatch.setattr(SnapshotStore, "read", original)
+    assert advance().artifact and control["calls"] == 1
+    with Session(engine) as db:
+        assert db.get(BaselineState, key).attempt == attempt
+
+
+def test_expired_baseline_cleans_retained_job_after_docker_recovers(ingress, monkeypatch):
+    from datetime import UTC, datetime, timedelta
+
+    advance, engine, key, control, _, _ = ingress
+    control["mode"] = "pending"
+    with pytest.raises(BaselinePending):
+        advance()
+    with Session(engine) as db, db.begin():
+        row = db.get(BaselineState, key)
+        row.deadline = row.lease_until = datetime.now(UTC) - timedelta(seconds=1)
+    with pytest.raises(BaselineUnavailable, match="deadline_exceeded"):
+        advance()
+    assert control["cleanups"] == 1 and control["calls"] == 1
+
+
+@pytest.mark.parametrize("failure", [OraclePending("Docker offline"), OSError("volume offline")])
+def test_terminal_cleanup_outage_recovers_without_reference_execution(ingress, failure):
+    advance, _, _, control, _, _ = ingress
+    control["mode"] = "failed"
+    with pytest.raises(BaselineUnavailable):
+        advance()
+    control["cleanup_failure"] = failure
+    with pytest.raises(BaselinePending, match="cleanup_pending"):
+        advance()
+    control["cleanup_failure"] = None
+    with pytest.raises(BaselineUnavailable, match="reference_failed"):
+        advance()
+    assert control["calls"] == 1
