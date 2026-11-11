@@ -239,3 +239,24 @@ def test_terminal_cleanup_outage_recovers_without_reference_execution(ingress, f
     with pytest.raises(BaselineUnavailable, match="reference_failed"):
         advance()
     assert control["calls"] == 1
+
+
+def test_initial_reference_failure_with_unavailable_cleanup_retains_attempt(ingress):
+    from datetime import UTC, datetime, timedelta
+
+    advance, engine, key, control, _, _ = ingress
+    control["mode"] = "failed"
+    control["cleanup_failure"] = OSError("volume offline")
+    with pytest.raises(BaselinePending, match="cleanup_pending"):
+        advance()
+    with Session(engine) as db, db.begin():
+        row = db.get(BaselineState, key)
+        attempt = row.attempt
+        assert row.status == "generating" and row.lease is None
+        row.due_at = row.lease_until = datetime.now(UTC) - timedelta(seconds=1)
+    control["cleanup_failure"] = None
+    with pytest.raises(BaselineUnavailable, match="reference_failed"):
+        advance()
+    with Session(engine) as db:
+        row = db.get(BaselineState, key)
+        assert row.attempt == attempt and row.attempts == 1 and row.status == "failed"

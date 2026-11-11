@@ -153,7 +153,7 @@ def advance_baseline(
         if job is not None:
             try:
                 job.cleanup()
-            except OraclePending:
+            except (OraclePending, OSError):
                 postpone_baseline(engine, claim)
                 raise BaselinePending("baseline_cleanup_pending") from None
             except OracleFailure:
