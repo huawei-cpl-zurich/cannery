@@ -83,9 +83,15 @@ def test_public_registration_preset_queues_verified_source(client):
         ("helloworld", "candidates/helloworld", "ascendc"),
         ("helloworld-native", "candidates/helloworld_ascendc", "ascendc"),
         ("helloworld-catlass", "candidates/helloworld_catlass", "catlass"),
+        ("helloworld-native-v2", "candidates/helloworld_ascendc_v2", "ascendc"),
+        ("helloworld-catlass-v2", "candidates/helloworld_catlass_v2", "catlass"),
     ],
 )
 def test_toy_preset_selects_required_spec_and_target(client, monkeypatch, preset, path, language):
+    from cannery.web.examples import NUMERICAL_COMMIT
+
+    numerical = preset.endswith("-v2")
+    pinned = NUMERICAL_COMMIT if numerical else SHA
     engine = client.app.state.test_engine
     with Session(engine) as session, session.begin():
         key = kernel_key("team", "helloworld")
@@ -93,7 +99,7 @@ def test_toy_preset_selects_required_spec_and_target(client, monkeypatch, preset
         session.flush()
         spec = SpecVersion(
             kernel_id=key,
-            version=1,
+            version=2 if numerical else 1,
             content_sha256="a" * 64,
             manifest={"kernel": {"namespace": "team", "name": "helloworld"}},
             snapshot={},
@@ -112,7 +118,7 @@ def test_toy_preset_selects_required_spec_and_target(client, monkeypatch, preset
         "device": "a5",
         "language": language,
         "url": REPO,
-        "commit": SHA,
+        "commit": pinned,
         "path": path,
         "dependencies": "",
     }
@@ -126,7 +132,8 @@ def test_toy_preset_selects_required_spec_and_target(client, monkeypatch, preset
     key = response.headers["location"].rsplit("/", 1)[-1]
     job = client.get(f"/api/v1/submissions/{key}").json()
     assert job["kernel"]["name"] == "helloworld" and job["target"]["language"] == language
-    assert job["source"]["commit"] == SHA
+    assert job["source"]["commit"] == pinned
+    assert job["spec_version"] == (2 if numerical else 1)
 
 
 def test_toy_preset_requires_expected_spec_and_never_changes_namespace(client):
@@ -142,3 +149,11 @@ def test_toy_preset_requires_expected_spec_and_never_changes_namespace(client):
         assert "Use hello-world example" not in page.text
         page = other.get("/submit-implementation?example=helloworld")
         assert "Use hello-world toy submission" not in page.text
+
+
+def test_seeded_registration_preset_uses_v2_pinned_public_source(client):
+    from cannery.web.examples import NUMERICAL_COMMIT
+
+    fields = Fields(client.get("/register-kernel?example=helloworld-v2").text).values
+    assert fields["path"] == "spec-v2" and fields["commit"] == NUMERICAL_COMMIT
+    assert fields["url"] == REPO

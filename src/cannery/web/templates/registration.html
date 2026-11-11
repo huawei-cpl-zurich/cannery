@@ -20,7 +20,8 @@
 <p>Register a specification in namespace <strong>{{ namespace }}</strong> from a pinned Git commit.</p>
 {% if error %}<p role="alert">{{ error }}</p>{% endif %}
 {% if example_available %}<p><a href="/register-kernel?example=helloworld">Use hello-world example</a>
-from the public GitHub repository. Its URL must be in your operator's allowlist.</p>{% endif %}
+from the public GitHub repository. Its URL must be in your operator's allowlist.</p>
+<p><a href="/register-kernel?example=helloworld-v2">Use seeded hello-world spec v2</a>. Adding v2 requires administrator authorization when v1 exists.</p>{% endif %}
 <form method="post" action="/register-kernel">
   <p><label>Git repository URL <input name="url" type="url" required maxlength="2048" value="{{ example.url if example else '' }}"></label></p>
   <p><label>Full commit SHA <input name="commit" required pattern="[0-9a-fA-F]{40}|[0-9a-fA-F]{64}" value="{{ example.commit if example else '' }}"></label></p>

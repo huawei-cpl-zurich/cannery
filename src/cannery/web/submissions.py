@@ -25,6 +25,9 @@ from cannery.web.examples import (
     CATLASS_SUBMISSION,
     NAMESPACE,
     NATIVE_SUBMISSION,
+    NUMERICAL_CATLASS,
+    NUMERICAL_NATIVE,
+    NUMERICAL_SPEC_LABEL,
     SPEC_LABEL,
     SUBMISSION,
 )
@@ -105,12 +108,16 @@ def install_submission_web(
     @app.get("/submit-implementation", response_class=HTMLResponse, include_in_schema=False)
     def form(request: Request) -> HTMLResponse:
         choices = specs()
-        sample = next((spec for spec in choices if spec["label"] == SPEC_LABEL), None)
         example_id = request.query_params.get("example")
+        numerical = example_id in ("helloworld-native-v2", "helloworld-catlass-v2")
+        label = NUMERICAL_SPEC_LABEL if numerical else SPEC_LABEL
+        sample = next((spec for spec in choices if spec["label"] == label), None)
         presets = {
             "helloworld": SUBMISSION,
             "helloworld-native": NATIVE_SUBMISSION,
             "helloworld-catlass": CATLASS_SUBMISSION,
+            "helloworld-native-v2": NUMERICAL_NATIVE,
+            "helloworld-catlass-v2": NUMERICAL_CATLASS,
         }
         selected = sample is not None and example_id in presets
         values = presets.get(example_id or "", SUBMISSION)
@@ -118,7 +125,8 @@ def install_submission_web(
             request,
             "Submit Implementation",
             specs=choices,
-            example_available=sample is not None,
+            example_available=any(spec["label"] == SPEC_LABEL for spec in choices),
+            numerical_available=any(spec["label"] == NUMERICAL_SPEC_LABEL for spec in choices),
             example_namespace=settings.dev_namespace == NAMESPACE,
             example={**values, "spec_id": sample["id"]} if selected and sample else {},
         )
@@ -161,6 +169,7 @@ def install_submission_web(
                     "validation_queued",
                     "validating",
                 )
+                and not (job["numerical"] and job["numerical"]["status"] == "blocked")
                 for job in jobs
             ),
         )

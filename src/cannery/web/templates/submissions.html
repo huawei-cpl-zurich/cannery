@@ -11,6 +11,9 @@ Requires a configured A5 builder; binary admission leaves correctness and benchm
 Requires a configured CATLASS builder; supports the example’s declared float32 shapes.</p>
 {% elif example_namespace %}<p><a href="/register-kernel?example=helloworld">Register the hello-world spec</a>
 to try its toy submission.</p>{% endif %}
+{% if numerical_available %}
+<p>Seeded spec v2: <a href="/submit-implementation?example=helloworld-native-v2">Ascend C numerical submission</a> · <a href="/submit-implementation?example=helloworld-catlass-v2">CATLASS numerical submission</a>.</p>
+{% elif example_namespace %}<p><a href="/register-kernel?example=helloworld-v2">Register seeded spec v2</a> for numerical verification.</p>{% endif %}
 {% if specs %}
 <form method="post" action="/submit-implementation">
   <p><label>Frozen specification <select name="spec_id" required>{% for spec in specs %}
@@ -25,7 +28,7 @@ to try its toy submission.</p>{% endif %}
 </form>
 {% else %}<p><a href="/register-kernel">Register a specification</a> before submitting an implementation.</p>{% endif %}
 {% elif job %}
-<section id="submission"{% if job.status in ['queued','intaking','build_queued','building','awaiting_validation','validation_queued','validating'] %}
+<section id="submission"{% if job.status in ['queued','intaking','build_queued','building','awaiting_validation','validation_queued','validating'] and not (job.numerical and job.numerical.status == 'blocked') %}
  hx-get="{{ request.url.path }}" hx-trigger="every 2s" hx-select="#submission" hx-swap="outerHTML"{% endif %}>
   <p>Submission <code>{{ job.id }}</code>: <strong>{{ job.status }}</strong>. ETA: Unknown.</p>
   <p>{{ job.kernel.namespace }}/{{ job.kernel.name }}@spec-v{{ job.spec_version }} · {{ job.target.device }} · {{ job.target.language }}</p>
