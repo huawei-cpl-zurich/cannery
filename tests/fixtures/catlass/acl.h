@@ -49,7 +49,7 @@ static aclError aclrtLaunchKernelWithHostArgs(aclrtFuncHandle function, uint32_t
                                              void* args, size_t size,
                                              aclrtPlaceHolderInfo* placeholders, size_t count) {
     if (fault == 3) return 103;
-    if (blocks != 1 || stream != reinterpret_cast<void*>(99) || !config || placeholders ||
+    if (blocks != 1 || stream != reinterpret_cast<void*>(99) || config || placeholders ||
         count != 0 || size != 16) return 199;
     ++launches;
     auto** pointers = static_cast<void**>(args);
