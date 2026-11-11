@@ -2,6 +2,7 @@
 
 import hashlib
 import json
+import math
 import re
 from dataclasses import dataclass
 from pathlib import PurePosixPath
@@ -32,9 +33,32 @@ class BuildOptions(StrictModel):
     optimization: Literal["release", "debug"] = "release"
 
 
+class Specialization(StrictModel):
+    """Exact logical input shape for the initial unary CATLASS contract."""
+
+    shape: tuple[Annotated[int, Field(ge=0, le=1048576)], ...] = Field(min_length=1, max_length=4)
+    dtype: Literal["float32"]
+
+    @field_validator("shape", mode="before")
+    @classmethod
+    def dimensions(cls, value: Any) -> tuple[int, ...]:
+        if (
+            not isinstance(value, (list, tuple))
+            or not 1 <= len(value) <= 4
+            or not all(type(v) is int and 0 <= v <= 1048576 for v in value)
+        ):
+            raise ValueError("Shape dimensions must be integers")
+        if math.prod(value) > 1048576:
+            raise ValueError("Specialization exceeds element budget")
+        return tuple(value)
+
+
 class Build(StrictModel):
     adapter: Language
-    abi: Literal["unary-f32-v1"] | None = None
+    abi: Literal["unary-f32-v1", "catlass-unary-f32-v1"] | None = None
+    specializations: tuple[Specialization, ...] | None = Field(
+        default=None, min_length=1, max_length=4
+    )
     inputs: tuple[str, ...] = Field(min_length=1, max_length=128)
     artifact: Name
     options: BuildOptions = Field(default_factory=BuildOptions)
@@ -45,7 +69,26 @@ class Build(StrictModel):
         # Existing M2 hashes and frozen manifest representations must stay identical.
         if self.abi is None:
             value.pop("abi", None)
+        if self.specializations is None:
+            value.pop("specializations", None)
         return value
+
+    @field_validator("specializations", mode="before")
+    @classmethod
+    def variants(cls, value: Any) -> Any:
+        if value is None:
+            return None
+        if not isinstance(value, (list, tuple)) or not 1 <= len(value) <= 4:
+            raise ValueError("Expected one to four specializations")
+        return tuple(value)
+
+    @model_validator(mode="after")
+    def distinct_shapes(self) -> Self:
+        if self.specializations is not None:
+            shapes = [item.shape for item in self.specializations]
+            if len(shapes) != len(set(shapes)):
+                raise ValueError("Duplicate specialization shape")
+        return self
 
     @field_validator("inputs", mode="before")
     @classmethod
@@ -68,8 +111,17 @@ class Implementation(StrictModel):
     def supported_contract(self) -> Self:
         if self.build.adapter != self.language:
             raise ValueError("Build adapter must match language")
-        if self.build.abi is not None and (self.language != "ascendc" or self.device != "a5"):
+        if self.build.abi == "unary-f32-v1" and (self.language != "ascendc" or self.device != "a5"):
             raise ValueError("unary-f32-v1 requires Ascend C on A5")
+        if self.build.abi == "catlass-unary-f32-v1":
+            if (self.language, self.device) != ("catlass", "a5"):
+                raise ValueError("catlass-unary-f32-v1 requires CATLASS on A5")
+            if self.build.specializations is None:
+                raise ValueError("CATLASS binary admission requires explicit specializations")
+            if self.build.options.optimization != "release":
+                raise ValueError("CATLASS binary admission supports release builds only")
+        elif self.build.specializations is not None:
+            raise ValueError("Specializations require the CATLASS binary ABI")
         parts = self.entrypoint.split(":")
         if len(parts) != 2 or not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,127}", parts[1]):
             raise ValueError("Entrypoint must be source-file:symbol")
