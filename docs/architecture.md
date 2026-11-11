@@ -1,8 +1,8 @@
 # CANNery — System Architecture
 
-Current M3 contract: [private binary admission](binary-admission.md). The active
-backend is self-hosted; no actual Hugging Face service is required. Ascend C A5
-`unary-f32-v1` is the initial supported binary contract. CATLASS, A3, full
+Current M4 contracts: [Ascend C binary admission](binary-admission.md) and
+[static CATLASS binary admission](catlass-admission.md) on A5. The active artifact
+backend is self-hosted; no actual Hugging Face service is required. A3, full
 correctness/benchmarks and publication below remain proposed later milestones.
 
 

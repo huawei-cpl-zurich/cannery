@@ -172,3 +172,11 @@ with an explanatory message. Ordinary `--wait` continues to mean intake completi
 even when a build has already finished. `awaiting_validation` means a binary was
 admitted; correctness, benchmark and publication are still pending. API/web status
 includes build attempts and a pinned artifact digest without exposing worker routes.
+
+
+### Static CATLASS A5 build contract (M4)
+
+Use `implementation.build.abi: catlass-unary-f32-v1` with explicit supported
+float32 specializations and language/adapter `catlass`. See the
+[CATLASS admission contract and operator setup](catlass-admission.md). The same
+`--wait-build` and private artifact/status/recovery behavior applies.
