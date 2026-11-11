@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime, timedelta
 from unittest.mock import MagicMock
 
@@ -89,15 +90,6 @@ def test_corrupt_cache_blocks_without_npu_dispatch(operation, monkeypatch):
         assert db.get(NumericalState, key).status == "blocked"
 
 
-def test_invalid_candidate_output_fails_without_retry(operation):
-    engine, key, executor = operation
-    executor.validate.side_effect = ExecutionFailure("invalid_numerical_output")
-    coordinator.process(engine, key, lambda _: executor)
-    with Session(engine) as db:
-        row = db.get(NumericalState, key)
-        assert row.status == "failed" and row.attempts == 1
-
-
 def test_terminal_cleanup_retains_uncertain_remote_ownership(operation, tmp_path):
     engine, key, executor = operation
     claim = claim_numerical(engine, key)
@@ -112,3 +104,74 @@ def test_terminal_cleanup_retains_uncertain_remote_ownership(operation, tmp_path
     executor.cleanup.side_effect = None
     coordinator.cleanup_finished(engine, tmp_path, lambda _: executor)
     assert (journal / "cleanup-complete").exists()
+
+
+def test_ownership_loss_during_retained_reads_fences_error_cleanup(operation, monkeypatch):
+    engine, key, executor = operation
+    (executor.remote.journal / "runtime-0.dispatch").write_text("submitted")
+    dispatched = []
+
+    def cleanup(attempt):
+        executor.fence()
+        dispatched.append(attempt)
+
+    executor.cleanup = cleanup
+
+    def interrupted(*args):
+        with Session(engine) as db, db.begin():
+            db.get(NumericalState, key).lease_until = datetime.now(UTC) - timedelta(seconds=1)
+        assert claim_numerical(engine, key) is not None
+        raise BaselineUnavailable("baseline_cache_invalid")
+
+    monkeypatch.setattr(coordinator, "retained", interrupted)
+    coordinator.process(engine, key, lambda _: executor)
+    assert dispatched == []
+    with Session(engine) as db:
+        row = db.get(NumericalState, key)
+        assert row.status == "validating" and row.attempts == 1
+        assert db.get(NumericalResult, row.attempt_id) is None
+
+
+def receipt_with_bad_output(executor, raw):
+    journal = executor.remote.journal
+    (journal / "runtime-0.dispatch").write_text("submitted")
+    (journal / "runtime-0.json").write_text(json.dumps({"handle": "remote:test:job:runtime-0"}))
+    (journal / "results.json").write_text(raw)
+    calls = []
+
+    def call(*args):
+        calls.append(args)
+        return {"state": "completed", "content": "bounded fixture log"}
+
+    executor.remote.call = call
+    return calls
+
+
+@pytest.mark.parametrize(
+    "raw", ["{", "null", "42", "[]", '{"handle":"remote:foreign:job:private"}']
+)
+def test_invalid_output_is_not_parsed_as_a_receipt_and_fails_terminally(operation, raw):
+    engine, key, executor = operation
+    calls = receipt_with_bad_output(executor, raw)
+    executor.validate.side_effect = ExecutionFailure("invalid_numerical_output")
+    coordinator.process(engine, key, lambda _: executor)
+    with Session(engine) as db:
+        row = db.get(NumericalState, key)
+        assert (
+            row.status == "failed" and row.error == "invalid_numerical_output" and row.attempts == 1
+        )
+    assert len(calls) == 2 and all(c[1] == "remote:test:job:runtime-0" for c in calls)
+    assert (executor.remote.journal / "cleanup-complete").exists()
+
+
+@pytest.mark.parametrize("raw", ["null", '{"handle":"remote:foreign:job:private"}'])
+def test_terminal_cleanup_ignores_untrusted_result_json(operation, tmp_path, raw):
+    engine, key, executor = operation
+    claim = claim_numerical(engine, key)
+    assert finish_numerical(engine, claim, error="deadline_exceeded")
+    executor.remote.journal = tmp_path / claim.attempt.hex
+    executor.remote.journal.mkdir()
+    calls = receipt_with_bad_output(executor, raw)
+    coordinator.cleanup_finished(engine, tmp_path, lambda _: executor)
+    assert executor.cleaned and (executor.remote.journal / "cleanup-complete").exists()
+    assert all(c[1] == "remote:test:job:runtime-0" for c in calls)

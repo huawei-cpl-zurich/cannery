@@ -15,7 +15,7 @@ from sqlalchemy.orm import Session
 from cannery.artifacts import ArtifactError, ArtifactRef
 from cannery.builds.coordinator import evidence
 from cannery.builds.executor import ExecutionFailure
-from cannery.builds.remote import RemoteFailure, RemotePending, durable_write
+from cannery.builds.remote import RemoteFailure, RemotePending, durable_write, operation_receipts
 from cannery.builds.sandbox import WorkerProfile
 from cannery.builds.state import BuildResult, BuildState
 from cannery.git_intake import SnapshotBinding
@@ -171,6 +171,7 @@ def process(
     with LeaseKeeper(engine, claim) as keeper:
         try:
             executor = factory(claim)
+            executor.fence = keeper.fence
             try:
                 data = retained(engine, key, executor)
                 report = executor.validate(attempt=claim.attempt, fence=keeper.fence, **data)
@@ -247,7 +248,7 @@ def cleanup_finished(
                     json.loads(context.read_bytes())["profile"]
                 )
                 executor.remote.target = executor.profile.target
-            for receipt in journal.glob("*.json"):
+            for receipt in operation_receipts(journal):
                 data = json.loads(receipt.read_bytes())
                 if "handle" in data:
                     state = executor.remote.call("observe", data["handle"]).get("state")
