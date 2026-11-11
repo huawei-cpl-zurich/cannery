@@ -1,6 +1,7 @@
 """Trusted launch-wrapper generation for the initial A5 Ascend C ABI."""
 
 from dataclasses import dataclass
+from typing import Literal
 
 from cannery.submissions.manifest import SubmissionManifest
 
@@ -13,6 +14,7 @@ class BuildError(ValueError):
 class BuildPlan:
     wrapper: str
     command: tuple[str, ...]
+    wrapper_name: Literal["launch.asc", "launch.py"] = "launch.asc"
 
 
 class AscendCAdapter:
