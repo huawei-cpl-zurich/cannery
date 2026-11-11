@@ -7,6 +7,18 @@ image, Docker socket and its dedicated `baseline-control` named volume. Both the
 registrar and oracle jobs use that same volume through selected subpaths; do not
 substitute a registrar-only bind mount.
 
+From the Cannery checkout, with the existing operator environment configured:
+
+```bash
+docker compose --env-file ~/.config/cannery/service.env -p cannery \
+  -f compose.yaml -f compose.artifacts.yaml -f compose.builds.yaml \
+  -f compose.numerics.yaml up -d --build --wait
+```
+
+Inspect numerical results with `cannery submission SUBMISSION_UUID --url
+http://localhost:8095` (use your configured API URL). `--wait-build` observes
+binary admission; the status may already have advanced to numerical validation.
+
 The validator inherits the trusted builder image, registered worker profile,
 remote-access skill, SDK wheel and private storage settings. Its durable journals
 live in `build-control/numerics`. It never gives CPU baseline outputs to the
@@ -26,7 +38,7 @@ checks. Both the spec default and submission-requested `atol + rtol * abs(ref)`
 checks must pass, along with unchanged input hashes. Numerical success means
 `awaiting_benchmark`; benchmarking, scoring and publication are not implemented.
 
-Before upgrading the worker supervision contract, drain active binary builds.
+Before upgrading the worker supervision contract, drain active binary builds and numerical validations.
 Apply database migrations, then restart services while preserving all data and
 control volumes. A coordinator restart resumes the retained attempt and remote
 handle; uncertain operations are observed rather than resubmitted.
