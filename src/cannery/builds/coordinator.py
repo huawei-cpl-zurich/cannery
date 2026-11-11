@@ -19,7 +19,13 @@ from cannery.artifacts import ArtifactError
 from cannery.artifacts.factory import make_store
 from cannery.builds.ascendc import BuildError
 from cannery.builds.executor import BuildExecutor, ExecutionFailure
-from cannery.builds.remote import CplRemote, RemoteFailure, RemotePending, durable_write
+from cannery.builds.remote import (
+    CplRemote,
+    RemoteFailure,
+    RemotePending,
+    durable_write,
+    operation_receipts,
+)
 from cannery.builds.sandbox import WorkerProfile
 from cannery.builds.state import (
     BuildAttempt,
@@ -109,7 +115,7 @@ def evidence(executor: BuildExecutor) -> dict[str, Any]:
         "operations": {},
         "logs": {},
     }
-    receipts = list(journal.glob("*.json"))
+    receipts = operation_receipts(journal)
     native = sorted(
         (p for p in receipts if p.stem.startswith("runtime-")),
         key=lambda p: int(p.stem.split("-")[1]),
@@ -231,7 +237,7 @@ def cleanup_finished(
                     json.dumps(json.loads(context.read_bytes())["profile"])
                 )
                 executor.remote.target = executor.profile.target
-            for receipt in journal.glob("*.json"):
+            for receipt in operation_receipts(journal):
                 data = json.loads(receipt.read_bytes())
                 if "handle" in data:
                     state = executor.remote.call("observe", data["handle"]).get("state")
