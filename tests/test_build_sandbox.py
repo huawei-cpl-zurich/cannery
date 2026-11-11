@@ -273,3 +273,41 @@ def test_catlass_profile_rejects_broad_or_ambiguous_bitcode_paths(path):
 
     with pytest.raises(ValueError):
         CatlassToolchain.model_validate(catlass_pins() | {"bitcode_root": path})
+
+
+def test_custom_runtime_stdout_is_captured_and_hashed_outside_container(
+    tmp_path, monkeypatch, capsys
+):
+    import hashlib
+
+    config, token, calls = setup(tmp_path, monkeypatch)
+    script = job_script(
+        config, token, "runtime", runtime_program="print('candidate output')", capture_runtime=True
+    )
+    exec(compile(script, "<supervisor>", "exec"), {})
+    result = Path(config.workspace) / token.hex / "output/results.json"
+    assert result.read_bytes() == b"CPU simulation"
+    assert hashlib.sha256(result.read_bytes()).hexdigest() in capsys.readouterr().out
+    args = next(c for c in calls if c[:2] == ["docker", "run"])
+    assert args[-1] == "print('candidate output')"
+    mounts = [args[i + 1] for i, a in enumerate(args) if a == "--mount"]
+    assert all("dst=/output" not in mount for mount in mounts)
+    assert not (Path(config.workspace) / "device-1.owner").exists()
+
+
+@pytest.mark.parametrize("phase", ["prepare", "compile", "cleanup"])
+def test_runtime_capture_and_program_are_not_accepted_for_other_phases(tmp_path, phase):
+    with pytest.raises(ValueError, match="only to runtime"):
+        job_script(
+            profile(tmp_path),
+            uuid4(),
+            phase,
+            runtime_program="print('output')",
+            capture_runtime=True,
+        )
+
+
+def test_default_runtime_keeps_stdout_out_of_host_result_file(tmp_path, monkeypatch):
+    config, token, calls = setup(tmp_path, monkeypatch)
+    supervise(config, token, "runtime")
+    assert not (Path(config.workspace) / token.hex / "output/results.json").exists()

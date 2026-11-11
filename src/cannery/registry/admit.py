@@ -9,7 +9,7 @@ from cannery.git_intake.process import IntakeError, attempt_budget
 from cannery.git_intake.snapshots import SnapshotStore, extract_tree
 from cannery.git_intake.transport import RemoteRule, fetched_source
 from cannery.registry.freeze import kernel_key
-from cannery.registry.manifest import SpecError, validate_spec
+from cannery.registry.manifest import RecipeEntrypoint, SpecError, validate_spec
 from cannery.registry.sandbox import CleanupError, SmokeError, run_smoke
 
 
@@ -36,19 +36,23 @@ def main() -> None:
     store = SnapshotStore(Path(payload["snapshots"]), scratch=scratch)
     binding = store.commit(kernel_key(namespace, spec.manifest.kernel.name), source, selected)
     retained = store.read(binding).files
-    evidence = run_smoke(
-        spec,
-        retained,
-        source.path,
-        image=payload["image"],
-        handle=payload["handle"],
-        timeout=payload["timeout"],
+    evidence = (
+        None
+        if isinstance(spec.manifest.spec.cases, RecipeEntrypoint)
+        else run_smoke(
+            spec,
+            retained,
+            source.path,
+            image=payload["image"],
+            handle=payload["handle"],
+            timeout=payload["timeout"],
+        )
     )
     print(
         json.dumps(
             {
                 "binding": binding.model_dump(mode="json"),
-                "evidence": evidence.model_dump(mode="json"),
+                "evidence": evidence.model_dump(mode="json") if evidence is not None else None,
             }
         )
     )

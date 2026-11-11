@@ -220,11 +220,13 @@ else:
     command = RUNTIME
 args += [config['image'], 'python', '-c', command]
 resource.setrlimit(resource.RLIMIT_FSIZE, (64 * 1024 * 1024,) * 2)
+capturing = phase == 'compile' or (phase == 'runtime' and config.get('capture_runtime', False))
+result_path = output / ('kernel.so' if phase == 'compile' else 'results.json')
 try:
     with (attempt / (phase + '.log')).open('w+b') as log, \
-            open(output / 'kernel.so' if phase == 'compile' else os.devnull, 'wb') as binary_output:
+            open(result_path if capturing else os.devnull, 'wb') as binary_output:
         try:
-            result = subprocess.run(args, stdout=binary_output if phase == 'compile' else log,
+            result = subprocess.run(args, stdout=binary_output if capturing else log,
                                     stderr=log, timeout=180)
         finally:
             log.seek(max(0, os.fstat(log.fileno()).st_size - 16384))
@@ -232,11 +234,11 @@ try:
             sys.stderr.flush()
     if result.returncode:
         raise SystemExit(1)
-    if phase == 'compile':
-        binary = output / 'kernel.so'
+    if capturing:
+        binary = result_path
         if (not stat.S_ISREG(binary.lstat().st_mode)
                 or not 0 < binary.stat().st_size <= 63 * 1024 * 1024):
-            raise ValueError('Invalid compiled output')
+            raise ValueError('Invalid captured output')
         print(hashlib.sha256(binary.read_bytes()).hexdigest())
 finally:
     remove_containers()
@@ -304,8 +306,16 @@ def job_script(
     profile: WorkerProfile,
     attempt: UUID,
     phase: Literal["prepare", "compile", "runtime", "cleanup"],
+    *,
+    runtime_program: str | None = None,
+    capture_runtime: bool = False,
 ) -> bytes:
+    if (runtime_program is not None or capture_runtime) and phase != "runtime":
+        raise ValueError("Custom runtime programs apply only to runtime jobs")
     config = profile.model_dump(mode="json")
+    if capture_runtime:
+        config["capture_runtime"] = True
+    program = RUNTIME if runtime_program is None else runtime_program
     if profile.catlass is None:
         config.pop("catlass")
     serialized = json.dumps(config, sort_keys=True)
@@ -313,6 +323,6 @@ def job_script(
         "#!/usr/bin/env python3\nimport json\n"
         + f"config = json.loads({serialized!r})\n"
         + f"token = {attempt.hex!r}\nphase = {phase!r}\n"
-        + f"COMPILE = {COMPILE!r}\nRUNTIME = {RUNTIME!r}\n"
+        + f"COMPILE = {COMPILE!r}\nRUNTIME = {program!r}\n"
         + SUPERVISOR
     ).encode()
