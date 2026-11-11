@@ -8,9 +8,11 @@ from uuid import UUID, uuid4
 from sqlalchemy import JSON, CheckConstraint, DateTime, Engine, ForeignKey, String, or_, select
 from sqlalchemy.orm import Mapped, Session, mapped_column
 
+import cannery.numerics.baseline_state  # noqa: F401
 import cannery.registry.models  # noqa: F401
 from cannery.database import Base
-from cannery.git_intake import GitSource
+from cannery.database import aware as aware
+from cannery.git_intake import GitSource, SnapshotBinding
 
 
 class Registration(Base):
@@ -18,6 +20,9 @@ class Registration(Base):
     __table_args__ = (
         CheckConstraint("status IN ('queued','running','complete','failed')"),
         CheckConstraint("attempts BETWEEN 0 AND 3"),
+        CheckConstraint(
+            "(prepared_snapshot IS NULL) = (baseline_key IS NULL)", name="prepared_baseline_pair"
+        ),
         CheckConstraint("(status = 'complete') = (spec_id IS NOT NULL)"),
     )
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
@@ -35,6 +40,8 @@ class Registration(Base):
     error: Mapped[str | None] = mapped_column(String(32))
     cleanup_handle: Mapped[str | None] = mapped_column(String(96))
     spec_id: Mapped[UUID | None] = mapped_column(ForeignKey("spec_versions.id"))
+    prepared_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
+    baseline_key: Mapped[str | None] = mapped_column(ForeignKey("numerical_baselines.key"))
 
 
 @dataclass(frozen=True)
@@ -46,10 +53,8 @@ class Claim:
     expected_name: str | None
     allow_new_version: bool
     previous_handle: str | None
-
-
-def aware(value: datetime) -> datetime:
-    return value.replace(tzinfo=UTC) if value.tzinfo is None else value
+    prepared_snapshot: SnapshotBinding | None = None
+    baseline_key: str | None = None
 
 
 def create_registration(
@@ -89,7 +94,8 @@ def claim_registration(engine: Engine, key: UUID, now: datetime | None = None) -
             return None
         if job.status == "running" and job.lease_until and aware(job.lease_until) > now:
             return None
-        if aware(job.deadline) <= now or job.attempts >= 3:
+        prepared = job.prepared_snapshot is not None
+        if aware(job.deadline) <= now or (not prepared and job.attempts >= 3):
             terminal(
                 job, "deadline_exceeded" if aware(job.deadline) <= now else "attempts_exhausted"
             )
@@ -99,7 +105,8 @@ def claim_registration(engine: Engine, key: UUID, now: datetime | None = None) -
         old = job.cleanup_handle
         job.status, job.lease = "running", uuid4()
         job.lease_until = min(now + timedelta(seconds=180), aware(job.deadline))
-        job.attempts += 1
+        if not prepared:
+            job.attempts += 1
         job.error = None
         return Claim(
             job.id,
@@ -109,6 +116,8 @@ def claim_registration(engine: Engine, key: UUID, now: datetime | None = None) -
             job.expected_name,
             job.allow_new_version,
             old,
+            SnapshotBinding.model_validate(job.prepared_snapshot) if prepared else None,
+            job.baseline_key,
         )
 
 
@@ -201,3 +210,43 @@ def pending_cleanup(engine: Engine, key: UUID) -> str | None:
         if job is not None and job.status in ("complete", "failed"):
             return job.cleanup_handle
         return None
+
+
+def retain_baseline_registration(
+    engine: Engine,
+    claim: Claim,
+    binding: SnapshotBinding,
+    baseline_key: str,
+) -> bool:
+    from cannery.numerics.baseline_state import BaselineState
+
+    if binding.source != claim.source:
+        raise ValueError("Prepared source differs from registration")
+    with Session(engine) as session, session.begin():
+        job = current_claim(session, claim)
+        if job is None:
+            return False
+        if job.cleanup_handle is not None:
+            raise ValueError("Previous sandbox cleanup is pending")
+        if session.get(BaselineState, baseline_key) is None:
+            raise ValueError("Baseline cache must exist before registration handoff")
+        value = binding.model_dump(mode="json")
+        if job.prepared_snapshot is not None and (
+            job.prepared_snapshot != value or job.baseline_key != baseline_key
+        ):
+            raise ValueError("Prepared registration cannot change")
+        job.prepared_snapshot, job.baseline_key = value, baseline_key
+        return True
+
+
+def postpone_registration(engine: Engine, claim: Claim) -> bool:
+    with Session(engine) as session, session.begin():
+        job = current_claim(session, claim)
+        if job is None:
+            return False
+        if job.prepared_snapshot is None:
+            raise ValueError("Only prepared numerical registrations may wait for a baseline")
+        job.lease = None
+        job.due_at = min(aware(job.deadline), datetime.now(UTC) + timedelta(seconds=5))
+        job.lease_until = job.due_at
+        return True

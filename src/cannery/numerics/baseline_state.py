@@ -12,9 +12,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Mapper, Session, mapped_column
 
 from cannery.artifacts import ArtifactRef
-from cannery.database import Base
+from cannery.database import Base, aware
 from cannery.git_intake import SnapshotBinding
-from cannery.registry.registrations import aware
 
 
 class BaselineState(Base):
