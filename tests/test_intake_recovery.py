@@ -1,4 +1,5 @@
 import sys
+import time
 from pathlib import Path
 
 import pytest
@@ -24,7 +25,16 @@ def test_outer_deadline_kills_nested_git_process_group(tmp_path):
     assert marker.exists()
     pid = int(marker.read_text())
     status = Path(f"/proc/{pid}/stat")
-    assert not status.exists() or status.read_text().split()[2] == "Z"
+    deadline = time.monotonic() + 2
+    while True:
+        try:
+            state = status.read_text().split()[2]
+        except (FileNotFoundError, ProcessLookupError):
+            break  # The child has already been reaped.
+        if state in {"Z", "X"}:
+            break  # Zombie/dead tasks cannot execute further work.
+        assert time.monotonic() < deadline, f"Child survived group cancellation: {state}"
+        time.sleep(0.01)
 
 
 def test_maximum_file_count_and_stale_owned_locks_recover(tmp_path):
