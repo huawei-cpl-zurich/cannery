@@ -120,7 +120,7 @@ def test_schema_one_package_bytes_stay_identical_when_manifest_is_supplied(setup
     )
 
 
-def test_catlass_discovery_queues_once_and_empty_only_contract_fails(records):
+def test_catlass_discovery_queues_once(records):
     engine, _ = records
     key = initial(records)
     _, manifest = native_manifest()
@@ -144,3 +144,28 @@ def test_catlass_discovery_queues_once_and_empty_only_contract_fails(records):
     with Session(engine) as session:
         assert list(session.scalars(select(BuildState.id))) == [key]
     assert claim_build(engine, key) is not None
+
+
+def test_catlass_empty_only_contract_is_not_queued_and_discovery_records_failure(records):
+    engine, _ = records
+    key = initial(records)
+    _, manifest = native_manifest()
+    manifest["implementation"]["build"]["specializations"] = [{"shape": [0], "dtype": "float32"}]
+    with Session(engine) as session, session.begin():
+        candidate = Candidate(
+            id=key,
+            binding_id=key,
+            binding={},
+            manifest=manifest,
+            snapshot={},
+            content_sha256="a" * 64,
+            file_sha256={},
+        )
+        session.add(candidate)
+        session.flush()
+        assert not queue_build(session, candidate)
+    discover(engine)
+    with Session(engine) as session:
+        state = session.get(BuildState, key)
+        assert state.status == "failed" and state.error == "unsupported_build_contract"
+    assert claim_build(engine, key) is None
