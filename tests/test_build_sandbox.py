@@ -50,6 +50,7 @@ def setup(tmp_path, monkeypatch, fault=None):
     monkeypatch.setenv("ASCEND_HOME_PATH", "/opt/cann/current")
     monkeypatch.setattr("resource.setrlimit", lambda *_: None)
     execute(config, token, "prepare")
+    (Path(config.workspace) / token.hex / "input/build.json").write_text("{}")
 
     def run(args, **kwargs):
         calls.append(args)
@@ -201,3 +202,74 @@ def test_profile_roundtrip_preserves_generated_job_contract(tmp_path):
     )
     token = uuid4()
     assert job_script(original, token, "runtime") == job_script(restored, token, "runtime")
+
+
+def catlass_pins():
+    return {
+        "version": "0.0.1.dev1+g012345678",
+        "revision": "a" * 40,
+        "execution_sha256": "b" * 64,
+        "hivmc_sha256": "c" * 64,
+        "bitcode_key": "d" * 16,
+        "manifest_sha256": "e" * 64,
+        "bitcode_sha256": "f" * 64,
+        "bitcode_root": "/home/operator/cannery-toolchain/bc",
+    }
+
+
+def test_catlass_compile_mounts_only_readonly_toolchains_without_devices(tmp_path, monkeypatch):
+    import json
+
+    config, token, calls = setup(tmp_path, monkeypatch)
+    config = WorkerProfile.model_validate(config.model_dump() | {"catlass": catlass_pins()})
+    monkeypatch.setenv("CATLASS_DSL_ASCENDNPU_IR_ROOT", "/opt/compiler/install/AscendNPU-IR")
+    (Path(config.workspace) / token.hex / "input/build.json").write_text(
+        json.dumps({"wrapper_name": "launch.py", "catlass": catlass_pins()})
+    )
+    supervise(config, token, "compile")
+    args = next(call for call in calls if call[:2] == ["docker", "run"])
+    assert "--device" not in args and "--network" in args and "none" in args
+    assert "/tmp/cache:rw,noexec,nosuid,nodev,size=256m,mode=1777" in args
+    assert "CATLASS_DSL_CACHE_DIR=/tmp/cache" in args
+    mounts = [args[i + 1] for i, arg in enumerate(args) if arg == "--mount"]
+    assert "type=bind,src=/home/operator/cannery-toolchain/bc,dst=/tmp/cache/bc,readonly" in mounts
+    assert "type=bind,src=/opt/compiler/install,dst=/opt/compiler/install,readonly" in mounts
+    assert all(m.endswith(",readonly") for m in mounts)
+
+
+@pytest.mark.parametrize("mode", ["missing", "mismatch", "invalid_ir"])
+def test_catlass_toolchain_errors_never_start_container(tmp_path, monkeypatch, mode):
+    import json
+
+    config, token, calls = setup(tmp_path, monkeypatch)
+    if mode != "missing":
+        config = WorkerProfile.model_validate(config.model_dump() | {"catlass": catlass_pins()})
+    pins = catlass_pins()
+    if mode == "mismatch":
+        pins["version"] = "different"
+    monkeypatch.setenv("CATLASS_DSL_ASCENDNPU_IR_ROOT", "/")
+    (Path(config.workspace) / token.hex / "input/build.json").write_text(
+        json.dumps({"wrapper_name": "launch.py", "catlass": pins})
+    )
+    with pytest.raises(ValueError, match="CATLASS toolchain|registered AscendNPU-IR"):
+        supervise(config, token, "compile")
+    assert not any(call[:2] == ["docker", "run"] for call in calls)
+
+
+def test_catlass_toolchain_never_mounted_in_runtime(tmp_path, monkeypatch):
+    config, token, calls = setup(tmp_path, monkeypatch)
+    config = WorkerProfile.model_validate(config.model_dump() | {"catlass": catlass_pins()})
+    supervise(config, token, "runtime")
+    args = next(call for call in calls if call[:2] == ["docker", "run"])
+    assert not any("/tmp/cache" in value or "AscendNPU-IR" in value for value in args)
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["/", "/home/operator", "relative/cache", "/opt/a/../secret/cache", "/opt/a/b,evil/cache"],
+)
+def test_catlass_profile_rejects_broad_or_ambiguous_bitcode_paths(path):
+    from cannery.builds.sandbox import CatlassToolchain
+
+    with pytest.raises(ValueError):
+        CatlassToolchain.model_validate(catlass_pins() | {"bitcode_root": path})

@@ -10,6 +10,31 @@ from pydantic import Field, model_validator
 from cannery.registry.manifest import StrictModel
 
 
+class CatlassToolchain(StrictModel):
+    """Trusted operator pins and the prebuilt, read-only AIV helper cache."""
+
+    version: str = Field(min_length=1, max_length=128)
+    revision: str = Field(pattern=r"^[a-f0-9]{40}$")
+    execution_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    hivmc_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    bitcode_key: str = Field(pattern=r"^[a-f0-9]{16}$")
+    manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    bitcode_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    bitcode_root: str
+
+    @model_validator(mode="after")
+    def confined_cache(self) -> Self:
+        path = PurePosixPath(self.bitcode_root)
+        if (
+            not path.is_absolute()
+            or len(path.parts) < 5
+            or ".." in path.parts
+            or any(c in self.bitcode_root for c in "\n\r\x00,")
+        ):
+            raise ValueError("Expected a specific absolute helper bitcode cache")
+        return self
+
+
 class WorkerProfile(StrictModel):
     target: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
     runtime: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
@@ -22,6 +47,7 @@ class WorkerProfile(StrictModel):
     transport_devices: tuple[str, ...] = ()
     fingerprint: dict[str, str]
     compiler: str = Field(min_length=1, max_length=4096)
+    catlass: CatlassToolchain | None = None
 
     @model_validator(mode="after")
     def confined_profile(self) -> Self:
@@ -128,6 +154,22 @@ if config['toolchain_read_group'] is not None:
     args += ['--group-add', str(config['toolchain_read_group'])]
 held = None
 if phase == 'compile':
+    plan = json.loads((source / 'build.json').read_bytes())
+    if plan.get('wrapper_name', 'launch.asc') == 'launch.py':
+        pins = config.get('catlass')
+        if not pins or plan.get('catlass') != pins:
+            raise ValueError('CATLASS toolchain pins unavailable or mismatched')
+        ir = Path(os.environ['CATLASS_DSL_ASCENDNPU_IR_ROOT'])
+        if (not ir.is_absolute() or len(ir.parts) < 4 or '..' in ir.parts
+                or not str(ir).startswith('/opt/') or ',' in str(ir)):
+            raise ValueError('Invalid registered AscendNPU-IR root')
+        args += ['--tmpfs', '/tmp/cache:rw,noexec,nosuid,nodev,size=256m,mode=1777',
+                 '--env', 'CATLASS_DSL_CACHE_DIR=/tmp/cache',
+                 '--mount', f"type=bind,src={pins['bitcode_root']},dst=/tmp/cache/bc,readonly",
+                 '--mount', f'type=bind,src={ir.parent},dst={ir.parent},readonly']
+        for key in ['PYTHONPATH', 'CATLASS_DSL_ASCENDNPU_IR_ROOT',
+                    'CATLASS_DSL_ASCENDNPU_IR_INSTALL_DIR']:
+            args += ['--env', key]
     command = COMPILE
 else:
     held = lock.open('a')
@@ -214,7 +256,9 @@ print(version[:4096], file=sys.stderr, flush=True)
 work = pathlib.Path('/tmp/work')
 work.mkdir()
 (work / 'source').symlink_to('/input/tree/' + plan['path'], target_is_directory=True)
-(work / 'launch.asc').write_text(plan['wrapper'])
+wrapper = plan.get('wrapper_name', 'launch.asc')
+assert wrapper in ['launch.asc', 'launch.py']
+(work / wrapper).write_text(plan['wrapper'])
 subprocess.run(plan['command'], cwd=work, stdout=sys.stderr, check=True, timeout=120)
 binary = work / 'kernel.so'
 assert binary.is_file() and not binary.is_symlink() and binary.stat().st_size <= 63*1024*1024
@@ -259,7 +303,10 @@ def job_script(
     attempt: UUID,
     phase: Literal["prepare", "compile", "runtime", "cleanup"],
 ) -> bytes:
-    serialized = json.dumps(profile.model_dump(mode="json"), sort_keys=True)
+    config = profile.model_dump(mode="json")
+    if profile.catlass is None:
+        config.pop("catlass")
+    serialized = json.dumps(config, sort_keys=True)
     return (
         "#!/usr/bin/env python3\nimport json\n"
         + f"config = json.loads({serialized!r})\n"
