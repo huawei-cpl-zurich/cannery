@@ -165,9 +165,8 @@ extern "C" int cannery_launch(void* stream, void* input, void* output, uint64_t 
         v.loaded = true;
     }
     void* pointers[] = {input, output};
-    aclrtLaunchKernelCfg config{};
     return check(aclrtLaunchKernelWithHostArgs(v.function, 1,
-        reinterpret_cast<aclrtStream>(stream), &config, pointers, sizeof(pointers),
+        reinterpret_cast<aclrtStream>(stream), nullptr, pointers, sizeof(pointers),
         nullptr, 0), "launch_host_args");
 }
 """
