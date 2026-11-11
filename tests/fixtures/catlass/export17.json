@@ -1,0 +1,38 @@
+{
+  "entrypoint": "forward",
+  "is_mixed": false,
+  "kernel_abi": {
+    "arguments": [
+      {
+        "alignment": 4,
+        "field": null,
+        "index": 0,
+        "kind": "pointer",
+        "logical_index": 0,
+        "mlir_type": "memref<17xf32, #hivm.address_space<gm>>",
+        "offset": 0,
+        "scalar": null,
+        "storage_size": 8
+      },
+      {
+        "alignment": 4,
+        "field": null,
+        "index": 1,
+        "kind": "pointer",
+        "logical_index": 1,
+        "mlir_type": "memref<17xf32, #hivm.address_space<gm>>",
+        "offset": 8,
+        "scalar": null,
+        "storage_size": 8
+      }
+    ],
+    "entrypoint": "forward",
+    "schema_version": 3,
+    "total_size": 16
+  },
+  "kernel_mode": "aiv",
+  "ub_dynamic_base": -1,
+  "ub_static_bytes": 0,
+  "uses_scalar_print": false,
+  "uses_tensor_print": false
+}
