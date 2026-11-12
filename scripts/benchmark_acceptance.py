@@ -50,6 +50,7 @@ class Executor:
   if fail:raise ExecutionFailure('simulated_device_failure')
   if not (root/'allow-publish').exists():raise RemotePending('Simulated network disconnect')
   payload=b'{"protocol":"cpu-fault-simulation","samples_us":[1,1,1]}'
+  durable_write(p/'publish-attempted',b'attempted')
   artifact=store.put('simulation/'+attempt.hex+'/samples.json',payload)
   assert store.get(artifact)==payload
   return {'passed':True,'simulation':True},artifact
@@ -154,12 +155,13 @@ engine=make_engine(Settings())
  r=db.get(PerformanceJob,{key!r})
  if r is None:
   print(json.dumps({{'status':'starting','dispatch':False,'failure_checkpoint':False,
-   'cleaned':False,'pruned':False,'attempt':None,'attempts':0,'results':0,'error':None}}))
+   'cleaned':False,'pruned':False,'publish_attempted':False,'attempt':None,'attempts':0,'results':0,'error':None}}))
   raise SystemExit(0)
  p=Path('/control')/r.attempt.hex if r.attempt else None
  print(json.dumps({{'status':r.status,'attempt':r.attempt.hex if r.attempt else None,
  'attempts':r.attempts,'error':r.error,'dispatch':bool(p and (p/'runtime-0.dispatch').exists()),
  'failure_checkpoint':bool(p and (p/'benchmark-failure.json').exists()),
+ 'publish_attempted':bool(p and (p/'publish-attempted').exists()),
  'cleaned':bool(p and (p/'cleanup-done').exists()),
  'pruned':bool(p and (p/'cleanup-complete').exists()),
  'results':len(list(db.scalars(select(PerformanceResult).where(
@@ -181,9 +183,14 @@ engine=make_engine(Settings())
             first = wait("a" * 64, lambda r: r["dispatch"])
             compose("stop", "artifacts")
             query("Path('/control/allow-publish').touch();print('{}')")
+            offline = wait(
+                "a" * 64,
+                lambda r: r["error"] == "artifact_storage_unavailable" and r["publish_attempted"],
+            )
+            assert offline["attempt"] == first["attempt"] and offline["attempts"] == 1
+            assert offline["status"] == "running" and offline["results"] == 0
             compose("restart", "node1", "node2")
-            offline = wait("a" * 64, lambda r: r["attempt"] == first["attempt"])
-            assert offline["status"] == "running" and offline["attempts"] == 1
+            assert state("a" * 64)["attempt"] == first["attempt"]
             compose("start", "artifacts")
             ready = wait("a" * 64, lambda r: r["status"] == "ready" and r["pruned"])
             assert ready["attempt"] == first["attempt"] and ready["results"] == 1
@@ -192,7 +199,15 @@ engine=make_engine(Settings())
             assert state("a" * 64) == ready
             compose("stop", "artifacts")
             query("ensure_job(engine,'b'*64,'reference',{'fail':True});print('{}')")
-            failed = wait("b" * 64, lambda r: r["failure_checkpoint"] and r["cleaned"])
+            failed = wait(
+                "b" * 64,
+                lambda r: (
+                    r["failure_checkpoint"]
+                    and r["cleaned"]
+                    and r["error"] == "artifact_storage_unavailable"
+                ),
+            )
+            assert failed["results"] == 0 and failed["status"] == "running"
             compose("restart", "node1", "node2")
             compose("start", "artifacts")
             terminal = wait("b" * 64, lambda r: r["status"] == "failed" and r["pruned"])
