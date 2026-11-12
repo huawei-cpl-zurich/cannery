@@ -144,8 +144,8 @@ publication visibility. No online Python client or dependency fetching is added.
 
 ## Validation
 
-Relevant local checks include `pytest tests/test_release*.py
- tests/test_publication*.py` (as one shell command). Real local fault acceptance:
+Relevant local checks include `pytest tests/test_release*.py tests/test_publication*.py`.
+Real local fault acceptance:
 
 ```bash
 CANNERY_RELEASE_DOCKER=1 pytest -q tests/test_publication_docker.py
