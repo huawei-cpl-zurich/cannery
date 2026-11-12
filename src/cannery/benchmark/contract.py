@@ -66,10 +66,14 @@ def measure(
     x: Any,
     synchronize: Callable[[], None],
     clock_ns: Callable[[], int],
+    *,
+    snapshot: Callable[[Any], Any] | None = None,
 ) -> tuple[list[float], Any, Any]:
     """Caller owns no_grad, input preparation and output verification outside timing."""
     before = forward(x)
     synchronize()
+    if snapshot is not None:
+        before = snapshot(before)
     for _ in range(WARMUP):
         output = forward(x)
         synchronize()
@@ -84,6 +88,8 @@ def measure(
         del output  # Destruction is outside the measured interval.
     after = forward(x)
     synchronize()
+    if snapshot is not None:
+        after = snapshot(after)
     return samples, before, after
 
 

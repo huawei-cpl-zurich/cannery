@@ -69,3 +69,19 @@ def test_malformed_result_never_scores(fault):
 def test_invalid_runner_kind_fails_early():
     with pytest.raises(ValueError):
         runtime_program("unknown")
+
+
+def test_reused_output_buffer_cannot_overwrite_first_snapshot():
+    from cannery.benchmark.contract import measure
+
+    buffer = bytearray([0])
+    calls = 0
+
+    def forward(_):
+        nonlocal calls
+        calls += 1
+        buffer[0] = 255 if calls == 1 else 42
+        return buffer
+
+    _, before, after = measure(forward, None, lambda: None, lambda: 1, snapshot=bytes)
+    assert before == b"\xff" and after == b"*"
