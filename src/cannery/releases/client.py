@@ -87,14 +87,18 @@ class ReleaseClient:
                     params=params,
                     headers={"Accept-Encoding": "identity"},
                 ) as response:
-                    response.raise_for_status()
                     if response.headers.get("content-encoding", "identity").lower() != "identity":
                         raise ValueError("Encoded release responses are unsupported")
+                    response_limit = limit if response.is_success else min(limit, 16384)
                     data = bytearray()
                     async for chunk in response.aiter_bytes():
-                        if len(data) + len(chunk) > limit:
+                        if len(data) + len(chunk) > response_limit:
                             raise ValueError("Response exceeds byte budget")
                         data.extend(chunk)
+                    if not response.is_success:
+                        httpx.Response(
+                            response.status_code, content=bytes(data), request=response.request
+                        ).raise_for_status()
                     return bytes(data)
 
     def json(

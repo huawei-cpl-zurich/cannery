@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import sys
 from pathlib import Path
 from time import monotonic, sleep
@@ -21,6 +22,21 @@ CACHE = Path.home() / ".cache" / "cannery" / "releases"
 
 def emit(value: Any) -> None:
     typer.echo(json.dumps(value, sort_keys=True, indent=2))
+
+
+def report_http_error(error: httpx.HTTPStatusError) -> None:
+    try:
+        detail = error.response.json()["detail"]
+        code = detail.get("code") if isinstance(detail, dict) else detail
+        if not isinstance(code, str) or re.fullmatch(r"[a-z][a-z0-9_]{0,79}", code) is None:
+            raise ValueError("Unknown response")
+        typer.echo(code, err=True)
+        if isinstance(detail, dict) and isinstance(detail.get("cohorts"), list):
+            for cohort in detail["cohorts"][:50]:
+                if isinstance(cohort, str) and re.fullmatch(r"[a-f0-9]{64}", cohort):
+                    typer.echo(f"--cohort {cohort}", err=True)
+    except (ValueError, KeyError, TypeError):
+        typer.echo(f"Request unavailable or invalid (HTTP {error.response.status_code})", err=True)
 
 
 def action(identifier: UUID, kind: str, url: str, wait: bool, timeout: float) -> None:
@@ -45,6 +61,9 @@ def action(identifier: UUID, kind: str, url: str, wait: bool, timeout: float) ->
             sleep(min(0.5, max(0, deadline - monotonic())))
         typer.echo(f"Still pending; resume with publication-status {identifier}", err=True)
         raise typer.Exit(1)
+    except httpx.HTTPStatusError as error:
+        report_http_error(error)
+        raise typer.Exit(1) from None
     except (httpx.HTTPError, TimeoutError, ValueError, KeyError, TypeError):
         typer.echo(
             "Publication request unavailable or invalid; inspect its status before retrying",
@@ -166,6 +185,9 @@ def install_release_cli(app: typer.Typer) -> None:
                     "package_sha256": result.manifest.package.sha256,
                 }
             )
+        except httpx.HTTPStatusError as error:
+            report_http_error(error)
+            raise typer.Exit(1) from None
         except (
             httpx.HTTPError,
             TimeoutError,
@@ -193,6 +215,9 @@ def show(
             if source_only
             else result
         )
+    except httpx.HTTPStatusError as error:
+        report_http_error(error)
+        raise typer.Exit(1) from None
     except (httpx.HTTPError, TimeoutError, ValueError, KeyError, TypeError):
         typer.echo("Published metadata unavailable or selection requires refinement", err=True)
         raise typer.Exit(1) from None

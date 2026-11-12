@@ -6,6 +6,7 @@ from release_fixtures import arguments as arguments
 from release_fixtures import benchmark as benchmark
 from release_fixtures import records as records
 from release_fixtures import setup_executor as setup_executor
+from test_release_catalog import releases as releases
 from test_release_resolution import published as published
 from typer.testing import CliRunner
 
@@ -153,3 +154,44 @@ def test_wait_timeout_bounds_stalled_requests(monkeypatch, stalled):
     result = CliRunner().invoke(app, ["publish", str(uuid4()), "--wait", "--timeout", "1"])
     assert result.exit_code == 1 and time.monotonic() - start < 3
     assert len(calls) == (2 if stalled == "status" else 3)
+
+
+def test_ambiguous_cohort_choices_are_visible_in_info_and_get(releases, monkeypatch, tmp_path):
+    import httpx
+
+    from cannery.releases import cli
+    from cannery.releases.download_api import install_downloads
+    from cannery.settings import Settings
+
+    engine, add, api, manifest = releases
+    first, second = add(0.5), add(0.6, driver="other")
+    install_downloads(api.app, Settings(release_enabled=True, dev_identity_enabled=True), engine)
+
+    def response(request):
+        result = api.request(
+            request.method,
+            str(request.url),
+            json=json.loads(request.content) if request.content else None,
+        )
+        return httpx.Response(result.status_code, content=result.content)
+
+    client = ReleaseClient("http://testserver", transport=httpx.MockTransport(response))
+    monkeypatch.setattr(cli, "ReleaseClient", lambda _: client)
+    runtime = tmp_path / "runtime.json"
+    runtime.write_text(json.dumps(manifest.cohort.runtime))
+    commands = [
+        ["info", manifest.kernel],
+        [
+            "get",
+            manifest.kernel,
+            "--no-detect",
+            "--runtime-json",
+            str(runtime),
+            "--cache",
+            str(tmp_path / "cache"),
+        ],
+    ]
+    for command in commands:
+        result = CliRunner().invoke(app, command)
+        assert result.exit_code == 1 and "cohort_required" in result.output
+        assert f"--cohort {first[2]}" in result.output and f"--cohort {second[2]}" in result.output
