@@ -28,6 +28,10 @@ retain selected Git snapshots and run isolated CPU reference diagnostics. See
 Opt-in native submissions compile in isolated workers, round-trip through private
 storage and pass an A5 load/call smoke before `awaiting_validation`. See
 [Ascend C setup](docs/binary-admission.md) and [CATLASS setup](docs/catlass-admission.md).
-Source-only submissions remain `awaiting_build` with unknown ETA. Numerical
-validation, benchmarking and publication remain pending. CPU diagnostics and binary
-loadability do not independently prove correctness.
+Source-only submissions remain `awaiting_build` with unknown ETA. Recipe-based
+numerical validation caches CPU reference outputs once and regenerates seeded
+inputs for each candidate. Opt-in [private benchmarking](docs/benchmark-worker.md)
+adds synchronized call latency and speedup reports against a cached A5 PyTorch
+baseline; passing candidates finish at `complete`. Legacy specs require recipe
+migration. Publication and leaderboards remain M6. CPU diagnostics and binary
+loadability alone do not prove correctness.

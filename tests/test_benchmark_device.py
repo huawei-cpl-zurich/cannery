@@ -113,3 +113,25 @@ def test_worker_processes_existing_deadlines_when_discovery_is_offline(tmp_path,
     worker.main()
     assert process.call_args.args[:2] == (engine, "a" * 64)
     engine.dispose.assert_called_once()
+
+
+def test_failed_probe_retention_is_bounded_during_persistent_outage(probe, monkeypatch):
+    from cannery.builds.remote import RemoteFailure
+
+    run, paths, _, _, _, root, _ = probe
+    root.mkdir()
+    unknown = root / uuid4().hex
+    unknown.mkdir()
+    original = device.CplRemote.operation
+
+    def failed(self, *args, **kwargs):
+        original(self, *args, **kwargs)
+        raise RemoteFailure(1)
+
+    monkeypatch.setattr(device.CplRemote, "operation", failed)
+    for _ in range(5):
+        with pytest.raises(RemotePending, match="Device identity unavailable"):
+            run()
+    completed = [p for p in root.iterdir() if p.is_dir() and (p / "done").exists()]
+    assert len(paths) == 5 and len(completed) == 2 and unknown.exists()
+    assert not (root / "pending.json").exists()

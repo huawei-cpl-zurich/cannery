@@ -14,6 +14,19 @@ from cannery.builds.sandbox import WorkerProfile, job_script
 from cannery.registry.manifest import unique_pairs
 
 
+def prune_completed(root: Path) -> None:
+    completed = sorted(
+        (p for p in root.iterdir() if p.is_dir() and not p.is_symlink() and (p / "done").exists()),
+        key=lambda p: p.stat().st_mtime,
+    )
+    for old in completed[:-2]:
+        try:
+            UUID(hex=old.name)
+        except ValueError:
+            continue
+        shutil.rmtree(old)
+
+
 def device_cohort(
     profile: WorkerProfile, root: Path, client: Path, registry: Path, loader_sha256: str
 ) -> Cohort:
@@ -57,6 +70,7 @@ def device_cohort(
             # Confirmed terminal probe failure: a later poll may make a new read-only probe.
             durable_write(remote.journal / "done", b"terminal-failure\n")
             pending.unlink()
+            prune_completed(root)
             raise RemotePending("Device identity unavailable") from None
         reply = remote.call("logs", handle, "--tail", "2")
         identity = json.loads(reply.get("content", ""), object_pairs_hook=unique_pairs)
@@ -88,20 +102,7 @@ def device_cohort(
         )
         durable_write(remote.journal / "done", b"complete\n")
         pending.unlink()
-        completed = sorted(
-            (
-                p
-                for p in root.iterdir()
-                if p.is_dir() and not p.is_symlink() and (p / "done").exists()
-            ),
-            key=lambda p: p.stat().st_mtime,
-        )
-        for old in completed[:-2]:
-            try:
-                UUID(hex=old.name)
-            except ValueError:
-                continue
-            shutil.rmtree(old)
+        prune_completed(root)
         if saved["profile"] != current or saved["loader"] != loader_sha256:
             raise RemotePending("Previous device probe reconciled; current profile needs discovery")
         return cohort

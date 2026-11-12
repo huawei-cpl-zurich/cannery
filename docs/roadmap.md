@@ -1,12 +1,13 @@
 # CANNery — PoC Roadmap
 
-Current M4 contracts: [Ascend C binary admission](binary-admission.md) and
-[static CATLASS binary admission](catlass-admission.md) on A5. The active artifact
-backend is self-hosted; no actual Hugging Face service is required. A3, full
-correctness/benchmarks and publication below remain proposed later milestones.
+Current A5 contracts include [Ascend C admission](binary-admission.md),
+[CATLASS admission](catlass-admission.md), [seeded numerical validation](numerical-worker.md),
+and opt-in [private performance reports](benchmark-worker.md). Artifacts are
+self-hosted; no actual Hugging Face service is required. Publication and A3
+support remain later milestones.
 
 
-Status: M0–M4 source and binary admission workflows implemented; M5 onward planned · 2026-11-11
+Status: M0–M5 implemented for supported A5 recipe contracts; M6 onward planned · 2026-11-12
 
 Build a working user journey with thin end-to-end slices. **No non-Git source intake.** Every implementation commit contains a supported build contract, and binary artifacts are produced by our workers before validation and published from private artifact storage. **Initial adapters: Ascend C and CATLASS DSL only**; Triton-Ascend and PyPTO are future phases.
 
@@ -84,7 +85,7 @@ See [submission usage and CPU failure acceptance](submissions.md).
 
 - Match worker device, language, toolchain versions and target ABI.
 - Run PyTorch reference and built binary against frozen mandatory cases; persist case-level errors and tolerance-profile outcomes.
-- Pin reference baseline, capture warmup and synchronized NPU timings in **µs**, compute speedup per case and geometric mean across all cases.
+- Cache CPU correctness outputs at ingress. Cache A5 PyTorch performance timings per spec/suite/device/runtime/protocol cohort. Measure warmed synchronized call latency in **µs**, with per-case speedups and geometric mean over all nonempty mandatory cases; empty cases remain correctness-only.
 - Version spec/suite/device/tolerance/environment cohorts. Evaluate untested tolerance profiles on demand.
 - Save run logs/raw timing and generated binaries in private artifact; outcomes and searchable aggregates in PostgreSQL.
 
