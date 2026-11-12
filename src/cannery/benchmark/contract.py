@@ -44,14 +44,22 @@ class Cohort(StrictModel):
 
 
 def cache_key(spec_sha256: str, suite: RecipeSuite, cohort: Cohort) -> str:
-    if len(spec_sha256) != 64 or any(c not in "0123456789abcdef" for c in spec_sha256):
-        raise ValueError("Invalid specification digest")
+    return reference_key(spec_sha256, suite.sha256, suite.generator, cohort)
+
+
+def reference_key(spec_sha256: str, suite_sha256: str, generator: str, cohort: Cohort) -> str:
+    """Derive discovery identity from immutable ingress evidence without blob reads."""
+    for value in (spec_sha256, suite_sha256):
+        if len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
+            raise ValueError("Invalid specification or suite digest")
+    if generator != "sha256-f32-v1":
+        raise ValueError("Unsupported input generator")
     return digest(
         json.dumps(
             {
                 "spec_sha256": spec_sha256,
-                "suite_sha256": suite.sha256,
-                "generator": suite.generator,
+                "suite_sha256": suite_sha256,
+                "generator": generator,
                 "cohort": cohort.model_dump(mode="json"),
             },
             sort_keys=True,
