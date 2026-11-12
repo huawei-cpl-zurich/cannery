@@ -39,6 +39,21 @@ to try its toy submission.</p>{% endif %}
   {% elif job.benchmark %}Benchmark pending: {{ job.error }}.
   {% elif job.numerical and job.numerical.status == 'blocked' %}Validation blocked: {{ job.error }}.
   {% else %}Previous attempt failed: {{ job.error }}. Retry pending.{% endif %}</p>{% endif %}
+  {% if job.publication %}
+  <section aria-label="Publication">
+    <p>Visibility: <strong>{{ job.publication.status }}</strong>.</p>
+    {% if job.publication.job and job.publication.job.error %}<p role="alert">Publication: {{ job.publication.job.error }}.</p>{% endif %}
+    {% if job.publication.status == 'published' %}
+      <p>Release <a href="/releases/{{ job.publication.release_id }}">{{ job.publication.release_id }}</a>.</p>
+    {% endif %}
+    {% if job.publication.status in ['published', 'publishing'] %}
+      <form method="post" action="/submissions/{{ job.id }}/withdraw"><button>Withdraw publication</button></form>
+    {% elif job.benchmark and job.benchmark.status == 'passed' %}
+      <p>Publishing makes the retained binary, pinned source and validated measurements available to this installation. No rebuild or baseline rerun.</p>
+      <form method="post" action="/submissions/{{ job.id }}/publish"><button>{% if job.publication.status == 'withdrawn' %}Republish release{% else %}Publish release{% endif %}</button></form>
+    {% endif %}
+  </section>
+  {% endif %}
   {% if job.candidate %}
     {% if job.build %}
     <p>Source retained. Build: {{ job.stages.build }}. Correctness: {{ job.stages.correctness }}. Benchmark: {{ job.stages.benchmark }}.</p>
@@ -55,7 +70,7 @@ to try its toy submission.</p>{% endif %}
     {% if job.benchmark %}
     <p>Benchmark: {{ job.benchmark.status }} · attempts: {{ job.benchmark.attempts }}.</p>
     {% if job.benchmark.report %}
-    <p>Synchronized call latency in µs ({{ job.benchmark.report.protocol }}). Results are private.</p>
+    <p>Synchronized call latency in µs ({{ job.benchmark.report.protocol }}). {% if job.publication and job.publication.status == "published" %}Published result.{% else %}Results are private.{% endif %}</p>
     <table><thead><tr><th>Case</th><th>Median µs</th><th>p95 µs</th><th>Samples</th><th>Reference median µs</th><th>Speedup</th></tr></thead><tbody>
     {% for case in job.benchmark.report.cases %}<tr><td>{{ case.id }}</td>
     {% if case.excluded %}<td colspan="5">Empty case: correctness only; excluded from performance score.</td>
