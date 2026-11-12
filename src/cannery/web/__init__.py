@@ -8,6 +8,7 @@ from sqlalchemy import Engine
 
 from cannery.settings import Settings
 from cannery.web.registration import install_registration
+from cannery.web.releases import install_release_web
 from cannery.web.submissions import install_submission_web
 
 ROOT = Path(__file__).parent
@@ -66,6 +67,18 @@ def install_web(app: FastAPI, settings: Settings, engine: Engine) -> None:
     )
 
     install_submission_web(
+        app,
+        settings,
+        engine,
+        templates,
+        {
+            "pages": PAGES,
+            "admin": settings.dev_identity_enabled and settings.dev_role == "admin",
+            "development": settings.dev_identity_enabled,
+        },
+    )
+
+    install_release_web(
         app,
         settings,
         engine,
