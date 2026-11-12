@@ -93,6 +93,7 @@ class ReleaseManifest(StrictModel):
     schema_version: Literal[1] = 1
     submission_id: UUID
     kernel: KernelPath
+    spec_id: UUID
     spec_version: int = Field(strict=True, ge=1)
     spec_sha256: str = Field(pattern=SHA)
     suite_sha256: str = Field(pattern=SHA)
@@ -138,7 +139,7 @@ class ReleaseManifest(StrictModel):
 
     @property
     def cohort_sha256(self) -> str:
-        return digest(canonical(self.cohort.model_dump(mode="json")))
+        return digest(json.dumps(self.cohort.model_dump(mode="json"), sort_keys=True).encode())
 
     def encoded(self) -> bytes:
         raw = canonical(self.model_dump(mode="json"))

@@ -15,6 +15,7 @@ def release_data():
     return dict(
         submission_id=str(UUID(int=1)),
         kernel="team/example",
+        spec_id=str(UUID(int=5)),
         spec_version=1,
         spec_sha256="b" * 64,
         suite_sha256="c" * 64,
