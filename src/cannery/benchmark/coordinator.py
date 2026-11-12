@@ -148,9 +148,24 @@ def process(
             OSError,
             ValueError,
             SQLAlchemyError,
-        ):
+        ) as pending:
             logging.warning("Performance operation pending: %s", key)
-            postpone_job(engine, claim)
+            reason = (
+                "artifact_storage_unavailable"
+                if isinstance(pending, ArtifactError)
+                else "awaiting_reference_timing"
+                if isinstance(pending, ReferencePending)
+                else "baseline_storage_unavailable"
+                if isinstance(pending, BaselinePending)
+                else "worker_control_unavailable"
+                if isinstance(pending, OSError)
+                else "database_unavailable"
+                if isinstance(pending, SQLAlchemyError)
+                else "retained_context_unavailable"
+                if isinstance(pending, ValueError)
+                else None
+            )
+            postpone_job(engine, claim, reason=reason)
 
 
 def cleanup_finished(

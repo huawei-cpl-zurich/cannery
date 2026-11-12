@@ -287,6 +287,7 @@ class BuildExecutor:
             handle = json.loads(receipt.read_text())["handle"]
             result = self.remote.call("observe", handle)
             if result.get("state") == "missing":
+                self.fence()
                 result = self.remote.call("cancel", handle)
             if result.get("state") not in {"completed", "failed", "cancelled"}:
                 raise RemotePending("Retained operation has not terminated")
