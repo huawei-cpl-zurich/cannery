@@ -6,13 +6,13 @@ import statistics
 from collections.abc import Callable
 from typing import Any, Literal
 
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from cannery.artifacts import digest
 from cannery.numerics.recipes import RecipeSuite
 from cannery.registry.manifest import StrictModel, unique_pairs
 
-PROTOCOL = "sync-call-v1"
+PROTOCOL: Literal["sync-call-v1"] = "sync-call-v1"
 WARMUP = 20
 SAMPLES = 100
 SHA = r"^[a-f0-9]{64}$"
@@ -28,6 +28,19 @@ class Cohort(StrictModel):
     loader_sha256: str = Field(pattern=SHA)
     runtime: dict[str, str]
     protocol: Literal["sync-call-v1"] = PROTOCOL
+
+    @model_validator(mode="after")
+    def complete_runtime(self) -> "Cohort":
+        if set(self.runtime) != {
+            "machine",
+            "python",
+            "torch",
+            "torch_npu",
+            "cann",
+            "soc",
+        } or not all(self.runtime.values()):
+            raise ValueError("Incomplete runtime fingerprint")
+        return self
 
 
 def cache_key(spec_sha256: str, suite: RecipeSuite, cohort: Cohort) -> str:
@@ -60,6 +73,7 @@ def measure(
     for _ in range(WARMUP):
         output = forward(x)
         synchronize()
+        del output
     samples = []
     for _ in range(SAMPLES):
         synchronize()
@@ -101,15 +115,19 @@ def parse_samples(raw: bytes, suite: RecipeSuite) -> dict[str, list[float]]:
 
 
 def summarize(samples: list[float]) -> dict[str, float | int]:
-    if (
-        type(samples) is not list
-        or len(samples) != SAMPLES
-        or any(type(v) not in (float, int) or not math.isfinite(v) or v <= 0 for v in samples)
-    ):
+    try:
+        valid = (
+            type(samples) is list
+            and len(samples) == SAMPLES
+            and all(type(v) in (float, int) and math.isfinite(v) and v > 0 for v in samples)
+        )
+    except OverflowError:
+        valid = False
+    if not valid:
         raise ValueError("Expected 100 finite positive timing samples")
     ordered = sorted(samples)
     return {
-        "median_us": statistics.median(ordered),
+        "median_us": ordered[49] / 2 + ordered[50] / 2,
         "p95_us": ordered[math.ceil(0.95 * len(ordered)) - 1],
         "samples": len(ordered),
     }
