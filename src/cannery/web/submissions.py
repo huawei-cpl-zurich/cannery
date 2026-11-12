@@ -13,6 +13,7 @@ from starlette.concurrency import run_in_threadpool
 
 from cannery.registry.api import identity
 from cannery.registry.models import Kernel, SpecVersion
+from cannery.releases.api import publish, withdraw_publication
 from cannery.settings import Settings
 from cannery.submissions.api import (
     RevisionRequest,
@@ -56,6 +57,8 @@ async def form_data(request: Request, allowed: set[str]) -> dict[str, str]:
 
 
 def submission_pending(job: dict[str, Any], benchmark_enabled: bool = False) -> bool:
+    if job.get("publication", {}).get("status") == "publishing":
+        return True
     if job["numerical"] and job["numerical"]["status"] == "blocked":
         return False
     if job["status"] in {
@@ -103,7 +106,14 @@ def install_submission_web(
 
     def render(request: Request, title: str, **values: object) -> HTMLResponse:
         return templates.TemplateResponse(
-            request=request, name="submissions.html", context={**context, "title": title, **values}
+            request=request,
+            name="submissions.html",
+            context={
+                **context,
+                "release_enabled": settings.release_enabled,
+                "title": title,
+                **values,
+            },
         )
 
     def parse_request(fields: dict[str, str], namespace: str) -> tuple[str, SubmitRequest]:
@@ -176,7 +186,7 @@ def install_submission_web(
     def mine(request: Request) -> HTMLResponse:
         namespace = identity(settings)
         with Session(engine) as session:
-            jobs = list_info(session, namespace)
+            jobs = list_info(session, namespace, publication=settings.release_enabled)
         return render(
             request,
             "My Submissions",
@@ -188,13 +198,29 @@ def install_submission_web(
     def detail(request: Request, identifier: UUID) -> HTMLResponse:
         namespace = identity(settings)
         with Session(engine) as session:
-            job = get_info(session, namespace, identifier)
+            job = get_info(session, namespace, identifier, publication=settings.release_enabled)
         return render(
             request,
             "My Submissions",
             job=job,
             pending=submission_pending(job, settings.benchmark_enabled),
         )
+
+    if settings.release_enabled:
+
+        @app.post("/submissions/{identifier}/publish", include_in_schema=False)
+        async def publication(request: Request, identifier: UUID) -> RedirectResponse:
+            identity(settings)
+            await form_data(request, set())
+            await run_in_threadpool(publish, settings, engine, identifier)
+            return RedirectResponse(f"/submissions/{identifier}", status_code=303)
+
+        @app.post("/submissions/{identifier}/withdraw", include_in_schema=False)
+        async def withdrawal(request: Request, identifier: UUID) -> RedirectResponse:
+            identity(settings)
+            await form_data(request, set())
+            await run_in_threadpool(withdraw_publication, settings, engine, identifier)
+            return RedirectResponse(f"/submissions/{identifier}", status_code=303)
 
     @app.post("/submissions/{identifier}/revisions", include_in_schema=False)
     async def revision(request: Request, identifier: UUID) -> RedirectResponse:

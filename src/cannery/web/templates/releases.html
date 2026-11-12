@@ -1,0 +1,48 @@
+{% extends "page.html" %}
+{% block content %}
+<h1>{% if release %}Published release{% else %}Global Best{% endif %}</h1>
+{% if release %}
+<p>{{ release.kernel }}@spec-v{{ release.spec_version }} · {{ release.device }} · {{ release.language }} · published {{ release.published_at }} by {{ release.publisher }}</p>
+<p>Release <code>{{ release.id }}</code>. Geometric mean speedup: {{ release.score.geomean_speedup if release.score.geomean_speedup is not none else 'unscored' }}×.</p>
+<p>Exact runtime: <code>{{ release.runtime }}</code>. Cohort: <code>{{ release.cohort }}</code>.</p>
+<p>Validated tolerances: {{ release.tolerances }}. ABI: {{ release.abi }}. Shapes: {{ release.specializations if release.specializations else 'dynamic float32' }}.</p>
+<p>Source: {{ release.source.url }} · <code>{{ release.source.commit }}</code> · {{ release.source.path }}.</p>
+<p>Manifest SHA256: <code>{{ release.manifest_sha256 }}</code>. Package SHA256: <code>{{ release.package_sha256 }}</code>.</p>
+<p><a href="/api/v1/releases/{{ release.id }}/manifest">Manifest</a> · <a href="/api/v1/releases/{{ release.id }}/package">Binary package</a>. Downloading does not execute code; loading requires explicit trust in an isolated matching runtime.</p>
+<table><thead><tr><th>Case</th><th>Candidate median / p95 µs</th><th>Reference median / p95 µs</th><th>Speedup</th></tr></thead><tbody>
+{% for case in release.score.cases %}<tr><td>{{ case.id }} {{ case.shape }}</td>{% if case.excluded %}<td colspan="3">Empty: correctness only</td>{% else %}<td>{{ case.candidate.median_us }} / {{ case.candidate.p95_us }}</td><td>{{ case.reference.median_us }} / {{ case.reference.p95_us }}</td><td>{{ case.speedup }}×</td>{% endif %}</tr>{% endfor %}
+</tbody></table>
+<h2>Saved numerical validation</h2>
+<table><thead><tr><th>Case</th><th>Input unchanged</th><th>Tolerance pair</th><th>Maximum absolute / relative error</th><th>RMS error</th><th>Nonfinite mismatches</th></tr></thead><tbody>
+{% for case in release.numerical_cases %}{% for name in ['spec_default', 'submission_requested'] %}{% set result=case[name] %}<tr><td>{{ case.id }} · {{ name }}</td><td>{{ case.input_unchanged }}</td><td>{{ result.rtol }}, {{ result.atol }}</td><td>{{ result.max_absolute_error }} / {{ result.max_relative_error if result.max_relative_error is not none else 'undefined' }}</td><td>{{ result.rms_error }}</td><td>{{ result.nonfinite_mismatches }}</td></tr>{% endfor %}{% endfor %}
+</tbody></table>
+{% else %}
+<p>Only explicitly published releases appear. Scores compare synchronized call latency with PyTorch within one exact measurement cohort. Slower valid releases remain eligible.</p>
+{% if kernels %}
+<form method="get" action="/global-best">
+<label>Kernel <select name="kernel">{% for item in kernels %}<option value="{{ item.kernel }}"{% if kernel == item.kernel %} selected{% endif %}>{{ item.kernel }}</option>{% endfor %}</select></label>
+<label>Spec version (blank = latest frozen) <input name="spec_version" type="number" min="1" value="{{ spec_version or '' }}"></label>
+<label>Cohort <input name="cohort" value="{{ cohort or '' }}" size="66" list="cohorts"></label>
+<datalist id="cohorts">{% for item in cohorts %}<option value="{{ item }}">{% endfor %}</datalist>
+<label>rtol <input name="rtol" value="{{ rtol if rtol is not none else '' }}"></label>
+<label>atol <input name="atol" value="{{ atol if atol is not none else '' }}"></label>
+<button>Show results</button>
+</form>
+{% if error %}<p role="alert">{{ error }}. Choose an exact published cohort or saved tolerance pair.</p>{% endif %}
+{% if ranking %}
+<p>Spec v{{ ranking.spec_version }} · {{ ranking.device }} · tolerance {{ ranking.tolerance }} · cohort <code>{{ ranking.cohort }}</code>.</p>
+{% if curve.points %}
+<svg viewBox="0 0 800 280" role="img" aria-label="Best published speedup over publication time">
+<line x1="50" y1="{{ curve.reference_y }}" x2="750" y2="{{ curve.reference_y }}" stroke="gray" stroke-dasharray="4"/><text x="2" y="{{ curve.reference_y }}">1×</text>
+<path d="{{ curve.line }}" fill="none" stroke="#182636" stroke-width="2"/>
+{% for point in curve.points %}<circle cx="{{ point.x }}" cy="{{ point.y }}" r="5" fill="{{ '#124c81' if point.language == 'ascendc' else '#b54b00' }}"><title>{{ point.published_at }} · {{ point.language }} · {{ point.geomean_speedup }}×</title></circle>{% endfor %}
+<text x="50" y="245">{{ curve.start }}</text><text x="750" y="265" text-anchor="end">{{ curve.end }}</text>
+</svg><p>Publication time (UTC). Blue: Ascend C; orange: CATLASS. One strict best-so-far curve among currently published releases.</p>
+{% endif %}
+<table><thead><tr><th>Release</th><th>Language</th><th>Speedup</th><th>Published</th></tr></thead><tbody>
+{% for row in ranking.rows %}<tr><td><a href="/releases/{{ row.id }}">{{ row.id }}</a></td><td>{{ row.language }}</td><td>{{ row.score.geomean_speedup }}×</td><td>{{ row.published_at }}</td></tr>{% else %}<tr><td colspan="4">No nonempty performance cases.</td></tr>{% endfor %}
+</tbody></table><p>{{ ranking.total }} scored releases. Showing up to 50; the API supports pagination.</p>
+{% endif %}
+{% else %}<p>No published results yet.</p>{% endif %}
+{% endif %}
+{% endblock %}
