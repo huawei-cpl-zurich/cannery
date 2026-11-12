@@ -4,7 +4,6 @@ import argparse
 import logging
 import threading
 import time
-from pathlib import Path
 
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -41,10 +40,10 @@ def main() -> None:
     root = settings.build_control_root / "benchmarks"
     wheel, checksum = settings.build_loader_wheel, settings.build_loader_sha256
 
-    def make_executor(journal: Path) -> BenchmarkExecutor:
+    def factory(claim: PerformanceClaim) -> BenchmarkExecutor:
         remote = CplRemote(
             settings.build_remote_client,
-            journal,
+            root / claim.attempt.hex,
             profile.target,
             registry=settings.build_remote_registry,
         )
@@ -57,10 +56,6 @@ def main() -> None:
             checksum,
         )
 
-    def factory(claim: PerformanceClaim) -> BenchmarkExecutor:
-        return make_executor(root / claim.attempt.hex)
-
-    probe = make_executor(root / "discovery")
     stopped = threading.Event()
 
     def clean() -> None:
@@ -84,9 +79,7 @@ def main() -> None:
                     settings.build_remote_registry,
                     settings.build_loader_sha256,
                 )
-                discover(engine, cohort, probe)
-                for key in due_jobs(engine):
-                    process(engine, key, factory)
+                discover(engine, cohort)
             except (
                 SQLAlchemyError,
                 OSError,
@@ -98,6 +91,11 @@ def main() -> None:
                 BaselineUnavailable,
             ):
                 logging.warning("Performance worker pending; retaining attempts")
+            try:
+                for key in due_jobs(engine):
+                    process(engine, key, factory)
+            except (SQLAlchemyError, OSError, ValueError):
+                logging.warning("Performance coordinator pending; retaining attempts")
             if args.once:
                 cleanup_finished(engine, root, factory)
                 return

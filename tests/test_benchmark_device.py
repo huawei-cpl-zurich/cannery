@@ -81,3 +81,35 @@ def test_completed_probe_cleanup_is_bounded_and_preserves_unknown_attempt(probe)
         now[0] += 61
     completed = [p for p in root.iterdir() if p.is_dir() and (p / "done").exists()]
     assert len(completed) == 2 and unknown.exists()
+
+
+def test_worker_processes_existing_deadlines_when_discovery_is_offline(tmp_path, monkeypatch):
+    import sys
+    from unittest.mock import MagicMock
+
+    from cannery.benchmark import worker
+    from cannery.settings import Settings
+
+    config = profile(tmp_path / "worker")
+    path = tmp_path / "profile.json"
+    path.write_text(config.model_dump_json())
+    settings = Settings(
+        artifact_backend="private",
+        build_profile=path,
+        build_loader_wheel=tmp_path / "loader.whl",
+        build_loader_sha256="c" * 64,
+        build_control_root=tmp_path / "control",
+    )
+    engine = MagicMock()
+    monkeypatch.setattr(worker, "Settings", lambda: settings)
+    monkeypatch.setattr(worker, "make_engine", lambda _: engine)
+    monkeypatch.setattr(worker, "make_store", lambda _: MagicMock())
+    monkeypatch.setattr(worker, "device_cohort", MagicMock(side_effect=RemotePending("offline")))
+    monkeypatch.setattr(worker, "due_jobs", lambda _: ["a" * 64])
+    process = MagicMock()
+    monkeypatch.setattr(worker, "process", process)
+    monkeypatch.setattr(worker, "cleanup_finished", MagicMock())
+    monkeypatch.setattr(sys, "argv", ["benchmark-worker", "--once"])
+    worker.main()
+    assert process.call_args.args[:2] == (engine, "a" * 64)
+    engine.dispose.assert_called_once()
