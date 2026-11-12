@@ -34,7 +34,12 @@ def read_timings(
     verified(raw, artifact)
     if len(raw) > 256 * 1024:
         raise ValueError("Timing evidence exceeds budget")
-    value = json.loads(raw, object_pairs_hook=unique_pairs)
+    try:
+        value = json.loads(raw, object_pairs_hook=unique_pairs)
+    except (ValueError, TypeError, RecursionError):
+        raise ValueError("Invalid timing evidence") from None
+    if not isinstance(value, dict):
+        raise ValueError("Invalid timing evidence")
     if set(value) != {"key", "timing"} or value["key"] != cache_key(spec_sha256, suite, cohort):
         raise ValueError("Timing evidence identity differs")
     return parse_samples(json.dumps(value["timing"]).encode(), suite)
