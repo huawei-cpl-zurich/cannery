@@ -2,7 +2,7 @@
 
 Status: PoC design | Updated: 2026-11-09
 
-**Current source/build policy:** user-authored code is exclusively Git-backed; selected source trees are retained as immutable commits in internal per-kernel Git snapshot repositories. CANNery builds binary candidates during admission and stores **generated binaries** (not source snapshots) in private Hugging Face repositories. The PoC supports Ascend C and CATLASS DSL; Triton-Ascend and PyPTO follow later. See [Architecture](architecture.md), [Implementation](implementation.md), and [User Story](user-story.md).
+**Current source/build policy:** user-authored code is exclusively Git-backed; selected source trees are retained as immutable commits in internal per-kernel Git snapshot repositories. CANNery builds binary candidates during admission and stores **generated binaries** (not source snapshots) in the self-hosted private artifact backend. The PoC supports Ascend C and CATLASS DSL; Triton-Ascend and PyPTO follow later. See [Architecture](architecture.md), [Implementation](implementation.md), and [User Story](user-story.md).
 
 For detailed service architecture and data movement, see [Architecture](architecture.md). For UI/programmatic submission and Hugging Face consumption examples, see [User Story](user-story.md).
 
