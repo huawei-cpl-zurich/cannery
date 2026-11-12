@@ -70,6 +70,7 @@ def test_explicit_publish_poll_withdraw_republish_preserves_pin(web):
     )
     assert "Republish release" in client.get(path).text
     assert str(key) in client.get("/my-submissions").text
+    assert "withdrawn" in client.get("/my-submissions").text
     before = dict(store.data)
     response = client.post(
         path + "/publish",

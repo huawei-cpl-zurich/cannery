@@ -106,7 +106,14 @@ def install_submission_web(
 
     def render(request: Request, title: str, **values: object) -> HTMLResponse:
         return templates.TemplateResponse(
-            request=request, name="submissions.html", context={**context, "title": title, **values}
+            request=request,
+            name="submissions.html",
+            context={
+                **context,
+                "release_enabled": settings.release_enabled,
+                "title": title,
+                **values,
+            },
         )
 
     def parse_request(fields: dict[str, str], namespace: str) -> tuple[str, SubmitRequest]:

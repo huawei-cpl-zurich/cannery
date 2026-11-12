@@ -91,10 +91,10 @@ to try its toy submission.</p>{% endif %}
 {% else %}
 <section id="submissions"{% if pending %} hx-get="/my-submissions" hx-trigger="every 3s" hx-select="#submissions" hx-swap="outerHTML"{% endif %}>
 {% if jobs %}
-<table><thead><tr><th>Submission</th><th>Kernel</th><th>Target</th><th>Status</th><th>ETA</th></tr></thead><tbody>
+<table><thead><tr><th>Submission</th><th>Kernel</th><th>Target</th><th>Status</th>{% if release_enabled %}<th>Visibility</th>{% endif %}<th>ETA</th></tr></thead><tbody>
 {% for item in jobs %}<tr><td><a href="/submissions/{{ item.id }}">{{ item.id }}</a></td>
 <td>{{ item.kernel.namespace }}/{{ item.kernel.name }}@spec-v{{ item.spec_version }}</td>
-<td>{{ item.target.device }} · {{ item.target.language }}</td><td>{{ item.status }}</td><td>Unknown</td></tr>{% endfor %}
+<td>{{ item.target.device }} · {{ item.target.language }}</td><td>{{ item.status }}</td>{% if release_enabled %}<td>{{ item.publication.status }}</td>{% endif %}<td>Unknown</td></tr>{% endfor %}
 </tbody></table>
 {% else %}<p>No submissions yet.</p>{% endif %}
 </section>
