@@ -1,12 +1,13 @@
 # CANNery — Implementation and Library Plan
 
-Current M4 contracts: [Ascend C binary admission](binary-admission.md) and
-[static CATLASS binary admission](catlass-admission.md) on A5. The active artifact
-backend is self-hosted; no actual Hugging Face service is required. A3, full
-correctness/benchmarks and publication below remain proposed later milestones.
+Current A5 contracts include [Ascend C admission](binary-admission.md),
+[CATLASS admission](catlass-admission.md), [seeded numerical validation](numerical-worker.md)
+and [private performance reports](benchmark-worker.md). Artifacts are self-hosted;
+no actual Hugging Face service is required. Publication, global leaderboards and
+A3 support below remain later milestones.
 
 
-Status: M0–M2 source workflows implemented; build/evaluation/publication below are planned · 2026-11-10
+Status: M0–M5 implemented for supported A5 recipes; publication and A3 remain planned · 2026-11-12
 
 See [Architecture](architecture.md) for services, data movement and storage; [User Story](user-story.md) for UI, CLI, REST and private artifact consumption; [Design](design.md) for product requirements; [Roadmap](roadmap.md) for milestones.
 

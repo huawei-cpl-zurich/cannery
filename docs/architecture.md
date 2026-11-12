@@ -1,9 +1,10 @@
 # CANNery — System Architecture
 
-Current M4 contracts: [Ascend C binary admission](binary-admission.md) and
-[static CATLASS binary admission](catlass-admission.md) on A5. The active artifact
-backend is self-hosted; no actual Hugging Face service is required. A3, full
-correctness/benchmarks and publication below remain proposed later milestones.
+Current A5 contracts include [Ascend C admission](binary-admission.md),
+[CATLASS admission](catlass-admission.md), [seeded numerical validation](numerical-worker.md)
+and [private performance reports](benchmark-worker.md). Artifacts are self-hosted;
+no actual Hugging Face service is required. Publication, global leaderboards and
+A3 support below remain later milestones.
 
 
 Status: revised PoC architecture · 2026-11-09
@@ -55,7 +56,7 @@ Coordinator access to PostgreSQL and upload credentials is **not** granted to ar
 | Redis + Dramatiq | Control plane | notification and job dispatch | transient messages only |
 | Worker coordinators | One per A3/A5 host | advertise capability, fetch job data, launch sandbox, upload binary/evidence and report results | local scratch/cache only |
 | Builder adapters | Isolated worker processes | deterministic build of Ascend C or CATLASS input into loadable artifact | generated binary until upload |
-| Test/benchmark executor | Isolated NPU process | run PyTorch reference and compiled candidate; measure error/latency | raw measurements until upload |
+| Test/benchmark executor | Isolated NPU process | reuse cached CPU outputs for correctness; measure candidate and cohort-reference latency | raw measurements until upload |
 | Artifact adapter | library in API/worker coordinator | upload/download pinned private binary and evidence | private blob storage |
 | PostgreSQL | Control plane | authoritative metadata, Git refs, frozen spec identity, job state, measured results, publication | backed-up DB volume |
 | Kernel snapshot store | internal persistent storage | Git commits containing only admitted kernel/spec files and declared dependencies | backed-up per-kernel Git repositories |
@@ -111,7 +112,7 @@ sequenceDiagram
   W->>G: checkout corresponding internal Git snapshots
   W->>W: adapter preflight -> compile -> binary
   W->>H: upload generated binary candidate + manifest
-  W->>W: run PyTorch spec -> correctness tests -> benchmarks
+  W->>W: regenerate seeded inputs -> cached-output correctness -> cohort timing
   W->>H: upload logs and raw measurements
   W->>A: signed result metadata, hashes and case scores
   A->>P: update correctness, score, artifact links
