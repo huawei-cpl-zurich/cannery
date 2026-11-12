@@ -38,7 +38,14 @@ class ReleaseClient:
         self.url = url.rstrip("/")
         self.client = client
 
-    def bytes(self, path: str, limit: int, body: dict[str, Any] | None = None) -> bytes:
+    def bytes(
+        self,
+        path: str,
+        limit: int,
+        body: dict[str, Any] | None = None,
+        *,
+        params: dict[str, Any] | None = None,
+    ) -> bytes:
         if not path.startswith("/api/v1/") or ".." in path or "?" in path:
             raise ValueError("Invalid API path")
         for attempt in range(3):
@@ -47,6 +54,7 @@ class ReleaseClient:
                     "GET" if body is None else "POST",
                     self.url + path,
                     json=body,
+                    params=params,
                     timeout=15,
                     follow_redirects=False,
                 ) as response:
@@ -67,8 +75,14 @@ class ReleaseClient:
             sleep(0.1 * 2**attempt)
         raise AssertionError("Unreachable retry state")
 
-    def json(self, path: str, body: dict[str, Any] | None = None) -> Any:
-        return json.loads(self.bytes(path, 2 * 1024 * 1024, body))
+    def json(
+        self,
+        path: str,
+        body: dict[str, Any] | None = None,
+        *,
+        params: dict[str, Any] | None = None,
+    ) -> Any:
+        return json.loads(self.bytes(path, 2 * 1024 * 1024, body, params=params))
 
     def get(self, request: ResolveRequest, cache: Path) -> CachedRelease:
         info = self.json("/api/v1/artifacts/resolve", request.model_dump(mode="json"))
