@@ -2,7 +2,7 @@
 
 CANNery is an Ascend-oriented kernel registry, benchmarking, and distribution platform for user-defined PyTorch operators.
 
-Authors register a frozen, versioned, Git-backed PyTorch specification and subsequently submit Git commit revisions with mandatory build manifests in Ascend C or CATLASS DSL initially, with Triton-Ascend and PyPTO planned later. CANNery compiles binary candidates, retains selected source files in internal Git snapshots, stores generated binaries in a self-hosted private artifact backend, and load/call smokes them on A5. Correctness scoring, per-case latency, publication and rankings are planned next.
+Authors register a frozen, versioned, Git-backed PyTorch specification and subsequently submit Git commit revisions with mandatory build manifests in Ascend C or CATLASS DSL initially, with Triton-Ascend and PyPTO planned later. CANNery compiles binary candidates, retains selected source files in internal Git snapshots, stores generated binaries in a self-hosted private artifact backend, and load/call smokes them on A5. Supported A5 recipes have seeded correctness validation, per-case latency reports and explicit publication with Global Best rankings.
 
 ## Documentation
 
@@ -18,7 +18,7 @@ Authors register a frozen, versioned, Git-backed PyTorch specification and subse
 
 ## Status
 
-M0–M5 are implemented for supported A5 recipes: foundations, Git registration and
+M0–M6 are implemented for supported A5 recipes: foundations, Git registration and
 revisions, Ascend C/static CATLASS binary admission, seeded numerical validation
 and private performance reports.
 The API, CLI and web form register immutable versions through durable workers,
@@ -34,5 +34,7 @@ numerical validation caches CPU reference outputs once and regenerates seeded
 inputs for each candidate. Opt-in [private benchmarking](docs/benchmark-worker.md)
 adds synchronized call latency and speedup reports against a cached A5 PyTorch
 baseline; passing candidates finish at `complete`. Legacy specs require recipe
-migration. Publication and leaderboards remain M6. CPU diagnostics and binary
+migration. Opt-in [publication and offline consumption](docs/publication.md) add
+explicit release visibility, Global Best, verified CLI downloads and the existing
+offline SDK. Existing submissions stay private until explicitly published. CPU diagnostics and binary
 loadability alone do not prove correctness.
