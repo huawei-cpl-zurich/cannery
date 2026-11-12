@@ -112,7 +112,7 @@ def kernels(db: Session) -> list[dict[str, Any]]:
 
 
 def context(
-    db: Session, selection: Selection
+    db: Session, selection: Selection, *, runtime_sha256: str | None = None
 ) -> tuple[dict[str, Any], Select[*tuple[Release, Publication]]]:
     namespace, name = selection.kernel.split("/")
     query = (
@@ -126,6 +126,8 @@ def context(
     if frozen is None:
         raise SelectionError("specification_not_found")
     base = published().where(Release.spec_id == frozen.id, Release.device == selection.device)
+    if runtime_sha256 is not None:
+        base = base.where(Release.runtime_sha256 == runtime_sha256)
     cohorts = sorted(set(db.scalars(base.with_only_columns(Release.cohort_sha256))))
     if not cohorts:
         raise SelectionError("no_published_release")
@@ -164,6 +166,22 @@ def leaderboard(
     total = db.scalar(select(func.count()).select_from(query.subquery()))
     rows = db.execute(
         query.order_by(Release.score.desc(), Publication.published_at, Release.id)
+        .limit(limit)
+        .offset(offset)
+    )
+    return info | {
+        "rows": [describe(r, p) for r, p in rows],
+        "total": total,
+        "limit": limit,
+        "offset": offset,
+    }
+
+
+def listing(db: Session, selection: Selection, limit: int = 50, offset: int = 0) -> dict[str, Any]:
+    info, query = context(db, selection)
+    total = db.scalar(select(func.count()).select_from(query.subquery()))
+    rows = db.execute(
+        query.order_by(Release.score.desc().nulls_last(), Publication.published_at, Release.id)
         .limit(limit)
         .offset(offset)
     )

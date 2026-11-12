@@ -13,6 +13,7 @@ from cannery.health import postgres_ready
 from cannery.registry.api import install_registry
 from cannery.releases.api import install_publications
 from cannery.releases.discovery_api import install_discovery
+from cannery.releases.download_api import install_downloads
 from cannery.settings import Settings
 from cannery.submissions.api import install_submissions
 from cannery.web import install_web
@@ -62,5 +63,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     install_submissions(app, config, engine)
     install_publications(app, config, engine)
     install_discovery(app, config, engine)
+    install_downloads(app, config, engine)
     install_web(app, config, engine)
     return app
