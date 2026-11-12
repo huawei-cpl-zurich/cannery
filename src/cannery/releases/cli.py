@@ -153,6 +153,7 @@ def install_release_cli(app: typer.Typer) -> None:
             TypeError,
             OSError,
             ImportError,
+            RuntimeError,
         ):
             typer.echo(
                 "Download unavailable or incompatible; supply a matching runtime fingerprint",

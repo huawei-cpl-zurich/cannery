@@ -96,3 +96,15 @@ def test_publish_observes_terminal_failure_without_reposting(monkeypatch):
     result = CliRunner().invoke(app, ["publish", str(identifier), "--wait"])
     assert result.exit_code == 1
     assert sum(body is not None for _, body in calls) == 1
+
+
+def test_device_detection_failure_is_bounded_and_does_not_download(monkeypatch, tmp_path):
+    from cannery.releases import cli
+
+    def unavailable(_):
+        raise RuntimeError("Simulated unavailable Ascend device")
+
+    monkeypatch.setattr(cli.importlib, "import_module", unavailable)
+    result = CliRunner().invoke(app, ["get", "team/relu", "--cache", str(tmp_path)])
+    assert result.exit_code == 1 and "Download unavailable" in result.output
+    assert not list(tmp_path.iterdir())
