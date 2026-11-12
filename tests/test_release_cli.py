@@ -111,7 +111,8 @@ def test_device_detection_failure_is_bounded_and_does_not_download(monkeypatch, 
     assert not list(tmp_path.iterdir())
 
 
-def test_hanging_detector_is_terminated(monkeypatch, tmp_path):
+@pytest.mark.parametrize("configured", [False, True])
+def test_hanging_detector_is_terminated(monkeypatch, tmp_path, configured):
     import os
     import time
 
@@ -119,7 +120,9 @@ def test_hanging_detector_is_terminated(monkeypatch, tmp_path):
 
     stub = tmp_path / "cannery_kernels.py"
     stub.write_text("import time\ndef runtime_fingerprint(): time.sleep(60)\n")
-    monkeypatch.setenv("PYTHONPATH", str(tmp_path) + os.pathsep + os.environ["PYTHONPATH"])
+    if not configured:
+        monkeypatch.delenv("PYTHONPATH", raising=False)
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path) + os.pathsep + os.environ.get("PYTHONPATH", ""))
     start = time.monotonic()
     with pytest.raises(ValueError, match="deadline exceeded"):
         detect_runtime(timeout=0.3)
