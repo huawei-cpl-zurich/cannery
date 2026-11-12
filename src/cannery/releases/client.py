@@ -1,12 +1,14 @@
 """Bounded HTTP consumption and atomic, verified offline package caching."""
 
+import asyncio
+import builtins
 import json
 import os
 import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from time import monotonic, sleep
+from time import sleep
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -27,7 +29,7 @@ class CachedRelease:
 
 
 class ReleaseClient:
-    def __init__(self, url: str, client: httpx.Client):
+    def __init__(self, url: str, *, transport: httpx.AsyncBaseTransport | None = None):
         parsed = urlsplit(url)
         if (
             parsed.scheme not in {"http", "https"}
@@ -36,7 +38,7 @@ class ReleaseClient:
         ):
             raise ValueError("Supply a Cannery HTTP base URL without credentials or query")
         self.url = url.rstrip("/")
-        self.client = client
+        self.transport = transport
 
     def bytes(
         self,
@@ -50,30 +52,41 @@ class ReleaseClient:
             raise ValueError("Invalid API path")
         for attempt in range(3):
             try:
-                with self.client.stream(
-                    "GET" if body is None else "POST",
-                    self.url + path,
-                    json=body,
-                    params=params,
-                    timeout=15,
-                    follow_redirects=False,
-                ) as response:
-                    response.raise_for_status()
-                    deadline = monotonic() + 60
-                    data = bytearray()
-                    for chunk in response.iter_bytes(65536):
-                        if monotonic() > deadline or len(data) + len(chunk) > limit:
-                            raise ValueError("Response exceeds byte budget")
-                        data.extend(chunk)
-                    return bytes(data)
+                return asyncio.run(self.transfer(path, limit, body, params))
             except httpx.HTTPStatusError as error:
                 if error.response.status_code < 500 or attempt == 2:
                     raise
-            except httpx.TransportError:
+            except (httpx.TransportError, TimeoutError):
                 if attempt == 2:
                     raise
             sleep(0.1 * 2**attempt)
         raise AssertionError("Unreachable retry state")
+
+    async def transfer(
+        self,
+        path: str,
+        limit: int,
+        body: dict[str, Any] | None,
+        params: dict[str, Any] | None,
+    ) -> builtins.bytes:
+        # The wall deadline interrupts header waits and even a continuously dripping body.
+        async with asyncio.timeout(60):
+            async with httpx.AsyncClient(
+                transport=self.transport, timeout=15, follow_redirects=False
+            ) as client:
+                async with client.stream(
+                    "GET" if body is None else "POST",
+                    self.url + path,
+                    json=body,
+                    params=params,
+                ) as response:
+                    response.raise_for_status()
+                    data = bytearray()
+                    async for chunk in response.aiter_bytes():
+                        if len(data) + len(chunk) > limit:
+                            raise ValueError("Response exceeds byte budget")
+                        data.extend(chunk)
+                    return bytes(data)
 
     def json(
         self,
