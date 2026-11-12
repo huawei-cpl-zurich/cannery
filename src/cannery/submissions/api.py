@@ -20,6 +20,7 @@ from cannery.registry.dispatch import publish_submission
 from cannery.registry.freeze import kernel_key
 from cannery.registry.manifest import Name
 from cannery.registry.models import SpecVersion
+from cannery.releases.api import publication_info
 from cannery.settings import Settings
 from cannery.submissions.manifest import Device, Language
 from cannery.submissions.models import Candidate, RequestedTarget, Submission, SubmissionConflict
@@ -227,20 +228,33 @@ def describe(
     }
 
 
-def get_info(session: Session, namespace: str, identifier: UUID) -> dict[str, Any]:
+def get_info(
+    session: Session, namespace: str, identifier: UUID, *, publication: bool = False
+) -> dict[str, Any]:
     row = session.execute(query(namespace).where(Submission.id == identifier)).one_or_none()
     if row is None:
         raise HTTPException(404, "Submission not found")
-    return describe(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9])
+    result = describe(
+        row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9]
+    )
+    if publication:
+        result["publication"] = publication_info(session, identifier)
+    return result
 
 
-def list_info(session: Session, namespace: str) -> list[dict[str, Any]]:
-    return [
+def list_info(
+    session: Session, namespace: str, *, publication: bool = False
+) -> list[dict[str, Any]]:
+    result = [
         describe(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9])
         for row in session.execute(
             query(namespace).order_by(Submission.created_at.desc()).limit(50)
         )
     ]
+    if publication:
+        for info in result:
+            info["publication"] = publication_info(session, UUID(info["id"]))
+    return result
 
 
 def install_submissions(app: FastAPI, settings: Settings, engine: Engine) -> None:
@@ -265,9 +279,9 @@ def install_submissions(app: FastAPI, settings: Settings, engine: Engine) -> Non
     @app.get("/api/v1/submissions/mine")
     def mine(user: Annotated[str, Depends(principal)]) -> list[dict[str, Any]]:
         with Session(engine) as session:
-            return list_info(session, user)
+            return list_info(session, user, publication=settings.release_enabled)
 
     @app.get("/api/v1/submissions/{identifier}")
     def status(identifier: UUID, user: Annotated[str, Depends(principal)]) -> dict[str, Any]:
         with Session(engine) as session:
-            return get_info(session, user, identifier)
+            return get_info(session, user, identifier, publication=settings.release_enabled)
