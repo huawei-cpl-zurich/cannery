@@ -127,7 +127,7 @@ def summarize(samples: list[float]) -> dict[str, float | int]:
         raise ValueError("Expected 100 finite positive timing samples")
     ordered = sorted(samples)
     return {
-        "median_us": ordered[49] / 2 + ordered[50] / 2,
+        "median_us": ordered[49] + (ordered[50] - ordered[49]) / 2,
         "p95_us": ordered[math.ceil(0.95 * len(ordered)) - 1],
         "samples": len(ordered),
     }

@@ -144,3 +144,10 @@ def test_cohort_key_binds_all_measurement_identity(suite):
     assert cache_key("d" * 64, suite, cohort) != original
     with pytest.raises(ValueError):
         cache_key("bad", suite, cohort)
+
+
+@pytest.mark.parametrize("sample", [5e-324, 1e308])
+def test_extreme_finite_samples_keep_positive_finite_median(suite, sample):
+    timings = {c.id: [sample] * 100 for c in suite.cases[:-1]}
+    assert summarize([sample] * 100)["median_us"] == sample
+    assert score(suite, timings, timings)["geomean_speedup"] == 1.0
