@@ -25,6 +25,7 @@ def upgrade() -> None:
         sa.Column("manifest", sa.JSON(), nullable=False),
         sa.Column("document", sa.JSON(), nullable=False),
         sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.UniqueConstraint("candidate_id", "id"),
     )
     for name in ("spec_id", "cohort_sha256", "runtime_sha256"):
         op.create_index(f"ix_releases_{name}", "releases", [name])
@@ -36,8 +37,11 @@ def upgrade() -> None:
     )
     op.create_table(
         "publications",
+        sa.ForeignKeyConstraint(
+            ["candidate_id", "release_id"], ["releases.candidate_id", "releases.id"]
+        ),
         sa.Column("candidate_id", sa.Uuid(), sa.ForeignKey("candidates.id"), primary_key=True),
-        sa.Column("release_id", sa.Uuid(), sa.ForeignKey("releases.id"), unique=True),
+        sa.Column("release_id", sa.Uuid(), unique=True),
         sa.Column("status", sa.String(), nullable=False),
         sa.Column("generation", sa.Integer(), nullable=False),
         sa.Column("actor", sa.JSON(), nullable=False),

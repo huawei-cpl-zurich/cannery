@@ -124,3 +124,40 @@ def test_terminal_publication_job_is_immutable(retained_release):
         db.get(PublicationJob, identifier).status = "queued"
         with pytest.raises(ValueError, match="immutable"):
             db.commit()
+
+
+def test_publication_cannot_reference_another_candidates_release(retained_release):
+    from sqlalchemy import insert
+
+    from cannery.registry.models import SpecVersion
+
+    engine, release_id, _ = retained_release
+    with Session(engine) as db:
+        spec_id = db.scalar(select(SpecVersion.id))
+    other = candidate((engine, spec_id))
+    with Session(engine) as db:
+        db.add(
+            Publication(
+                candidate_id=other,
+                release_id=release_id,
+                status="published",
+                generation=1,
+                actor={},
+                published_at=datetime.now(UTC),
+            )
+        )
+        with pytest.raises(ValueError, match="own candidate"):
+            db.commit()
+    with engine.begin() as connection:
+        connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+    with pytest.raises(IntegrityError), engine.begin() as connection:
+        connection.execute(
+            insert(Publication).values(
+                candidate_id=other,
+                release_id=release_id,
+                status="published",
+                generation=1,
+                actor={},
+                published_at=datetime.now(UTC),
+            )
+        )

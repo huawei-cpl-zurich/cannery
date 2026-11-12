@@ -5,7 +5,16 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, UniqueConstraint, event
+from sqlalchemy import (
+    JSON,
+    CheckConstraint,
+    DateTime,
+    ForeignKey,
+    ForeignKeyConstraint,
+    UniqueConstraint,
+    event,
+    select,
+)
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Mapped, Mapper, mapped_column
 
@@ -21,6 +30,7 @@ def now() -> datetime:
 
 class Release(Base):
     __tablename__ = "releases"
+    __table_args__ = (UniqueConstraint("candidate_id", "id"),)
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     candidate_id: Mapped[UUID] = mapped_column(ForeignKey("candidates.id"), unique=True)
     spec_id: Mapped[UUID] = mapped_column(ForeignKey("spec_versions.id"), index=True)
@@ -44,6 +54,9 @@ class ReleaseTolerance(Base):
 class Publication(Base):
     __tablename__ = "publications"
     __table_args__ = (
+        ForeignKeyConstraint(
+            ["candidate_id", "release_id"], ["releases.candidate_id", "releases.id"]
+        ),
         CheckConstraint("status IN ('publishing','published','withdrawn','failed')"),
         CheckConstraint("generation >= 1"),
         CheckConstraint(
@@ -51,7 +64,7 @@ class Publication(Base):
         ),
     )
     candidate_id: Mapped[UUID] = mapped_column(ForeignKey("candidates.id"), primary_key=True)
-    release_id: Mapped[UUID | None] = mapped_column(ForeignKey("releases.id"), unique=True)
+    release_id: Mapped[UUID | None] = mapped_column(unique=True)
     status: Mapped[str]
     generation: Mapped[int]
     actor: Mapped[dict[str, str]] = mapped_column(JSON)
@@ -144,3 +157,14 @@ def validated_tolerance(
         t["rtol"] == target.rtol and t["atol"] == target.atol for t in document["tolerances"]
     ):
         raise ValueError("Tolerance was not validated for this release")
+
+
+@event.listens_for(Publication, "before_insert")
+@event.listens_for(Publication, "before_update")
+def owned_release(mapper: Mapper[Any], connection: Connection, target: Publication) -> None:
+    if (
+        target.release_id is not None
+        and connection.scalar(select(Release.candidate_id).where(Release.id == target.release_id))
+        != target.candidate_id
+    ):
+        raise ValueError("Publication must use its own candidate's release")
