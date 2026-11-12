@@ -57,6 +57,10 @@ class BenchmarkExecutor(BuildExecutor):
         wheel = self.wheel.read_bytes()
         if digest(wheel) != self.wheel_sha256:
             raise ExecutionFailure("loader_digest_mismatch")
+        if binary is not None and (
+            binary.repository != "private" or binary.revision != binary.sha256
+        ):
+            raise ExecutionFailure("invalid_admitted_artifact")
         program = runtime_program(kind)
         identity = {"hardware_id": cohort.hardware_id, "driver": cohort.driver}
         script = job_script(
@@ -91,6 +95,8 @@ class BenchmarkExecutor(BuildExecutor):
         checkpoint = self.remote.journal / "benchmark-report.json"
         if checkpoint.exists():
             saved = json.loads(checkpoint.read_bytes())
+            if not isinstance(saved, dict) or not isinstance(saved.get("report"), dict):
+                raise ExecutionFailure("invalid_benchmark_checkpoint")
             artifact = ArtifactRef.model_validate(saved["artifact"])
             read_timings(self.artifacts.get(artifact), artifact, spec.content_sha256, suite, cohort)
             return saved["report"], artifact
