@@ -20,7 +20,7 @@
     {% if development %}<p class="notice">Development identity enabled</p>{% endif %}
     {% block content %}<h1>{{ title }}</h1><p>{{ message }}</p>
     {% endblock %}
-    <button hx-get="{{ request.url.path }}" hx-target="#content" hx-select="#content" hx-swap="outerHTML">Refresh</button>
+    <button hx-get="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" hx-target="#content" hx-select="#content" hx-swap="outerHTML">Refresh</button>
   </main>
 </body>
 </html>
