@@ -167,3 +167,37 @@ def test_compressed_response_is_rejected_before_decoding():
     client = ReleaseClient("http://testserver", transport=httpx.MockTransport(response))
     with pytest.raises(ValueError, match="Encoded release"):
         client.bytes("/api/v1/releases/kernels", 128 * 1024)
+
+
+def test_lost_publish_reply_cannot_republish_after_withdrawal(published):
+    from sqlalchemy.orm import Session
+
+    from cannery.releases import state
+    from cannery.releases.api import install_publications
+    from cannery.releases.models import Publication
+    from cannery.settings import Settings
+
+    engine, key, _, _, _, server = published
+    actor = {"namespace": "team", "role": "user"}
+    state.withdraw(engine, key, actor)
+    install_publications(
+        server.app,
+        Settings(release_enabled=True, dev_identity_enabled=True, dev_namespace="team"),
+        engine,
+    )
+    calls = []
+
+    def lost_reply(request):
+        calls.append(request)
+        response = server.post(request.url.path, json={})
+        assert response.status_code == 202
+        if len(calls) == 1:
+            state.withdraw(engine, key, actor)
+        raise httpx.ReadError("Lost reply after withdrawal")
+
+    client = ReleaseClient("http://testserver", transport=httpx.MockTransport(lost_reply))
+    with pytest.raises(httpx.ReadError):
+        client.json(f"/api/v1/submissions/{key}/publish", {})
+    assert len(calls) == 1
+    with Session(engine) as db:
+        assert db.get(Publication, key).status == "withdrawn"

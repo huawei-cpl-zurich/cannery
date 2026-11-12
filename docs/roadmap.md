@@ -3,11 +3,11 @@
 Current A5 contracts include [Ascend C admission](binary-admission.md),
 [CATLASS admission](catlass-admission.md), [seeded numerical validation](numerical-worker.md),
 and opt-in [private performance reports](benchmark-worker.md). Artifacts are
-self-hosted; no actual Hugging Face service is required. Publication and A3
-support remain later milestones.
+self-hosted; no actual Hugging Face service is required. [Publication and Global Best](publication.md)
+are implemented for A5; A3 remains planned.
 
 
-Status: M0–M5 implemented for supported A5 recipe contracts; M6 onward planned · 2026-11-12
+Status: M0–M6 implemented for supported A5 recipe contracts; A3 remains planned · 2026-11-12
 
 Build a working user journey with thin end-to-end slices. **No non-Git source intake.** Every implementation commit contains a supported build contract, and binary artifacts are produced by our workers before validation and published from private artifact storage. **Initial adapters: Ascend C and CATLASS DSL only**; Triton-Ascend and PyPTO are future phases.
 
@@ -86,12 +86,14 @@ See [submission usage and CPU failure acceptance](submissions.md).
 - Match worker device, language, toolchain versions and target ABI.
 - Run PyTorch reference and built binary against frozen mandatory cases; persist case-level errors and tolerance-profile outcomes.
 - Cache CPU correctness outputs at ingress. Cache A5 PyTorch performance timings per spec/suite/device/runtime/protocol cohort. Measure warmed synchronized call latency in **µs**, with per-case speedups and geometric mean over all nonempty mandatory cases; empty cases remain correctness-only.
-- Version spec/suite/device/tolerance/environment cohorts. Evaluate untested tolerance profiles on demand.
+- Version spec/suite/device/tolerance/environment cohorts. Only saved default/requested tolerance pairs are supported; untested profiles require future validation work.
 - Save run logs/raw timing and generated binaries in private artifact; outcomes and searchable aggregates in PostgreSQL.
 
 **Acceptance:** failed correctness never produces a globally eligible performance score; valid submissions are privately inspectable.
 
 ## M6 — Release, leaderboard and consumer
+
+Implemented for supported A5 recipes; see [publication and offline consumption](publication.md).
 
 - Explicit publication by owner/authorized reviewer after successful build + correctness + full benchmarks.
 - Package the validated binary into the private release layout; pin exact content hashes.
