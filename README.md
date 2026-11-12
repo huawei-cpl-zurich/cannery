@@ -18,8 +18,9 @@ Authors register a frozen, versioned, Git-backed PyTorch specification and subse
 
 ## Status
 
-M0–M4 are implemented: foundations, Git-backed specification registration, source
-submissions, commit-only revisions, and Ascend C/static CATLASS A5 binary admission.
+M0–M5 are implemented for supported A5 recipes: foundations, Git registration and
+revisions, Ascend C/static CATLASS binary admission, seeded numerical validation
+and private performance reports.
 The API, CLI and web form register immutable versions through durable workers,
 retain selected Git snapshots and run isolated CPU reference diagnostics. See
 [registration](docs/registration.md) for source format, configuration and usage,
