@@ -51,6 +51,7 @@ class ReleaseClient:
     ) -> bytes:
         if not path.startswith("/api/v1/") or ".." in path or "?" in path:
             raise ValueError("Invalid API path")
+        retryable = body is None or path == "/api/v1/artifacts/resolve"
         for attempt in range(3):
             remaining = 60.0 if deadline is None else min(60.0, deadline - monotonic())
             if remaining <= 0:
@@ -58,10 +59,10 @@ class ReleaseClient:
             try:
                 return asyncio.run(self.transfer(path, limit, body, params, remaining))
             except httpx.HTTPStatusError as error:
-                if error.response.status_code < 500 or attempt == 2:
+                if error.response.status_code < 500 or attempt == 2 or not retryable:
                     raise
             except (httpx.TransportError, TimeoutError):
-                if attempt == 2:
+                if attempt == 2 or not retryable:
                     raise
             pause = 0.1 * 2**attempt
             sleep(pause if deadline is None else min(pause, max(0, deadline - monotonic())))

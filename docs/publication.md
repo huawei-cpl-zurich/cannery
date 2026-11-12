@@ -44,7 +44,8 @@ The REST equivalents are `POST /api/v1/submissions/{id}/publish` and `/withdraw`
 with JSON `{}`. Status is `GET /api/v1/submissions/{id}/publication`; an accepted
 publish returns its durable job ID at `/api/v1/publication-jobs/{id}`.
 A repeated active request returns the same job. If a reply is lost, inspect the
-submission status before retrying. Jobs have a ten-minute deadline, three bounded
+submission status before retrying. State-changing CLI calls do not automatically
+retry an ambiguous response; read-only resolution/downloads use bounded retries. Jobs have a ten-minute deadline, three bounded
 attempts and exponential backoff. A failed publication can be requested again.
 
 The worker verifies binary metadata/digests, saved timing samples and immutable
