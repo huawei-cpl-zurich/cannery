@@ -23,26 +23,25 @@ def emit(value: Any) -> None:
 
 def action(identifier: UUID, kind: str, url: str, wait: bool, timeout: float) -> None:
     try:
-        with httpx.Client() as http:
-            client = ReleaseClient(url, http)
-            result = client.json(f"/api/v1/submissions/{identifier}/{kind}", {})
-            emit(result)
-            if kind != "publish" or not wait:
+        client = ReleaseClient(url)
+        result = client.json(f"/api/v1/submissions/{identifier}/{kind}", {})
+        emit(result)
+        if kind != "publish" or not wait:
+            return
+        key = UUID(result["id"])
+        deadline = monotonic() + timeout
+        while monotonic() < deadline:
+            result = client.json(f"/api/v1/publication-jobs/{key}")
+            if result["status"] == "complete":
+                emit(client.json(f"/api/v1/submissions/{identifier}/publication"))
                 return
-            key = UUID(result["id"])
-            deadline = monotonic() + timeout
-            while monotonic() < deadline:
-                result = client.json(f"/api/v1/publication-jobs/{key}")
-                if result["status"] == "complete":
-                    emit(client.json(f"/api/v1/submissions/{identifier}/publication"))
-                    return
-                if result["status"] in {"failed", "cancelled"}:
-                    emit(result)
-                    raise typer.Exit(1)
-                sleep(0.5)
-            typer.echo(f"Still pending; resume with publication-status {identifier}", err=True)
-            raise typer.Exit(1)
-    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+            if result["status"] in {"failed", "cancelled"}:
+                emit(result)
+                raise typer.Exit(1)
+            sleep(0.5)
+        typer.echo(f"Still pending; resume with publication-status {identifier}", err=True)
+        raise typer.Exit(1)
+    except (httpx.HTTPError, TimeoutError, ValueError, KeyError, TypeError):
         typer.echo(
             "Publication request unavailable or invalid; inspect its status before retrying",
             err=True,
@@ -137,8 +136,7 @@ def install_release_cli(app: typer.Typer) -> None:
                     "atol": atol,
                 }
             )
-            with httpx.Client() as http:
-                result = ReleaseClient(url, http).get(selection, cache)
+            result = ReleaseClient(url).get(selection, cache)
             emit(
                 {
                     "manifest": str(result.manifest_path),
@@ -147,7 +145,15 @@ def install_release_cli(app: typer.Typer) -> None:
                     "package_sha256": result.manifest.package.sha256,
                 }
             )
-        except (httpx.HTTPError, ValueError, KeyError, TypeError, OSError, ImportError):
+        except (
+            httpx.HTTPError,
+            TimeoutError,
+            ValueError,
+            KeyError,
+            TypeError,
+            OSError,
+            ImportError,
+        ):
             typer.echo(
                 "Download unavailable or incompatible; supply a matching runtime fingerprint",
                 err=True,
@@ -159,13 +165,12 @@ def show(
     path: str, url: str, params: dict[str, Any] | None = None, *, source_only: bool = False
 ) -> None:
     try:
-        with httpx.Client() as http:
-            result = ReleaseClient(url, http).json(path, params=params)
+        result = ReleaseClient(url).json(path, params=params)
         emit(
             {"source": result["source"], "source_sha256": result["source_sha256"]}
             if source_only
             else result
         )
-    except (httpx.HTTPError, ValueError, KeyError, TypeError):
+    except (httpx.HTTPError, TimeoutError, ValueError, KeyError, TypeError):
         typer.echo("Published metadata unavailable or selection requires refinement", err=True)
         raise typer.Exit(1) from None
