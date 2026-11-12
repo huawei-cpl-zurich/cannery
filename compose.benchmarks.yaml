@@ -1,0 +1,7 @@
+# Requires artifacts, builds and numerics overlays. Private reports only.
+services:
+  benchmarker:
+    extends:
+      file: compose.builds.yaml
+      service: builder
+    command: ["python", "-m", "cannery.benchmark.worker"]
