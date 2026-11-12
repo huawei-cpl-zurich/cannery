@@ -22,6 +22,8 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Mapper, Session, mapped_column
 
+import cannery.registry.models  # noqa: F401
+import cannery.submissions.models  # noqa: F401
 from cannery.artifacts import ArtifactRef
 from cannery.database import Base, aware
 
@@ -95,7 +97,9 @@ def ensure_job(
 ) -> None:
     if re.fullmatch(r"[a-f0-9]{64}", key) is None or kind not in {"reference", "candidate"}:
         raise ValueError("Invalid performance identity")
-    if (kind == "candidate") != (candidate_id is not None and reference_key is not None):
+    if (kind == "candidate" and (candidate_id is None or reference_key is None)) or (
+        kind == "reference" and (candidate_id is not None or reference_key is not None)
+    ):
         raise ValueError("Candidate jobs require candidate and reference identities")
     now = datetime.now(UTC)
     try:
