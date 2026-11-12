@@ -14,7 +14,7 @@ from sqlalchemy.orm import Session
 
 from cannery.artifacts import ArtifactError, ArtifactRef
 from cannery.builds.coordinator import evidence
-from cannery.builds.executor import ExecutionFailure
+from cannery.builds.executor import BuildExecutor, ExecutionFailure
 from cannery.builds.remote import RemoteFailure, RemotePending, durable_write, operation_receipts
 from cannery.builds.sandbox import WorkerProfile
 from cannery.builds.state import BuildResult, BuildState
@@ -105,7 +105,7 @@ class LeaseKeeper:
         self.thread.join(timeout=2)
 
 
-def retained(engine: Engine, key: UUID, executor: NumericalExecutor) -> dict[str, Any]:
+def retained(engine: Engine, key: UUID, executor: BuildExecutor) -> dict[str, Any]:
     with Session(engine) as session:
         candidate = session.get(Candidate, key)
         request = session.get(Submission, key)
