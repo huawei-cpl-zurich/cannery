@@ -80,6 +80,18 @@ class BenchmarkExecutor(BuildExecutor):
                 "candidate": candidate_sha256,
                 "binary": binary.model_dump(mode="json") if binary else None,
                 "cpu_baseline": baseline.metadata["key"],
+                "cpu_baseline_content": digest(
+                    json.dumps(
+                        {
+                            "metadata": baseline.metadata,
+                            "outputs": {
+                                name: digest(value) for name, value in baseline.outputs.items()
+                            },
+                        },
+                        sort_keys=True,
+                        allow_nan=False,
+                    ).encode()
+                ),
                 "defaults": spec.manifest.spec.validation.model_dump(mode="json"),
                 "requested": requested.model_dump(mode="json"),
                 "reference_timings": digest(json.dumps(reference_samples, sort_keys=True).encode()),
