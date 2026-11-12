@@ -8,14 +8,16 @@ from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
 from cannery.artifacts import ArtifactRef, digest
-from cannery.benchmark.contract import Cohort, cache_key
+from cannery.benchmark.contract import Cohort, cache_key, reference_key
 from cannery.benchmark.evidence import read_timings
 from cannery.benchmark.executor import BenchmarkExecutor
 from cannery.benchmark.state import PerformanceJob, PerformanceResult, ensure_job
 from cannery.builds.executor import ExecutionFailure
+from cannery.builds.state import BuildResult, BuildState
 from cannery.git_intake import SnapshotBinding
 from cannery.numerics.coordinator import retained as retained_numerical
 from cannery.numerics.state import NumericalResult, NumericalState
+from cannery.registry.freeze import BaselineEvidence
 from cannery.registry.models import SpecVersion
 from cannery.submissions.manifest import RequestedValidation, SubmissionManifest
 from cannery.submissions.models import Candidate, Submission
@@ -29,14 +31,32 @@ def candidate_key(identifier: UUID) -> str:
     return digest(b"candidate-performance-v1\0" + identifier.bytes)
 
 
-def discover(engine: Engine, cohort: Cohort, executor: BenchmarkExecutor) -> None:
+def discover(engine: Engine, cohort: Cohort) -> None:
+    # Discovery relies only on immutable SQL evidence. Blob outages must not stall
+    # unrelated queued jobs or prevent their existing deadlines from being enforced.
     with Session(engine) as db:
-        eligible = list(
-            db.scalars(
-                select(Candidate.id)
+        rows = list(
+            db.execute(
+                select(
+                    Candidate.id,
+                    Submission.spec_id,
+                    SpecVersion.content_sha256,
+                    SpecVersion.smoke,
+                    NumericalState.attempt_id,
+                    NumericalResult.report,
+                    BuildResult.artifact,
+                )
+                .join(Submission, Submission.id == Candidate.id)
+                .join(SpecVersion, SpecVersion.id == Submission.spec_id)
                 .join(NumericalState, NumericalState.id == Candidate.id)
+                .join(NumericalResult, NumericalResult.id == NumericalState.attempt_id)
+                .join(BuildState, BuildState.id == Candidate.id)
+                .join(BuildResult, BuildResult.id == BuildState.attempt_id)
                 .where(
                     NumericalState.status == "passed",
+                    NumericalResult.status == "passed",
+                    BuildState.status == "awaiting_validation",
+                    BuildResult.status == "complete",
                     ~select(PerformanceJob.key)
                     .where(PerformanceJob.candidate_id == Candidate.id)
                     .exists(),
@@ -45,37 +65,33 @@ def discover(engine: Engine, cohort: Cohort, executor: BenchmarkExecutor) -> Non
                 .limit(50)
             )
         )
-    for identifier in eligible:
-        data = retained_numerical(engine, identifier, executor)
-        spec, suite = data["spec"], data["suite"]
-        with Session(engine) as db:
-            request = db.get(Submission, identifier)
-            numeric = db.get(NumericalState, identifier)
-            assert request is not None and numeric is not None
-            numerical = db.get(NumericalResult, numeric.attempt_id)
-            if (
-                numeric.status != "passed"
-                or numerical is None
-                or numerical.status != "passed"
-                or numerical.report is None
-                or not numerical.report.get("passed")
-            ):
-                continue
-            identity = {"spec_id": str(request.spec_id), "cohort": cohort.model_dump(mode="json")}
-            reference = cache_key(spec.content_sha256, suite, cohort)
-            ensure_job(engine, reference, "reference", identity)
-            identity = identity | {
-                "numerical_attempt": str(numeric.attempt_id),
-                "binary": data["binary"].model_dump(mode="json"),
-            }
-            ensure_job(
-                engine,
-                candidate_key(identifier),
-                "candidate",
-                identity,
-                candidate_id=identifier,
-                reference_key=reference,
-            )
+    for identifier, spec_id, spec_sha, smoke, attempt, report, binary in rows:
+        if not isinstance(identifier, UUID) or not isinstance(report, dict):
+            raise ValueError("Invalid retained numerical identity")
+        evidence = BaselineEvidence.model_validate(smoke)
+        if (
+            evidence.spec_sha256 != spec_sha
+            or not report
+            or not report.get("passed")
+            or report.get("suite_sha256") != evidence.suite_sha256
+            or report.get("generator") != evidence.generator
+        ):
+            raise ValueError("Invalid retained numerical evidence")
+        artifact = ArtifactRef.model_validate(binary)
+        if artifact.repository != "private" or artifact.revision != artifact.sha256:
+            raise ValueError("Invalid admitted artifact")
+        identity = {"spec_id": str(spec_id), "cohort": cohort.model_dump(mode="json")}
+        reference = reference_key(spec_sha, evidence.suite_sha256, evidence.generator, cohort)
+        ensure_job(engine, reference, "reference", identity)
+        ensure_job(
+            engine,
+            candidate_key(identifier),
+            "candidate",
+            identity
+            | {"numerical_attempt": str(attempt), "binary": artifact.model_dump(mode="json")},
+            candidate_id=identifier,
+            reference_key=reference,
+        )
 
 
 def retained(engine: Engine, job: PerformanceJob, executor: BenchmarkExecutor) -> dict[str, Any]:
