@@ -36,6 +36,7 @@ to try its toy submission.</p>{% endif %}
   {% if job.parent_id %}<p>Revision of <a href="/submissions/{{ job.parent_id }}">{{ job.parent_id }}</a></p>{% endif %}
   {% if job.error %}<p role="alert">{% if job.status == 'failed' %}Submission failed: {{ job.error }}.
   {% elif job.benchmark and job.benchmark.status == 'blocked' %}Benchmark blocked: {{ job.error }}.
+  {% elif job.benchmark %}Benchmark pending: {{ job.error }}.
   {% elif job.numerical and job.numerical.status == 'blocked' %}Validation blocked: {{ job.error }}.
   {% else %}Previous attempt failed: {{ job.error }}. Retry pending.{% endif %}</p>{% endif %}
   {% if job.candidate %}
