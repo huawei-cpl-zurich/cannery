@@ -166,6 +166,14 @@ def test_two_publishers_recover_and_fence_withdrawal(admission, tmp_path):
         "node1": worker,
         "node2": worker | {"environment": settings | {"NODE": "node2"}},
     }
+    # Delayed startup makes resuming before HTTP readiness a deterministic fault.
+    services["artifacts"]["command"] = [
+        "python",
+        "-c",
+        "import os,time; time.sleep(2); os.execvp('uvicorn', "
+        "['uvicorn','cannery.artifacts.service:create_app','--factory',"
+        "'--host','0.0.0.0','--port','8000'])",
+    ]
     for service in services.values():
         service["labels"] = {"cannery.task": project}
     overlay = tmp_path / "compose.yaml"
@@ -192,11 +200,7 @@ def test_two_publishers_recover_and_fence_withdrawal(admission, tmp_path):
             time.sleep(0.3)
         raise AssertionError(f"Publication acceptance deadline: {row}")
 
-    try:
-        compose("build", "migrate", timeout=600)
-        compose("up", "-d", "postgres", "artifacts", "migrate")
-        compose("wait", "migrate")
-        # Wait for actual artifact HTTP readiness before seeding.
+    def artifact_ready():
         compose(
             "run",
             "--rm",
@@ -206,8 +210,15 @@ def test_two_publishers_recover_and_fence_withdrawal(admission, tmp_path):
             "-c",
             "import time,httpx\nfor i in range(30):\n try:\n"
             '  httpx.get("http://artifacts:8000/health/live",timeout=1);break\n'
-            " except httpx.HTTPError:time.sleep(.2)",
+            " except httpx.HTTPError:time.sleep(.2)\n"
+            "else:raise RuntimeError('Artifact HTTP readiness deadline exceeded')",
         )
+
+    try:
+        compose("build", "migrate", timeout=600)
+        compose("up", "-d", "postgres", "artifacts", "migrate")
+        compose("wait", "migrate")
+        artifact_ready()
         compose("run", "--rm", "--no-deps", "node1", "python", "/probe/node.py", "seed")
         compose("up", "-d", "--no-deps", "node1", "node2")
         first = wait(lambda r: (control / "owner").exists())
@@ -227,6 +238,7 @@ def test_two_publishers_recover_and_fence_withdrawal(admission, tmp_path):
         offline = wait(lambda r: r["job"] == "queued" and r["attempts"] >= 1)
         assert offline["status"] == "publishing" and offline["count"] == 1
         compose("start", "artifacts")
+        artifact_ready()
         (control / "storage-failed").unlink(missing_ok=True)
         wait(lambda r: (control / "owner").exists())
         query("withdraw")
