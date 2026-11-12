@@ -81,8 +81,11 @@ def upgrade() -> None:
     )
     op.execute("""CREATE FUNCTION protect_release_evidence() RETURNS trigger
     LANGUAGE plpgsql AS $$ BEGIN
-    IF TG_TABLE_NAME != 'publication_jobs' OR OLD.status IN ('complete','failed','cancelled') THEN
-      RAISE EXCEPTION 'Release evidence and terminal publication jobs are immutable';
+    IF TG_TABLE_NAME != 'publication_jobs' THEN
+      RAISE EXCEPTION 'Release evidence is immutable';
+    END IF;
+    IF OLD.status IN ('complete','failed','cancelled') THEN
+      RAISE EXCEPTION 'Terminal publication jobs are immutable';
     END IF;
     IF TG_OP = 'DELETE' THEN RETURN OLD; END IF;
     RETURN NEW;
