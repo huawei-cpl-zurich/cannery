@@ -33,6 +33,7 @@ import cannery.api
 from cannery.database import Base,make_engine
 from cannery.settings import Settings
 from cannery.artifacts.factory import make_store
+from cannery.artifacts import ArtifactError
 from cannery.releases import state,worker
 from cannery.releases.models import Publication,PublicationJob,PublicationEvent,Release
 root=Path('/control'); engine=make_engine(Settings()); backend=make_store(Settings())
@@ -71,7 +72,11 @@ if mode=='query':
  if command=='publish':state.request_publication(engine,key,actor)
  print(json.dumps(snapshot()));raise SystemExit
 class Store:
- def get(self,ref):return backend.get(ref)
+ def get(self,ref):
+  try:return backend.get(ref)
+  except ArtifactError:
+   (root/'storage-failed').touch()
+   raise
  def put(self,path,raw):
   ref=backend.put(path,raw)
   if path.endswith('/manifest.json'):
@@ -82,6 +87,8 @@ class Store:
     time.sleep(.1)
   return ref
 while True:
+ if (root/'storage-failed').exists():
+  time.sleep(.1);continue
  for identifier in state.due_jobs(engine):worker.process(engine,identifier,Store())
  time.sleep(.2)
 """
@@ -220,6 +227,7 @@ def test_two_publishers_recover_and_fence_withdrawal(admission, tmp_path):
         offline = wait(lambda r: r["job"] == "queued" and r["attempts"] >= 1)
         assert offline["status"] == "publishing" and offline["count"] == 1
         compose("start", "artifacts")
+        (control / "storage-failed").unlink(missing_ok=True)
         wait(lambda r: (control / "owner").exists())
         query("withdraw")
         (control / "allow").touch()
