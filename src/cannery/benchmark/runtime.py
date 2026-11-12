@@ -25,14 +25,15 @@ assert physical_fn(0,ctypes.byref(physical))==0
 assert physical.value==int(os.environ['CANNERY_PHYSICAL_DEVICE'])
 plan=json.loads(Path('/input/cases.json').read_bytes())
 assert plan['suite']['generator']=='sha256-f32-v1'
-"""
-CANDIDATE = r"""
 wheels=list(Path('/input').glob('*.whl'))
 assert len(wheels)==1
 subprocess.run([sys.executable,'-m','pip','install','--no-index','--no-deps',
                '--target','/tmp/loader',str(wheels[0])],check=True,timeout=30,stdout=sys.stderr)
 sys.path.insert(0,'/tmp/loader')
-from cannery_kernels import load_cannery_package
+from cannery_kernels import load_cannery_package,runtime_fingerprint
+assert runtime_fingerprint()==plan['runtime']
+"""
+CANDIDATE = r"""
 package=Path('/input/admitted.tar').read_bytes()
 artifact=json.loads(Path('/input/artifact.json').read_bytes())
 assert hashlib.sha256(package).hexdigest()==artifact['sha256']
