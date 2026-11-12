@@ -87,17 +87,20 @@ with torch.no_grad():
             x=view
         strides=x.stride()
         if data:
-            samples,before,after=measure(forward,x,torch.npu.synchronize,time.perf_counter_ns)
+            samples,before,after=measure(forward,x,torch.npu.synchronize,time.perf_counter_ns,
+                                         snapshot=lambda value:record(case,recipe,value,x))
             timings.append({'id':case['id'],'samples_us':samples})
         else:
             before=forward(x)
             torch.npu.synchronize()
+            before=record(case,recipe,before,x)
             after=forward(x)
             torch.npu.synchronize()
+            after=record(case,recipe,after,x)
         assert tuple(x.shape)==tuple(recipe.shape) and x.dtype==torch.float32
         assert x.stride()==strides
-        before_cases.append(record(case,recipe,before,x))
-        after_cases.append(record(case,recipe,after,x))
+        before_cases.append(before)
+        after_cases.append(after)
         del x,before,after
 wire.write(json.dumps({'protocol':PROTOCOL,
     'timing':{'protocol':PROTOCOL,'warmup':WARMUP,'cases':timings},
