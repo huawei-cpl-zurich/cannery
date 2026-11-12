@@ -155,3 +155,23 @@ def test_corrupt_ready_timing_metadata_is_rejected_without_execution(benchmark, 
     with pytest.raises(ValueError):
         read_timings(raw, artifact, spec.content_sha256, suite, cohort)
     assert not remote.started
+
+
+def test_changed_cpu_output_bundle_cannot_reuse_passing_checkpoint(benchmark, arguments):
+    from dataclasses import replace
+
+    from cannery.numerics.baseline_format import records
+
+    run, _, remote, _, _, _, suite, _ = benchmark
+    baseline = arguments[0]
+    changed = baseline.outputs | {"small": bytes(len(baseline.outputs["small"]))}
+    alternate = replace(
+        baseline, outputs=changed, metadata=baseline.metadata | {"cases": records(suite, changed)}
+    )
+    assert alternate.metadata["key"] == baseline.metadata["key"]
+    attempt = uuid4()
+    run(attempt)
+    started = remote.started.copy()
+    with pytest.raises(ExecutionFailure) as failure:
+        run(attempt, baseline=alternate)
+    assert failure.value.code == "benchmark_context_changed" and remote.started == started
