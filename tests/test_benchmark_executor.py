@@ -146,3 +146,12 @@ def test_changed_context_cannot_resume_existing_attempt(benchmark):
     with pytest.raises(ExecutionFailure) as result:
         run(attempt, cohort=cohort.model_copy(update={"driver": "changed"}))
     assert result.value.code == "benchmark_context_changed" and remote.started == starts
+
+
+@pytest.mark.parametrize("raw", [b"null", b"[]", b"{}", b"{"])
+def test_corrupt_ready_timing_metadata_is_rejected_without_execution(benchmark, raw):
+    _, _, remote, memory, _, spec, suite, cohort = benchmark
+    artifact = memory.put("bad.json", raw)
+    with pytest.raises(ValueError):
+        read_timings(raw, artifact, spec.content_sha256, suite, cohort)
+    assert not remote.started
