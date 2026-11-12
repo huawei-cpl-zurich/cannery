@@ -209,6 +209,10 @@ class CplRemote:
         self.preflight()
         if large_output and direction != "download":
             raise ValueError("Large evidence budget applies only to downloads")
-        result = self.call(direction, self.target, source, destination, large_output=large_output)
+        result = (
+            self.call(direction, self.target, source, destination, large_output=True)
+            if large_output
+            else self.call(direction, self.target, source, destination)
+        )
         if result.get("state") != "completed":
             raise RemotePending("Transfer incomplete; resume the same route before dependent work")
