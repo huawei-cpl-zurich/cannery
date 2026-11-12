@@ -159,7 +159,7 @@ def install_cli(app: typer.Typer) -> None:
 
     @app.command()
     def submission(identifier: UUID, url: str = "http://127.0.0.1:8000") -> None:
-        """Inspect a submission's owned source, target and stage status."""
+        """Inspect owned source, stage status, numerical and private performance reports."""
         try:
             response = httpx.get(url.rstrip("/") + f"/api/v1/submissions/{identifier}", timeout=5)
             response.raise_for_status()

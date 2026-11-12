@@ -1,5 +1,6 @@
 """Git-only, namespace-owned submission and revision requests/status."""
 
+import json
 from typing import Annotated, Any
 from uuid import UUID
 
@@ -9,6 +10,8 @@ from redis.exceptions import RedisError
 from sqlalchemy import Engine, Select, select
 from sqlalchemy.orm import Session
 
+from cannery.artifacts import digest
+from cannery.benchmark.state import PerformanceJob, PerformanceResult
 from cannery.builds.state import BuildResult, BuildState
 from cannery.git_intake import GitSource
 from cannery.numerics.state import NumericalResult, NumericalState
@@ -90,6 +93,8 @@ def query(namespace: str) -> Select[*tuple[Any, ...]]:
             BuildResult,
             NumericalState,
             NumericalResult,
+            PerformanceJob,
+            PerformanceResult,
         )
         .join(IntakeState, IntakeState.id == Submission.id)
         .outerjoin(Candidate, Candidate.id == Submission.id)
@@ -98,8 +103,33 @@ def query(namespace: str) -> Select[*tuple[Any, ...]]:
         .outerjoin(BuildResult, BuildResult.id == BuildState.attempt_id)
         .outerjoin(NumericalState, NumericalState.id == Candidate.id)
         .outerjoin(NumericalResult, NumericalResult.id == NumericalState.attempt_id)
+        .outerjoin(PerformanceJob, PerformanceJob.candidate_id == Candidate.id)
+        .outerjoin(PerformanceResult, PerformanceResult.id == PerformanceJob.attempt)
         .where(Submission.namespace == namespace)
     )
+
+
+def benchmark_info(
+    job: PerformanceJob | None, result: PerformanceResult | None
+) -> dict[str, Any] | None:
+    if job is None:
+        return None
+    report = None
+    if result and result.status == "ready" and result.report and result.report.get("passed"):
+        report = {
+            key: result.report[key]
+            for key in ("protocol", "cases", "geomean_speedup")
+            if key in result.report
+        }
+    return {
+        "status": {"running": "benchmarking", "ready": "passed"}.get(job.status, job.status),
+        "attempts": job.attempts,
+        "error": job.error,
+        "cohort_sha256": digest(json.dumps(job.identity["cohort"], sort_keys=True).encode()),
+        "reference_key": job.reference_key,
+        "report": report,
+        "evidence_sha256": result.artifact["sha256"] if result and result.artifact else None,
+    }
 
 
 def describe(
@@ -111,6 +141,8 @@ def describe(
     result: BuildResult | None = None,
     numerical: NumericalState | None = None,
     numerical_result: NumericalResult | None = None,
+    performance: PerformanceJob | None = None,
+    performance_result: PerformanceResult | None = None,
 ) -> dict[str, Any]:
     failed = state.status == "failed" or (build is not None and build.status == "failed")
     status = (
@@ -124,6 +156,16 @@ def describe(
                 numerical.status, numerical.status
             )
         failed = failed or numerical.status == "failed"
+    benchmark = benchmark_info(performance, performance_result)
+    if performance is not None:
+        status = {
+            "queued": "benchmark_queued",
+            "running": "benchmarking",
+            "ready": "complete",
+            "blocked": "awaiting_benchmark",
+            "failed": "failed",
+        }[performance.status]
+        failed = failed or performance.status == "failed"
     return {
         "id": str(request.id),
         "parent_id": str(request.parent_id) if request.parent_id else None,
@@ -133,7 +175,13 @@ def describe(
         "source": request.source,
         "target": request.target,
         "status": status,
-        "error": numerical.error if numerical else build.error if build else state.error,
+        "error": performance.error
+        if performance
+        else numerical.error
+        if numerical
+        else build.error
+        if build
+        else state.error,
         "created_at": request.created_at.isoformat(),
         "eta_seconds": None,
         "stages": {
@@ -148,7 +196,9 @@ def describe(
             if failed
             else "pending",
             "correctness": numerical.status if numerical else "blocked" if failed else "pending",
-            "benchmark": "blocked"
+            "benchmark": benchmark["status"]
+            if benchmark
+            else "blocked"
             if failed or (numerical is not None and numerical.status == "blocked")
             else "pending",
         },
@@ -166,6 +216,7 @@ def describe(
             "baseline_key": numerical.baseline_key,
             "report": numerical_result.report if numerical_result else None,
         },
+        "benchmark": benchmark,
         "candidate": None
         if candidate is None
         else {
@@ -180,12 +231,12 @@ def get_info(session: Session, namespace: str, identifier: UUID) -> dict[str, An
     row = session.execute(query(namespace).where(Submission.id == identifier)).one_or_none()
     if row is None:
         raise HTTPException(404, "Submission not found")
-    return describe(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7])
+    return describe(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9])
 
 
 def list_info(session: Session, namespace: str) -> list[dict[str, Any]]:
     return [
-        describe(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7])
+        describe(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9])
         for row in session.execute(
             query(namespace).order_by(Submission.created_at.desc()).limit(50)
         )

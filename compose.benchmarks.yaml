@@ -1,5 +1,8 @@
 # Requires artifacts, builds and numerics overlays. Private reports only.
 services:
+  api:
+    environment:
+      CANNERY_BENCHMARK_ENABLED: "true"
   benchmarker:
     extends:
       file: compose.builds.yaml
