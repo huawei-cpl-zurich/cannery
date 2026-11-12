@@ -1,5 +1,6 @@
 """Namespace-owned submissions, source intake status and commit-only revisions."""
 
+from typing import Any
 from urllib.parse import parse_qs
 from uuid import UUID
 
@@ -52,6 +53,28 @@ async def form_data(request: Request, allowed: set[str]) -> dict[str, str]:
         return {key: values[0].strip() for key, values in fields.items()}
     except ValueError:
         raise HTTPException(400, "Invalid form fields") from None
+
+
+def submission_pending(job: dict[str, Any], benchmark_enabled: bool = False) -> bool:
+    if job["numerical"] and job["numerical"]["status"] == "blocked":
+        return False
+    if job["status"] in {
+        "queued",
+        "intaking",
+        "build_queued",
+        "building",
+        "awaiting_validation",
+        "validation_queued",
+        "validating",
+        "benchmark_queued",
+        "benchmarking",
+    }:
+        return True
+    return bool(
+        benchmark_enabled
+        and job["status"] == "awaiting_benchmark"
+        and not (job.get("benchmark") and job["benchmark"]["status"] == "blocked")
+    )
 
 
 def install_submission_web(
@@ -158,20 +181,7 @@ def install_submission_web(
             request,
             "My Submissions",
             jobs=jobs,
-            pending=any(
-                job["status"]
-                in (
-                    "queued",
-                    "intaking",
-                    "build_queued",
-                    "building",
-                    "awaiting_validation",
-                    "validation_queued",
-                    "validating",
-                )
-                and not (job["numerical"] and job["numerical"]["status"] == "blocked")
-                for job in jobs
-            ),
+            pending=any(submission_pending(job, settings.benchmark_enabled) for job in jobs),
         )
 
     @app.get("/submissions/{identifier}", response_class=HTMLResponse, include_in_schema=False)
@@ -179,7 +189,12 @@ def install_submission_web(
         namespace = identity(settings)
         with Session(engine) as session:
             job = get_info(session, namespace, identifier)
-        return render(request, "My Submissions", job=job)
+        return render(
+            request,
+            "My Submissions",
+            job=job,
+            pending=submission_pending(job, settings.benchmark_enabled),
+        )
 
     @app.post("/submissions/{identifier}/revisions", include_in_schema=False)
     async def revision(request: Request, identifier: UUID) -> RedirectResponse:

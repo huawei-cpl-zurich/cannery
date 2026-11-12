@@ -28,13 +28,14 @@ to try its toy submission.</p>{% endif %}
 </form>
 {% else %}<p><a href="/register-kernel">Register a specification</a> before submitting an implementation.</p>{% endif %}
 {% elif job %}
-<section id="submission"{% if job.status in ['queued','intaking','build_queued','building','awaiting_validation','validation_queued','validating'] and not (job.numerical and job.numerical.status == 'blocked') %}
+<section id="submission"{% if pending %}
  hx-get="{{ request.url.path }}" hx-trigger="every 2s" hx-select="#submission" hx-swap="outerHTML"{% endif %}>
   <p>Submission <code>{{ job.id }}</code>: <strong>{{ job.status }}</strong>. ETA: Unknown.</p>
   <p>{{ job.kernel.namespace }}/{{ job.kernel.name }}@spec-v{{ job.spec_version }} · {{ job.target.device }} · {{ job.target.language }}</p>
   <p>Source: {{ job.source.url }} · <code>{{ job.source.commit }}</code> · {{ job.source.path }}</p>
   {% if job.parent_id %}<p>Revision of <a href="/submissions/{{ job.parent_id }}">{{ job.parent_id }}</a></p>{% endif %}
   {% if job.error %}<p role="alert">{% if job.status == 'failed' %}Submission failed: {{ job.error }}.
+  {% elif job.benchmark and job.benchmark.status == 'blocked' %}Benchmark blocked: {{ job.error }}.
   {% elif job.numerical and job.numerical.status == 'blocked' %}Validation blocked: {{ job.error }}.
   {% else %}Previous attempt failed: {{ job.error }}. Retry pending.{% endif %}</p>{% endif %}
   {% if job.candidate %}
@@ -48,6 +49,18 @@ to try its toy submission.</p>{% endif %}
     <table><thead><tr><th>Case</th><th>Input unchanged</th><th>Spec default (rtol, atol)</th><th>Requested (rtol, atol)</th><th>Max absolute error</th><th>Max relative error</th><th>RMS error</th><th>Nonfinite mismatches</th></tr></thead><tbody>
     {% for case in job.numerical.report.cases %}<tr><td>{{ case.id }}</td><td>{{ case.input_unchanged }}</td><td>{{ case.spec_default.passed }} ({{ case.spec_default.rtol }}, {{ case.spec_default.atol }})</td><td>{{ case.submission_requested.passed }} ({{ case.submission_requested.rtol }}, {{ case.submission_requested.atol }})</td><td>{{ case.spec_default.max_absolute_error }}</td><td>{{ case.spec_default.max_relative_error if case.spec_default.max_relative_error is not none else "undefined" }}</td><td>{{ case.spec_default.rms_error }}</td><td>{{ case.spec_default.nonfinite_mismatches }}</td></tr>{% endfor %}
     </tbody></table>
+    {% endif %}
+    {% endif %}
+    {% if job.benchmark %}
+    <p>Benchmark: {{ job.benchmark.status }} · attempts: {{ job.benchmark.attempts }}.</p>
+    {% if job.benchmark.report %}
+    <p>Synchronized call latency in µs ({{ job.benchmark.report.protocol }}). Results are private.</p>
+    <table><thead><tr><th>Case</th><th>Median µs</th><th>p95 µs</th><th>Samples</th><th>Reference median µs</th><th>Speedup</th></tr></thead><tbody>
+    {% for case in job.benchmark.report.cases %}<tr><td>{{ case.id }}</td>
+    {% if case.excluded %}<td colspan="5">Empty case: correctness only; excluded from performance score.</td>
+    {% else %}<td>{{ case.candidate.median_us }}</td><td>{{ case.candidate.p95_us }}</td><td>{{ case.candidate.samples }}</td><td>{{ case.reference.median_us }}</td><td>{{ case.speedup }}×</td>{% endif %}</tr>{% endfor %}
+    </tbody></table>
+    <p>Geometric mean speedup: {% if job.benchmark.report.geomean_speedup is not none %}{{ job.benchmark.report.geomean_speedup }}×{% else %}No nonempty performance cases.{% endif %}</p>
     {% endif %}
     {% endif %}
     <p>Content SHA256: <code>{{ job.candidate.content_sha256 }}</code></p>
