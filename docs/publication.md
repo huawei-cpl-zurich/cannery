@@ -92,7 +92,8 @@ The release listing includes scoreless releases; the leaderboard excludes them.
 
 ## Resolve and download
 
-Inside the consumer's configured A5 runtime with the offline SDK installed:
+Inside the consumer's configured A5 runtime with the offline SDK installed
+(runtime detection runs in a bounded 30-second subprocess):
 
 ```bash
 cannery get team/helloworld --shape 2,3 --language ascendc \
