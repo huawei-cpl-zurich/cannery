@@ -1,0 +1,32 @@
+# Explicit publication only; append after the private artifacts/benchmarks overlays.
+services:
+  api:
+    environment:
+      CANNERY_RELEASE_ENABLED: "true"
+      CANNERY_ARTIFACT_BACKEND: private
+      CANNERY_ARTIFACT_URL: http://artifacts:8000
+      CANNERY_ARTIFACT_READ_TOKEN: ${CANNERY_ARTIFACT_READ_TOKEN:?Set a private read token}
+  publisher:
+    build:
+      context: .
+      target: app
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m
+    environment:
+      CANNERY_DATABASE_URL: postgresql+psycopg://cannery:cannery@postgres:5432/cannery
+      CANNERY_ARTIFACT_BACKEND: private
+      CANNERY_ARTIFACT_URL: http://artifacts:8000
+      CANNERY_ARTIFACT_READ_TOKEN: ${CANNERY_ARTIFACT_READ_TOKEN:?Set a private read token}
+      CANNERY_ARTIFACT_WRITE_TOKEN: ${CANNERY_ARTIFACT_WRITE_TOKEN:?Set a private write token}
+    command: ["python", "-m", "cannery.releases.worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      artifacts:
+        condition: service_started
+    restart: unless-stopped
+    mem_limit: 1g
+    cpus: 1
+    pids_limit: 64

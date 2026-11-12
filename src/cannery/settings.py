@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CANNERY_", extra="ignore")
 
     service_name: str = "cannery"
+    release_enabled: bool = False
 
     database_url: SecretStr = SecretStr(
         "postgresql+psycopg://cannery:cannery@localhost:5432/cannery"
