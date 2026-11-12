@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from cannery.releases import catalog
 from cannery.releases.contract import SHA
+from cannery.releases.details import detail
 from cannery.settings import Settings
 from cannery.submissions.manifest import KernelPath
 
@@ -61,7 +62,7 @@ def install_discovery(app: FastAPI, settings: Settings, engine: Engine) -> None:
         try:
             with Session(engine) as db:
                 item, pub = catalog.release_info(db, identifier)
-                return catalog.describe(item, pub)
+                return detail(db, item, pub)
         except catalog.SelectionError as error:
             raise selection_error(error) from None
 
