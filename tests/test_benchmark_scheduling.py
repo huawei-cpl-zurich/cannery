@@ -1,7 +1,7 @@
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 from test_benchmark_executor import benchmark as benchmark
 from test_build_executor import setup_executor as setup_executor
@@ -13,7 +13,10 @@ from test_submission_requests import records as records
 from cannery.benchmark import scheduling
 from cannery.benchmark.evidence import timing_artifact
 from cannery.benchmark.state import PerformanceJob, claim_job, finish_job
+from cannery.builds.state import claim_build, finish_build
 from cannery.numerics.state import NumericalState, claim_numerical, finish_numerical
+from cannery.registry.freeze import BaselineEvidence
+from cannery.registry.models import SpecVersion
 from cannery.submissions.models import Candidate
 
 
@@ -22,6 +25,23 @@ def queue(records, benchmark, monkeypatch):
     engine, _ = records
     _, executor, _, memory, _, spec, suite, cohort = benchmark
     binary = memory.put("binary.tar", b"admitted")
+    baseline = BaselineEvidence(
+        spec_sha256=spec.content_sha256,
+        baseline_key="f" * 64,
+        suite_sha256=suite.sha256,
+        generator=suite.generator,
+        image_id="sha256:" + "a" * 64,
+        python=spec.environment.python,
+        torch=spec.environment.torch,
+        cases=len(suite.cases),
+        artifact=binary,
+    )
+    with engine.begin() as connection:
+        connection.execute(
+            update(SpecVersion).values(
+                content_sha256=spec.content_sha256, smoke=baseline.model_dump(mode="json")
+            )
+        )
 
     def retained(engine, identifier, executor):
         with Session(engine) as db:
@@ -47,10 +67,15 @@ def queue(records, benchmark, monkeypatch):
 
     def add(passed=True):
         key = candidate(records)
+        finish_build(engine, claim_build(engine, key), artifact=binary)
         with Session(engine) as db, db.begin():
             db.add(NumericalState(id=key))
         claim = claim_numerical(engine, key)
-        finish_numerical(engine, claim, report={"passed": passed})
+        finish_numerical(
+            engine,
+            claim,
+            report={"passed": passed, "suite_sha256": suite.sha256, "generator": suite.generator},
+        )
         return key
 
     return engine, executor, memory, spec, suite, cohort, add
@@ -59,8 +84,8 @@ def queue(records, benchmark, monkeypatch):
 def test_only_passed_candidates_discovered_once_and_share_reference(queue):
     engine, executor, _, _, _, cohort, add = queue
     first, second, wrong = add(), add(), add(False)
-    scheduling.discover(engine, cohort, executor)
-    scheduling.discover(engine, cohort, executor)
+    scheduling.discover(engine, cohort)
+    scheduling.discover(engine, cohort)
     with Session(engine) as db:
         jobs = list(db.scalars(select(PerformanceJob)))
         assert len(jobs) == 3
@@ -74,7 +99,7 @@ def test_only_passed_candidates_discovered_once_and_share_reference(queue):
 def test_reference_and_candidate_load_only_matching_completed_cache(queue):
     engine, executor, memory, spec, suite, cohort, add = queue
     key = add()
-    scheduling.discover(engine, cohort, executor)
+    scheduling.discover(engine, cohort)
     with Session(engine) as db:
         job = db.get(PerformanceJob, scheduling.candidate_key(key))
         reference = db.get(PerformanceJob, job.reference_key)
@@ -96,7 +121,7 @@ def test_reference_and_candidate_load_only_matching_completed_cache(queue):
 def test_failed_reference_blocks_without_dispatching_candidate(queue):
     engine, executor, _, _, _, cohort, add = queue
     key = add()
-    scheduling.discover(engine, cohort, executor)
+    scheduling.discover(engine, cohort)
     with Session(engine) as db:
         job = db.get(PerformanceJob, scheduling.candidate_key(key))
     assert finish_job(engine, claim_job(engine, job.reference_key), error="unsupported")
