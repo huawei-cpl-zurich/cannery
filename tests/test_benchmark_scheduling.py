@@ -74,7 +74,12 @@ def queue(records, benchmark, monkeypatch):
         finish_numerical(
             engine,
             claim,
-            report={"passed": passed, "suite_sha256": suite.sha256, "generator": suite.generator},
+            report={
+                "passed": passed,
+                "spec_sha256": spec.content_sha256,
+                "suite_sha256": suite.sha256,
+                "generator": suite.generator,
+            },
         )
         return key
 

@@ -122,3 +122,25 @@ def test_terminal_cleanup_ignores_untrusted_json_and_restores_profile(operation)
     assert executor.cleaned and (journal / "cleanup-complete").exists()
     assert not (journal / "results.json").exists()
     assert all("one" in str(call) for call in executor.remote.call.call_args_list)
+
+
+def test_storage_wait_has_a_safe_reason_and_retains_attempt(operation):
+    engine, executor = operation
+    executor.benchmark.side_effect = ArtifactError("private internal detail")
+    coordinator.process(engine, KEY, lambda _: executor)
+    with Session(engine) as db:
+        row = db.get(PerformanceJob, KEY)
+        assert row.status == "running" and row.attempts == 1
+        assert row.error == "artifact_storage_unavailable"
+    assert not executor.cleaned
+
+
+def test_lost_fence_prevents_cancelling_missing_remote_operation(operation):
+    from cannery.builds.executor import BuildExecutor
+
+    _, executor = operation
+    executor.remote.call = MagicMock(return_value={"state": "missing"})
+    executor.fence = MagicMock(side_effect=RemotePending("lease lost"))
+    with pytest.raises(RemotePending):
+        BuildExecutor.cleanup(executor, uuid4())
+    assert [c.args[0] for c in executor.remote.call.call_args_list] == ["observe"]

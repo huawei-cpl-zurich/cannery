@@ -199,12 +199,13 @@ def heartbeat(engine: Engine, claim: PerformanceClaim) -> bool:
         return True
 
 
-def postpone_job(engine: Engine, claim: PerformanceClaim) -> bool:
+def postpone_job(engine: Engine, claim: PerformanceClaim, *, reason: str | None = None) -> bool:
     with Session(engine) as db, db.begin():
         row = current_job(db, claim)
         if row is None:
             return False
         row.lease = None
+        row.error = reason
         row.due_at = min(aware(row.deadline), datetime.now(UTC) + timedelta(seconds=5))
         row.lease_until = row.due_at
         return True
