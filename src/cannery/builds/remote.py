@@ -69,7 +69,7 @@ class CplRemote:
             raise ValueError("Invalid remote target")
         self.journal.mkdir(mode=0o700, parents=True, exist_ok=True)
 
-    def call(self, *arguments: str) -> dict[str, Any]:
+    def call(self, *arguments: str, large_output: bool = False) -> dict[str, Any]:
         # Use the installed skill, not a workspace transport implementation.
         (self.client.parent.parent / "SKILL.md").read_text()
         environment = {
@@ -92,6 +92,7 @@ class CplRemote:
                 timeout=180,
                 max_output=1024 * 1024,
                 git_limits=False,
+                large_output=large_output,
                 check=False,
             )
             result = json.loads(output)
@@ -199,11 +200,15 @@ class CplRemote:
             raise RemoteFailure(result.get("exit"))
         raise RemotePending("Retained operation is not terminal")
 
-    def transfer(self, direction: str, source: str, destination: str) -> None:
+    def transfer(
+        self, direction: str, source: str, destination: str, *, large_output: bool = False
+    ) -> None:
         """Resume the same synchronous rsync route; async transfer backends are rejected."""
         if direction not in {"upload", "download"}:
             raise ValueError("Invalid transfer direction")
         self.preflight()
-        result = self.call(direction, self.target, source, destination)
+        if large_output and direction != "download":
+            raise ValueError("Large evidence budget applies only to downloads")
+        result = self.call(direction, self.target, source, destination, large_output=large_output)
         if result.get("state") != "completed":
             raise RemotePending("Transfer incomplete; resume the same route before dependent work")

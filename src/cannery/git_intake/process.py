@@ -48,7 +48,10 @@ def run(
     max_output: int = 16 * 1024 * 1024,
     git_limits: bool = True,
     check: bool = True,
+    large_output: bool = False,
 ) -> bytes:
+    if large_output and git_limits:
+        raise ValueError("Large file budget is restricted to trusted coordinator operations")
     nested = os.environ.get("CANNERY_ATTEMPT_GROUP") == str(os.getpgrp())
     with TemporaryFile() as output, TemporaryFile() as errors:
         process = subprocess.Popen(
@@ -57,6 +60,7 @@ def run(
                 "-m",
                 "cannery.git_intake.limits",
                 *([] if git_limits else ["--coordinator"]),
+                *(["--large-output"] if large_output else []),
                 *argv,
             ],
             cwd=cwd,
