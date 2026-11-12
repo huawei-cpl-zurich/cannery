@@ -25,7 +25,7 @@ def selected(
     atol: Annotated[float | None, Query(ge=0, allow_inf_nan=False)] = None,
 ) -> catalog.Selection:
     allowed = {"kernel", "spec_version", "device", "cohort", "rtol", "atol"}
-    if request.url.path.endswith("/leaderboard"):
+    if request.url.path.endswith(("/leaderboard", "/releases")):
         allowed |= {"limit", "offset"}
     if any(
         k not in allowed or len(request.query_params.getlist(k)) != 1 for k in request.query_params
@@ -56,6 +56,18 @@ def install_discovery(app: FastAPI, settings: Settings, engine: Engine) -> None:
     def kernels() -> list[dict[str, Any]]:
         with Session(engine) as db:
             return catalog.kernels(db)
+
+    @app.get("/api/v1/releases")
+    def releases(
+        selection: Annotated[catalog.Selection, Depends(selected)],
+        limit: Annotated[int, Query(ge=1, le=100)] = 50,
+        offset: Annotated[int, Query(ge=0)] = 0,
+    ) -> dict[str, Any]:
+        try:
+            with Session(engine) as db:
+                return catalog.listing(db, selection, limit, offset)
+        except catalog.SelectionError as error:
+            raise selection_error(error) from None
 
     @app.get("/api/v1/releases/{identifier}")
     def release(identifier: UUID) -> dict[str, Any]:

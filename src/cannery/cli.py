@@ -2,6 +2,7 @@ from typing import Annotated
 
 import typer
 
+from cannery.releases.cli import install_release_cli
 from cannery.submissions.cli import install_cli
 
 app = typer.Typer(no_args_is_help=True)
@@ -117,3 +118,4 @@ def registrations(url: str = "http://127.0.0.1:8000") -> None:
 
 
 install_cli(app)
+install_release_cli(app)
