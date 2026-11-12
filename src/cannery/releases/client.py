@@ -8,7 +8,7 @@ import re
 import tempfile
 from dataclasses import dataclass
 from pathlib import Path
-from time import sleep
+from time import monotonic, sleep
 from typing import Any
 from urllib.parse import urlsplit
 from uuid import UUID
@@ -47,19 +47,24 @@ class ReleaseClient:
         body: dict[str, Any] | None = None,
         *,
         params: dict[str, Any] | None = None,
+        deadline: float | None = None,
     ) -> bytes:
         if not path.startswith("/api/v1/") or ".." in path or "?" in path:
             raise ValueError("Invalid API path")
         for attempt in range(3):
+            remaining = 60.0 if deadline is None else min(60.0, deadline - monotonic())
+            if remaining <= 0:
+                raise TimeoutError("Release request deadline exceeded")
             try:
-                return asyncio.run(self.transfer(path, limit, body, params))
+                return asyncio.run(self.transfer(path, limit, body, params, remaining))
             except httpx.HTTPStatusError as error:
                 if error.response.status_code < 500 or attempt == 2:
                     raise
             except (httpx.TransportError, TimeoutError):
                 if attempt == 2:
                     raise
-            sleep(0.1 * 2**attempt)
+            pause = 0.1 * 2**attempt
+            sleep(pause if deadline is None else min(pause, max(0, deadline - monotonic())))
         raise AssertionError("Unreachable retry state")
 
     async def transfer(
@@ -68,11 +73,12 @@ class ReleaseClient:
         limit: int,
         body: dict[str, Any] | None,
         params: dict[str, Any] | None,
+        budget: float,
     ) -> builtins.bytes:
         # The wall deadline interrupts header waits and even a continuously dripping body.
-        async with asyncio.timeout(60):
+        async with asyncio.timeout(budget):
             async with httpx.AsyncClient(
-                transport=self.transport, timeout=15, follow_redirects=False
+                transport=self.transport, timeout=min(15, budget), follow_redirects=False
             ) as client:
                 async with client.stream(
                     "GET" if body is None else "POST",
@@ -97,8 +103,9 @@ class ReleaseClient:
         body: dict[str, Any] | None = None,
         *,
         params: dict[str, Any] | None = None,
+        deadline: float | None = None,
     ) -> Any:
-        return json.loads(self.bytes(path, 2 * 1024 * 1024, body, params=params))
+        return json.loads(self.bytes(path, 2 * 1024 * 1024, body, params=params, deadline=deadline))
 
     def get(self, request: ResolveRequest, cache: Path) -> CachedRelease:
         info = self.json("/api/v1/artifacts/resolve", request.model_dump(mode="json"))

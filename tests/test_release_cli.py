@@ -25,7 +25,7 @@ def cli_server(published, monkeypatch):
     install_discovery(server.app, settings, engine)
     install_publications(server.app, settings, engine)
 
-    def forward(self, path, limit, body=None, *, params=None):
+    def forward(self, path, limit, body=None, *, params=None, deadline=None):
         response = server.request("GET" if body is None else "POST", path, json=body, params=params)
         response.raise_for_status()
         assert len(response.content) <= limit
@@ -101,10 +101,55 @@ def test_publish_observes_terminal_failure_without_reposting(monkeypatch):
 def test_device_detection_failure_is_bounded_and_does_not_download(monkeypatch, tmp_path):
     from cannery.releases import cli
 
-    def unavailable(_):
-        raise RuntimeError("Simulated unavailable Ascend device")
+    def unavailable():
+        raise ValueError("Simulated unavailable Ascend device")
 
-    monkeypatch.setattr(cli.importlib, "import_module", unavailable)
+    monkeypatch.setattr(cli, "detect_runtime", unavailable)
     result = CliRunner().invoke(app, ["get", "team/relu", "--cache", str(tmp_path)])
     assert result.exit_code == 1 and "Download unavailable" in result.output
     assert not list(tmp_path.iterdir())
+
+
+def test_hanging_detector_is_terminated(monkeypatch, tmp_path):
+    import os
+    import time
+
+    from cannery.releases.cli import detect_runtime
+
+    stub = tmp_path / "cannery_kernels.py"
+    stub.write_text("import time\ndef runtime_fingerprint(): time.sleep(60)\n")
+    monkeypatch.setenv("PYTHONPATH", str(tmp_path) + os.pathsep + os.environ["PYTHONPATH"])
+    start = time.monotonic()
+    with pytest.raises(ValueError, match="deadline exceeded"):
+        detect_runtime(timeout=0.3)
+    assert time.monotonic() - start < 3
+
+
+@pytest.mark.parametrize("stalled", ["status", "final"])
+def test_wait_timeout_bounds_stalled_requests(monkeypatch, stalled):
+    import asyncio
+    import time
+    from uuid import uuid4
+
+    import httpx
+
+    from cannery.releases import cli
+
+    calls = []
+
+    async def response(request):
+        calls.append(request)
+        if request.method == "POST":
+            return httpx.Response(202, json={"id": str(uuid4())})
+        if stalled == "final" and "/publication-jobs/" in request.url.path:
+            await asyncio.sleep(0.5)
+            return httpx.Response(200, json={"status": "complete"})
+        await asyncio.sleep(60)
+        return httpx.Response(200, json={"status": "complete"})
+
+    client = ReleaseClient("http://testserver", transport=httpx.MockTransport(response))
+    monkeypatch.setattr(cli, "ReleaseClient", lambda _: client)
+    start = time.monotonic()
+    result = CliRunner().invoke(app, ["publish", str(uuid4()), "--wait", "--timeout", "1"])
+    assert result.exit_code == 1 and time.monotonic() - start < 3
+    assert len(calls) == (2 if stalled == "status" else 3)

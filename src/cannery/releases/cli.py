@@ -1,7 +1,8 @@
 """Publication controls and verified packages for the existing offline SDK."""
 
-import importlib
 import json
+import os
+import sys
 from pathlib import Path
 from time import monotonic, sleep
 from typing import Annotated, Any
@@ -10,6 +11,7 @@ from uuid import UUID
 import httpx
 import typer
 
+from cannery.git_intake.process import run
 from cannery.releases.client import ReleaseClient
 from cannery.releases.resolution import ResolveRequest
 
@@ -31,14 +33,16 @@ def action(identifier: UUID, kind: str, url: str, wait: bool, timeout: float) ->
         key = UUID(result["id"])
         deadline = monotonic() + timeout
         while monotonic() < deadline:
-            result = client.json(f"/api/v1/publication-jobs/{key}")
+            result = client.json(f"/api/v1/publication-jobs/{key}", deadline=deadline)
             if result["status"] == "complete":
-                emit(client.json(f"/api/v1/submissions/{identifier}/publication"))
+                emit(
+                    client.json(f"/api/v1/submissions/{identifier}/publication", deadline=deadline)
+                )
                 return
             if result["status"] in {"failed", "cancelled"}:
                 emit(result)
                 raise typer.Exit(1)
-            sleep(0.5)
+            sleep(min(0.5, max(0, deadline - monotonic())))
         typer.echo(f"Still pending; resume with publication-status {identifier}", err=True)
         raise typer.Exit(1)
     except (httpx.HTTPError, TimeoutError, ValueError, KeyError, TypeError):
@@ -47,6 +51,23 @@ def action(identifier: UUID, kind: str, url: str, wait: bool, timeout: float) ->
             err=True,
         )
         raise typer.Exit(1) from None
+
+
+def detect_runtime(timeout: float = 30) -> Any:
+    return json.loads(
+        run(
+            [
+                sys.executable,
+                "-c",
+                "import json; from cannery_kernels import runtime_fingerprint; "
+                "print(json.dumps(runtime_fingerprint()))",
+            ],
+            env=dict(os.environ),
+            timeout=timeout,
+            max_output=16384,
+            git_limits=False,
+        )
+    )
 
 
 def install_release_cli(app: typer.Typer) -> None:
@@ -122,7 +143,7 @@ def install_release_cli(app: typer.Typer) -> None:
             else:
                 if runtime_json is not None:
                     raise ValueError("Use --no-detect with --runtime-json")
-                runtime = importlib.import_module("cannery_kernels").runtime_fingerprint()
+                runtime = detect_runtime()
             selection = ResolveRequest.model_validate(
                 {
                     "kernel": kernel,
