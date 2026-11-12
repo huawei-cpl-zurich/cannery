@@ -79,8 +79,11 @@ class ReleaseClient:
                     self.url + path,
                     json=body,
                     params=params,
+                    headers={"Accept-Encoding": "identity"},
                 ) as response:
                     response.raise_for_status()
+                    if response.headers.get("content-encoding", "identity").lower() != "identity":
+                        raise ValueError("Encoded release responses are unsupported")
                     data = bytearray()
                     async for chunk in response.aiter_bytes():
                         if len(data) + len(chunk) > limit:

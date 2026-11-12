@@ -148,3 +148,22 @@ def test_total_deadline_interrupts_slow_small_chunks(monkeypatch):
     with pytest.raises(TimeoutError):
         client.bytes("/api/v1/releases/kernels", 1000)
     assert len(calls) == 3
+
+
+def test_compressed_response_is_rejected_before_decoding():
+    import gzip
+
+    compressed = gzip.compress(b"x" * (8 * 1024 * 1024))
+
+    class Encoded(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            raise AssertionError("Encoded body must never be consumed")
+            yield compressed
+
+    def response(request):
+        assert request.headers["accept-encoding"] == "identity"
+        return httpx.Response(200, headers={"content-encoding": "gzip"}, stream=Encoded())
+
+    client = ReleaseClient("http://testserver", transport=httpx.MockTransport(response))
+    with pytest.raises(ValueError, match="Encoded release"):
+        client.bytes("/api/v1/releases/kernels", 128 * 1024)
