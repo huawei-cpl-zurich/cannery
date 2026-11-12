@@ -73,6 +73,7 @@ def discover(engine: Engine, cohort: Cohort) -> None:
             evidence.spec_sha256 != spec_sha
             or not report
             or not report.get("passed")
+            or report.get("spec_sha256") != evidence.spec_sha256
             or report.get("suite_sha256") != evidence.suite_sha256
             or report.get("generator") != evidence.generator
         ):
@@ -153,7 +154,13 @@ def retained(engine: Engine, job: PerformanceJob, executor: BenchmarkExecutor) -
             if reference.status != "ready":
                 raise ReferencePending("Waiting for reference timing")
             result = db.get(PerformanceResult, reference.attempt)
-            if result is None or result.status != "ready" or result.artifact is None:
+            if (
+                result is None
+                or result.status != "ready"
+                or result.artifact is None
+                or result.report is None
+                or not result.report.get("passed")
+            ):
                 raise BenchmarkBlocked("reference_timing_missing")
             artifact = ArtifactRef.model_validate(result.artifact)
         # Storage outage defers the candidate without ever rerunning a ready reference.
