@@ -112,6 +112,47 @@ def remove_containers():
             if remaining.returncode or remaining.stdout.strip():
                 raise RuntimeError('Container cleanup uncertain; preserve device ownership')
 
+def check_device():
+    for kind in ['health', 'usages', 'proc-mem', 'current-fault-event']:
+        try:
+            result = subprocess.run(['npu-smi', 'info', '-t', kind, '-i', str(config['npu'])],
+                                    capture_output=True, text=True, timeout=12)
+        except (OSError, subprocess.TimeoutExpired):
+            raise SystemExit(75)
+        text = result.stdout
+        if result.returncode or not text.strip():
+            raise SystemExit(75)
+        if kind == 'health' and not re.search(r'Health Status\s*:\s*OK', text):
+            raise SystemExit(75)
+        if kind == 'usages':
+            memory = re.search(r'HBM Usage Rate\(%\)\s*:\s*(\d+)', text)
+            if not memory or int(memory.group(1)) >= 50:
+                raise SystemExit(75)
+            if not re.search(r'NPU Utilization\(%\)\s*:\s*0\b', text):
+                raise SystemExit(75)
+        if kind == 'proc-mem' and 'No process in device' not in text:
+            raise SystemExit(75)
+        if kind == 'current-fault-event' and not re.search(r'Fault Event Count\s*:\s*0\b', text):
+            raise SystemExit(75)
+
+def device_identity():
+    reply=subprocess.run(['npu-smi','info','-t','board','-i',str(config['npu'])],
+                         capture_output=True,text=True,timeout=12,check=True).stdout
+    values={}
+    for name in ['Serial Number','DDie ID']:
+        found=re.search(r'^\s*'+name+r'\s*:\s*(\S[^\r\n]*)$',reply,re.M)
+        if not found or found.group(1).strip() in {'NA','N/A','Unknown'}:
+            raise ValueError('Stable physical device identity unavailable')
+        values[name]=found.group(1).strip()
+    version=Path('/usr/local/Ascend/driver/version.info').read_bytes()
+    if not 0<len(version)<=16384:raise ValueError('Invalid driver identity')
+    return {'hardware_id':hashlib.sha256(json.dumps(values,sort_keys=True).encode()).hexdigest(),
+            'driver':hashlib.sha256(version).hexdigest()}
+
+if phase == 'identify':
+    print(json.dumps(device_identity(),sort_keys=True))
+    raise SystemExit(0)
+
 if phase == 'prepare':
     attempt.mkdir(mode=0o700, exist_ok=True)
     source.mkdir(mode=0o755, exist_ok=True)
@@ -133,6 +174,11 @@ if phase == 'cleanup':
         shutil.rmtree(attempt)
     raise SystemExit(0)
 
+benchmark=config.get('benchmark')
+if benchmark and device_identity()!=benchmark:
+    raise ValueError('Performance device cohort changed')
+output_limit=128*1024*1024 if benchmark else 63*1024*1024
+
 cann = os.environ['ASCEND_HOME_PATH']
 if (not Path(cann).is_absolute() or len(Path(cann).parts) < 4
         or not cann.startswith(('/opt/', '/usr/local/Ascend/'))):
@@ -143,7 +189,8 @@ args = ['docker', 'run', '--rm', '--init', '--pull', 'never', '--name', names[ph
         '--tmpfs', '/tmp:rw,exec,nosuid,nodev,size=512m' if phase == 'runtime'
         else '/tmp:rw,noexec,nosuid,nodev,size=512m', '--shm-size', '512m', '--cpus', '4',
         '--memory', '8g' if phase == 'runtime' else '4g', '--pids-limit', '256',
-        '--ulimit', 'fsize=67108864:67108864', '--env', 'HOME=/tmp',
+        '--ulimit', 'fsize=' + ('134217728:134217728' if benchmark else '67108864:67108864'),
+        '--env', 'HOME=/tmp',
         '--env', 'ASCEND_PROCESS_LOG_PATH=/tmp/ascend/log',
         '--mount', f'type=bind,src={source},dst=/input,readonly',
         '--mount', f'type=bind,src={cann},dst={cann},readonly']
@@ -180,27 +227,7 @@ else:
     # A stale owner is quarantined until its retained operation is reconciled.
     if lease.exists():
         raise SystemExit(75)
-    for kind in ['health', 'usages', 'proc-mem', 'current-fault-event']:
-        try:
-            result = subprocess.run(['npu-smi', 'info', '-t', kind, '-i', str(config['npu'])],
-                                    capture_output=True, text=True, timeout=12)
-        except (OSError, subprocess.TimeoutExpired):
-            raise SystemExit(75)
-        text = result.stdout
-        if result.returncode or not text.strip():
-            raise SystemExit(75)
-        if kind == 'health' and not re.search(r'Health Status\s*:\s*OK', text):
-            raise SystemExit(75)
-        if kind == 'usages':
-            memory = re.search(r'HBM Usage Rate\(%\)\s*:\s*(\d+)', text)
-            if not memory or int(memory.group(1)) >= 50:
-                raise SystemExit(75)
-            if not re.search(r'NPU Utilization\(%\)\s*:\s*0\b', text):
-                raise SystemExit(75)
-        if kind == 'proc-mem' and 'No process in device' not in text:
-            raise SystemExit(75)
-        if kind == 'current-fault-event' and not re.search(r'Fault Event Count\s*:\s*0\b', text):
-            raise SystemExit(75)
+    check_device()
     with lease.open('x') as marker:
         marker.write(token)
         marker.flush()
@@ -219,7 +246,7 @@ else:
         args += ['--mount', f'type=bind,src={path},dst={path},readonly']
     command = RUNTIME
 args += [config['image'], 'python', '-c', command]
-resource.setrlimit(resource.RLIMIT_FSIZE, (64 * 1024 * 1024,) * 2)
+resource.setrlimit(resource.RLIMIT_FSIZE, ((128 if benchmark else 64) * 1024 * 1024,) * 2)
 capturing = phase == 'compile' or (phase == 'runtime' and config.get('capture_runtime', False))
 result_path = output / ('kernel.so' if phase == 'compile' else 'results.json')
 try:
@@ -234,10 +261,13 @@ try:
             sys.stderr.flush()
     if result.returncode:
         raise SystemExit(1)
+    if benchmark:
+        check_device()
+        if device_identity()!=benchmark:raise ValueError('Performance device cohort changed')
     if capturing:
         binary = result_path
         if (not stat.S_ISREG(binary.lstat().st_mode)
-                or not 0 < binary.stat().st_size <= 63 * 1024 * 1024):
+                or not 0 < binary.stat().st_size <= output_limit):
             raise ValueError('Invalid captured output')
         print(hashlib.sha256(binary.read_bytes()).hexdigest())
 finally:
@@ -305,14 +335,21 @@ print('binary loaded and called; numerical correctness and benchmarks remain pen
 def job_script(
     profile: WorkerProfile,
     attempt: UUID,
-    phase: Literal["prepare", "compile", "runtime", "cleanup"],
+    phase: Literal["prepare", "compile", "runtime", "cleanup", "identify"],
     *,
     runtime_program: str | None = None,
     capture_runtime: bool = False,
+    benchmark: dict[str, str] | None = None,
 ) -> bytes:
     if (runtime_program is not None or capture_runtime) and phase != "runtime":
         raise ValueError("Custom runtime programs apply only to runtime jobs")
+    if benchmark is not None and (
+        phase != "runtime" or not capture_runtime or set(benchmark) != {"hardware_id", "driver"}
+    ):
+        raise ValueError("Benchmark identity applies only to captured runtime jobs")
     config = profile.model_dump(mode="json")
+    if benchmark is not None:
+        config["benchmark"] = benchmark
     if capture_runtime:
         config["capture_runtime"] = True
     program = RUNTIME if runtime_program is None else runtime_program
