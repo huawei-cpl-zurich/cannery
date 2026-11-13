@@ -21,11 +21,10 @@ def origin(url: str) -> str:
                 parsed.password,
                 parsed.query,
                 parsed.fragment,
-                parsed.path.strip("/"),
             )
         )
     ):
-        raise ValueError("Expected an HTTP service origin without credentials or path")
+        raise ValueError("Expected an HTTP service URL without credentials, query or fragment")
     return f"{parsed.scheme}://{parsed.netloc.lower()}"
 
 
@@ -38,7 +37,7 @@ def secure(url: str) -> str:
         loopback = parsed.hostname == "localhost"
     if parsed.scheme != "https" and not loopback:
         raise ValueError("Authentication requires HTTPS or a loopback service")
-    return value
+    return value + urlsplit(url).path.rstrip("/")
 
 
 def location(url: str) -> Path:
@@ -81,7 +80,7 @@ def headers(url: str) -> dict[str, str]:
             value = json.loads(source.read(4096))
         if (
             not isinstance(value, dict)
-            or value.get("origin") != secure(url)
+            or value.get("origin") != origin(secure(url))
             or not isinstance(value.get("token"), str)
             or not 32 <= len(value["token"]) <= 128
             or not value["token"].isascii()
@@ -94,7 +93,7 @@ def headers(url: str) -> dict[str, str]:
 
 
 def save(url: str, token: str) -> None:
-    value = {"origin": secure(url), "token": token}
+    value = {"origin": origin(secure(url)), "token": token}
     path = location(url)
     private_directory(path.parent, create=True)
     descriptor, temporary = tempfile.mkstemp(dir=path.parent)
