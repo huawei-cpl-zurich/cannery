@@ -26,11 +26,11 @@ def setup(monkeypatch):
     app = FastAPI()
     install_auth(
         app,
-        Settings(auth_enabled=True, auth_cookie_secure=False, auth_origin="http://testserver"),
+        Settings(auth_enabled=True, auth_cookie_secure=False, auth_origin="http://127.0.0.1"),
         engine,
     )
     monkeypatch.setattr("cannery.accounts.api.throttle", lambda *args: None)
-    with TestClient(app) as client:
+    with TestClient(app, base_url="http://127.0.0.1") as client:
         yield engine, client
     engine.dispose()
 
