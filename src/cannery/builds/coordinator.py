@@ -302,7 +302,7 @@ def main() -> None:
     def cleanup_loop() -> None:
         while not stopped.is_set():
             try:
-                cleanup_finished(engine, settings.build_control_root, factory)
+                cleanup_finished(engine, settings.build_control_root, factory, owner=profile)
             except (SQLAlchemyError, OSError):
                 logging.warning("Build cleanup unavailable; retaining journals")
             stopped.wait(10)
@@ -321,7 +321,7 @@ def main() -> None:
             except (SQLAlchemyError, OSError, ValueError):
                 logging.warning("Binary admission coordinator unavailable; retrying")
             if args.once:
-                cleanup_finished(engine, settings.build_control_root, factory)
+                cleanup_finished(engine, settings.build_control_root, factory, owner=profile)
                 return
             stopped.wait(5)
     finally:
