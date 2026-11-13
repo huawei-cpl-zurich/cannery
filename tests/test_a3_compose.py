@@ -83,3 +83,17 @@ def test_a3_overlay_is_opt_in_and_keeps_existing_workers_on_bridge():
         assert mounts["/var/lib/cannery/builds"]["source"] == "build-control"
     for name in ["postgres", "artifacts"]:
         assert all(port["host_ip"] == "127.0.0.1" for port in services[name]["ports"])
+    for name, node in services.items():
+        environment = node.get("environment", {})
+        if name == "api":
+            assert "CANNERY_AUTH_ENABLED" in environment
+            assert "CANNERY_ARTIFACT_READ_TOKEN" in environment
+            assert "CANNERY_ARTIFACT_WRITE_TOKEN" not in environment
+        else:
+            assert "CANNERY_AUTH_ENABLED" not in environment
+            assert "CANNERY_DEV_ROLE" not in environment
+        assert ("CANNERY_GIT_REMOTES" in environment) == (name == "registrar")
+        if name != "artifacts":
+            assert "CANNERY_ARTIFACT_PREVIOUS_READ_TOKEN" not in environment
+            assert "CANNERY_ARTIFACT_PREVIOUS_WRITE_TOKEN" not in environment
+        assert all("/tokens" not in mount["target"] for mount in node.get("volumes", []))
