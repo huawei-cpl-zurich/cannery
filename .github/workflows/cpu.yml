@@ -151,10 +151,13 @@ jobs:
       - run: CANNERY_DEVICE_DOCKER=1 CANNERY_COMPOSE_REQUIRED=1 pytest -q tests/test_a3_compose.py tests/test_device_workers_docker.py
 
   authentication:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-compose-action@v2
+        with:
+          version: v2.38.2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
