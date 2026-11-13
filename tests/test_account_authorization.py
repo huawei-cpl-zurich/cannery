@@ -117,3 +117,20 @@ def test_public_metadata_and_protected_downloads(setup):
         signed(client, engine, "alice")
         assert client.get(path).status_code == 404
         client.cookies.clear()
+
+
+def test_authentication_outages_preserve_public_liveness_and_assets(setup, monkeypatch):
+    from sqlalchemy.exc import SQLAlchemyError
+
+    engine, client, _ = setup
+    signed(client, engine, "alice")
+
+    def unavailable(*args):
+        raise SQLAlchemyError("private connection details")
+
+    monkeypatch.setattr("cannery.accounts.context.auth.authenticate", unavailable)
+    assert client.get("/health/live").status_code == 200
+    assert client.get("/static/style.css").status_code == 200
+    assert client.get("/api/v1/releases/kernels").status_code == 200
+    response = client.get("/api/v1/registrations")
+    assert response.status_code == 503 and "private" not in response.text
