@@ -149,6 +149,7 @@ def test_docker_timeout_is_useful_and_does_not_echo_environment(monkeypatch):
 def test_directory_entries_are_durable_before_backup_becomes_visible(tmp_path, monkeypatch):
     import os
     import stat
+
     from cannery.maintenance import capture as module
 
     synced = []
