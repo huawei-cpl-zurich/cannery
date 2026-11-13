@@ -9,7 +9,7 @@ from cannery.maintenance.cli import app as maintenance
 from cannery.releases.cli import install_release_cli
 from cannery.submissions.cli import install_cli
 
-app = typer.Typer(no_args_is_help=True)
+app = typer.Typer(no_args_is_help=True, pretty_exceptions_show_locals=False)
 install_account_cli(app)
 app.add_typer(accounts, name="accounts")
 app.add_typer(maintenance, name="maintenance")
