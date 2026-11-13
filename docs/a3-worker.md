@@ -36,3 +36,11 @@ force an unfinished attempt onto new code, even after an admission checkpoint.
 An unavailable database, running writer, or queued/active stage blocks the check.
 Recovering an interrupted job from backup requires its pinned old source/images
 and configuration; complete that recovery before upgrading.
+
+Remote-agent transfers are observable but cannot be cancelled by `cpl-remote`.
+Only confirmed failed/cancelled transfers may be retried, at most three times.
+A missing handle or ambiguous dispatch stays quarantined: never resubmit or
+remove its remote attempt directory until the original operation is reconciled.
+Pipeline deadlines still terminate SQL work; unresolved cleanup journals remain
+for operator reconciliation rather than claiming cleanup succeeded. Restore the
+listener's retained transfer state and observe the same handle before cleanup.

@@ -2,8 +2,10 @@
 
 import io
 import json
+import os
 import re
 import tarfile
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from uuid import UUID
@@ -11,7 +13,13 @@ from uuid import UUID
 from cannery.artifacts import ArtifactRef, ArtifactStore, digest, verified
 from cannery.builds.ascendc import BuildError
 from cannery.builds.catlass_compile import adapter_for
-from cannery.builds.remote import CplRemote, RemoteFailure, RemotePending, durable_write
+from cannery.builds.remote import (
+    CplRemote,
+    RemoteFailure,
+    RemotePending,
+    durable_write,
+    settle_operation,
+)
 from cannery.builds.sandbox import WorkerProfile, job_script
 from cannery.git_intake import SnapshotBinding
 from cannery.git_intake.snapshots import SnapshotStore
@@ -132,12 +140,34 @@ class BuildExecutor:
 
     def upload(self, attempt: UUID, label: str, files: dict[str, bytes]) -> None:
         bundle = self.remote.journal / f"{label}.tar.gz"
+        checksum = self.remote.journal / f"{label}.bundle-sha256"
         if not (self.remote.journal / f"unpack-{label}.dispatch").exists():
-            with tarfile.open(bundle, "w:gz") as archive:
-                for name, value in sorted(files.items()):
-                    item = tarfile.TarInfo(name)
-                    item.size, item.mode = len(value), 0o444
-                    archive.addfile(item, io.BytesIO(value))
+            if not bundle.exists():
+                with tempfile.NamedTemporaryFile(dir=self.remote.journal) as temporary:
+                    with tarfile.open(fileobj=temporary, mode="w:gz") as archive:
+                        for name, value in sorted(files.items()):
+                            item = tarfile.TarInfo(name)
+                            item.size, item.mode = len(value), 0o444
+                            archive.addfile(item, io.BytesIO(value))
+                    temporary.flush()
+                    os.fsync(temporary.fileno())
+                    temporary.seek(0)
+                    expected = digest(temporary.read())
+                    self.fence()
+                    try:
+                        os.link(temporary.name, bundle)
+                        durable_write(checksum, expected.encode())
+                    except FileExistsError:
+                        pass
+                    descriptor = os.open(self.remote.journal, os.O_RDONLY | os.O_DIRECTORY)
+                    try:
+                        os.fsync(descriptor)
+                    finally:
+                        os.close(descriptor)
+            if bundle.is_symlink() or not bundle.is_file():
+                raise ExecutionFailure("invalid_transfer_bundle")
+            if not checksum.exists() or digest(bundle.read_bytes()) != checksum.read_text():
+                raise ExecutionFailure("transfer_bundle_digest_mismatch", retryable=True)
             destination = str(Path(self.profile.workspace) / attempt.hex / bundle.name)
             self.fence()
             self.remote.transfer("upload", str(bundle), destination)
@@ -289,12 +319,7 @@ class BuildExecutor:
             if not receipt.exists():
                 raise RemotePending("Ambiguous operation requires reconciliation")
             handle = json.loads(receipt.read_text())["handle"]
-            result = self.remote.call("observe", handle)
-            if result.get("state") == "missing":
-                self.fence()
-                result = self.remote.call("cancel", handle)
-            if result.get("state") not in {"completed", "failed", "cancelled"}:
-                raise RemotePending("Retained operation has not terminated")
+            settle_operation(self.remote, handle, fence=self.fence)
         index_path = self.remote.journal / "cleanup-index"
         index = int(index_path.read_text()) if index_path.exists() else 0
         try:
