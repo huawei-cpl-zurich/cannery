@@ -4,7 +4,7 @@
   function error(message) {
     let node = document.getElementById('account-error');
     if (!node) {
-      node = document.createElement('p'); node.setAttribute('role', 'alert');
+      node = document.createElement('p'); node.id = 'account-error'; node.setAttribute('role', 'alert');
       document.getElementById('content').prepend(node);
     }
     node.textContent = message;
@@ -19,7 +19,7 @@
       if (path === '/api/v1/auth/login') headers['X-Cannery-Login'] = '1';
     }
     if (data !== null) headers['Content-Type'] = 'application/json';
-    const reply = await fetch(path, {method, headers, credentials: 'same-origin',
+    const reply = await fetch(path, {method, headers, credentials: 'same-origin', signal: AbortSignal.timeout(15000),
       body: data === null ? undefined : JSON.stringify(data)});
     if (!reply.ok) {
       if (reply.status === 401 && path !== '/api/v1/auth/login') location.assign('/login');
@@ -54,6 +54,8 @@
     const isAccount = form.id.startsWith('account-');
     if (!isAccount && form.method.toLowerCase() !== 'post') return;
     event.preventDefault();
+    const previousError = document.getElementById('account-error');
+    if (previousError) previousError.textContent = '';
     try {
       const data = Object.fromEntries(new FormData(form));
       if (isAccount) {
@@ -66,7 +68,7 @@
         if (operation !== 'login' && operation !== 'password') await account();
       } else {
         if (!csrf) csrf = (await request('/api/v1/auth/me')).csrf_token;
-        const reply = await fetch(action, {method: 'POST', credentials: 'same-origin',
+        const reply = await fetch(action, {method: 'POST', credentials: 'same-origin', signal: AbortSignal.timeout(15000),
           headers: {'X-CSRF-Token': csrf}, body: new URLSearchParams(new FormData(form))});
         if (reply.redirected) location.assign(reply.url);
         else if (reply.ok) {
