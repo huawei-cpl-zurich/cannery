@@ -15,7 +15,7 @@ from cannery.settings import Settings
         (True, "admin", 200),
     ],
 )
-def test_admin_roles(enabled, role, expected) -> None:
+def test_admin_roles(client, enabled, role, expected) -> None:
     with TestClient(create_app(Settings(dev_identity_enabled=enabled, dev_role=role))) as client:
         assert client.get("/admin", headers={"X-Role": "admin"}).status_code == expected
         assert ("Administration</a>" in client.get("/global-best").text) == (expected == 200)

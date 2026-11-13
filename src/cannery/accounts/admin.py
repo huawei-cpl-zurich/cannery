@@ -28,15 +28,13 @@ def summary(settings: Settings, engine: Engine) -> dict[str, Any]:
     require_admin(settings)
     with Session(engine) as db:
         queues = {}
-        for label, model in [
-            ("build", BuildState),
-            ("validation", NumericalState),
-            ("benchmark", PerformanceJob),
-            ("registration", Registration),
+        for label, status in [
+            ("build", BuildState.status),
+            ("validation", NumericalState.status),
+            ("benchmark", PerformanceJob.status),
+            ("registration", Registration.status),
         ]:
-            queues[label] = dict(
-                db.execute(select(model.status, func.count()).group_by(model.status)).all()
-            )
+            queues[label] = dict(db.execute(select(status, func.count()).group_by(status)).all())
         snapshots = db.scalar(select(func.count()).select_from(SpecVersion))
     try:
         capacity = shutil.disk_usage(settings.snapshot_root)
