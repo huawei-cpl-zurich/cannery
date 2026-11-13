@@ -86,6 +86,7 @@ def test_large_candidate_inventory_uses_stdin(backup, monkeypatch):
     def volume(image, name, program, **kwargs):
         if kwargs.get("writable"):
             assert len(program.encode()) < 8192
+            assert kwargs["source"].fileno() >= 0
             assert json.load(kwargs["source"]) == rows
             return b""
         return original(image, name, program, **kwargs)

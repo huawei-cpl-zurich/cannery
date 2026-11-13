@@ -2,11 +2,11 @@
 
 import hashlib
 import inspect
-import io
 import json
 import os
 import stat
 import tarfile
+import tempfile
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -81,7 +81,9 @@ def collect(docker: Docker, name: str, backup: Path, age_hours: float = 168) -> 
         + inspect.getsource(unlink_verified)
         + "\nunlink_verified(json.load(sys.stdin))"
     )
-    with io.BytesIO(json.dumps(list(expected.values())).encode()) as source:
+    with tempfile.TemporaryFile() as source:
+        source.write(json.dumps(list(expected.values())).encode())
+        source.seek(0)
         docker.volume(
             project.helper_image,
             project.volumes["artifacts"],
