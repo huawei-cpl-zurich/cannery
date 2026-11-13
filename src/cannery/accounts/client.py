@@ -49,8 +49,22 @@ def location(url: str) -> Path:
     )
 
 
+def private_directory(path: Path, *, create: bool = False) -> bool:
+    if create:
+        path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return False
+    if not stat.S_ISDIR(info.st_mode) or info.st_mode & 0o077 or info.st_uid != os.getuid():
+        raise ValueError("CLI credential directory must be private and user-owned")
+    return True
+
+
 def headers(url: str) -> dict[str, str]:
     path = location(url)
+    if not private_directory(path.parent):
+        return {}
     try:
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except FileNotFoundError:
@@ -80,7 +94,7 @@ def headers(url: str) -> dict[str, str]:
 def save(url: str, token: str) -> None:
     value = {"origin": secure(url), "token": token}
     path = location(url)
-    path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    private_directory(path.parent, create=True)
     descriptor, temporary = tempfile.mkstemp(dir=path.parent)
     try:
         with os.fdopen(descriptor, "w") as target:
