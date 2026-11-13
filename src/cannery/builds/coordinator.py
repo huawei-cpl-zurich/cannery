@@ -42,7 +42,7 @@ from cannery.database import make_engine
 from cannery.git_intake.snapshots import SnapshotStore
 from cannery.settings import Settings
 from cannery.shutdown import stop_on_term
-from cannery.submissions.models import Candidate
+from cannery.submissions.models import Candidate, SubmissionReuse
 
 
 def discover(engine: Engine) -> None:
@@ -54,6 +54,7 @@ def discover(engine: Engine) -> None:
                 .as_string()
                 .in_(("unary-f32-v1", "catlass-unary-f32-v1")),
                 ~select(BuildState.id).where(BuildState.id == Candidate.id).exists(),
+                ~select(SubmissionReuse.id).where(SubmissionReuse.id == Candidate.id).exists(),
             )
             .order_by(Candidate.id)
             .limit(50)

@@ -7,7 +7,7 @@ from uuid import UUID
 from fastapi import Depends, FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 from redis.exceptions import RedisError
-from sqlalchemy import Engine, Select, select
+from sqlalchemy import Engine, Select, func, select
 from sqlalchemy.orm import Session
 
 from cannery.artifacts import digest
@@ -23,7 +23,13 @@ from cannery.registry.models import SpecVersion
 from cannery.releases.api import publication_info
 from cannery.settings import Settings
 from cannery.submissions.manifest import Device, Language
-from cannery.submissions.models import Candidate, RequestedTarget, Submission, SubmissionConflict
+from cannery.submissions.models import (
+    Candidate,
+    RequestedTarget,
+    Submission,
+    SubmissionConflict,
+    SubmissionReuse,
+)
 from cannery.submissions.requests import new_submission, revise_submission
 from cannery.submissions.state import IntakeState
 
@@ -96,15 +102,25 @@ def query(namespace: str) -> Select[*tuple[Any, ...]]:
             NumericalResult,
             PerformanceJob,
             PerformanceResult,
+            SubmissionReuse.original_id,
         )
         .join(IntakeState, IntakeState.id == Submission.id)
         .outerjoin(Candidate, Candidate.id == Submission.id)
+        .outerjoin(SubmissionReuse, SubmissionReuse.id == Candidate.id)
         .join(SpecVersion, SpecVersion.id == Submission.spec_id)
-        .outerjoin(BuildState, BuildState.id == Candidate.id)
+        .outerjoin(
+            BuildState, BuildState.id == func.coalesce(SubmissionReuse.original_id, Candidate.id)
+        )
         .outerjoin(BuildResult, BuildResult.id == BuildState.attempt_id)
-        .outerjoin(NumericalState, NumericalState.id == Candidate.id)
+        .outerjoin(
+            NumericalState,
+            NumericalState.id == func.coalesce(SubmissionReuse.original_id, Candidate.id),
+        )
         .outerjoin(NumericalResult, NumericalResult.id == NumericalState.attempt_id)
-        .outerjoin(PerformanceJob, PerformanceJob.candidate_id == Candidate.id)
+        .outerjoin(
+            PerformanceJob,
+            PerformanceJob.candidate_id == func.coalesce(SubmissionReuse.original_id, Candidate.id),
+        )
         .outerjoin(PerformanceResult, PerformanceResult.id == PerformanceJob.attempt)
         .where(Submission.namespace == namespace)
     )
@@ -144,6 +160,7 @@ def describe(
     numerical_result: NumericalResult | None = None,
     performance: PerformanceJob | None = None,
     performance_result: PerformanceResult | None = None,
+    reused_from: UUID | None = None,
 ) -> dict[str, Any]:
     failed = state.status == "failed" or (build is not None and build.status == "failed")
     status = (
@@ -169,6 +186,7 @@ def describe(
         failed = failed or performance.status == "failed"
     return {
         "id": str(request.id),
+        "reused_from": str(reused_from) if reused_from else None,
         "parent_id": str(request.parent_id) if request.parent_id else None,
         "binding_id": str(candidate.binding_id) if candidate else None,
         "kernel": spec.manifest["kernel"],
@@ -235,10 +253,10 @@ def get_info(
     if row is None:
         raise HTTPException(404, "Submission not found")
     result = describe(
-        row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9]
+        row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10]
     )
     if publication:
-        result["publication"] = publication_info(session, identifier)
+        result["publication"] = publication_info(session, row[10] or identifier)
     return result
 
 
@@ -246,14 +264,16 @@ def list_info(
     session: Session, namespace: str, *, publication: bool = False
 ) -> list[dict[str, Any]]:
     result = [
-        describe(row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9])
+        describe(
+            row[0], row[1], row[2], row[3], row[4], row[5], row[6], row[7], row[8], row[9], row[10]
+        )
         for row in session.execute(
             query(namespace).order_by(Submission.created_at.desc()).limit(50)
         )
     ]
     if publication:
         for info in result:
-            info["publication"] = publication_info(session, UUID(info["id"]))
+            info["publication"] = publication_info(session, UUID(info["reused_from"] or info["id"]))
     return result
 
 

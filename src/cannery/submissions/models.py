@@ -50,9 +50,20 @@ class Candidate(Base):
     file_sha256: Mapped[dict[str, str]] = mapped_column(JSON)
 
 
+class SubmissionReuse(Base):
+    __tablename__ = "submission_reuse"
+    __table_args__ = (CheckConstraint("id <> original_id"),)
+    id: Mapped[UUID] = mapped_column(ForeignKey("candidates.id"), primary_key=True)
+    original_id: Mapped[UUID] = mapped_column(ForeignKey("candidates.id"), index=True)
+
+
+@event.listens_for(SubmissionReuse, "before_update")
+@event.listens_for(SubmissionReuse, "before_delete")
 @event.listens_for(Submission, "before_update")
 @event.listens_for(Submission, "before_delete")
 @event.listens_for(Candidate, "before_update")
 @event.listens_for(Candidate, "before_delete")
-def immutable(mapper: Mapper[Any], connection: Connection, target: Submission | Candidate) -> None:
+def immutable(
+    mapper: Mapper[Any], connection: Connection, target: Submission | Candidate | SubmissionReuse
+) -> None:
     raise SubmissionConflict("Submission requests and accepted candidates are immutable")
