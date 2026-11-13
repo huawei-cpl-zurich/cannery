@@ -186,3 +186,28 @@ def test_bounded_long_name_extensions_remain_supported(backup, format):
         archive.addfile(tarfile.TarInfo("nested/" + "a" * 180), io.BytesIO())
     repin(directory, manifest, "snapshots", output.getvalue())
     assert verify(directory).project == "source"
+
+
+@pytest.mark.parametrize(
+    "entries",
+    [
+        [("ok", tarfile.REGTYPE), ("bad\0name", tarfile.REGTYPE)],
+        [("parent", tarfile.REGTYPE), ("parent/child", tarfile.REGTYPE)],
+        [("parent/child", tarfile.REGTYPE), ("parent", tarfile.REGTYPE)],
+        [(".", tarfile.REGTYPE)],
+    ],
+)
+def test_unrestorable_paths_are_rejected_before_extraction(backup, entries):
+    directory, manifest = backup
+    output = io.BytesIO()
+    with tarfile.open(fileobj=output, mode="w", format=tarfile.PAX_FORMAT) as archive:
+        for name, kind in entries:
+            info = tarfile.TarInfo(name)
+            info.type = kind
+            if "\0" in name:
+                info.name = "safe"
+                info.pax_headers = {"path": name}
+            archive.addfile(info, io.BytesIO())
+    repin(directory, manifest, "snapshots", output.getvalue())
+    with pytest.raises(ValueError):
+        verify(directory)

@@ -131,6 +131,8 @@ def preflight(stream: BinaryIO) -> int:
 def members(stream: BinaryIO) -> Iterator[tarfile.TarInfo]:
     archive_size = preflight(stream)
     seen: set[str] = set()
+    paths: dict[str, bool] = {}
+    path_bytes = 0
     total = 0
     with tarfile.open(fileobj=stream, mode="r|", errorlevel=2) as archive:
         for item in archive:
@@ -141,6 +143,9 @@ def members(stream: BinaryIO) -> Iterator[tarfile.TarInfo]:
                 path.is_absolute()
                 or ".." in path.parts
                 or "\\" in name
+                or "\0" in name
+                or name == "."
+                and not item.isdir()
                 or name in seen
                 or not (item.isfile() or item.isdir())
                 or item.mode & 0o7000
@@ -152,7 +157,21 @@ def members(stream: BinaryIO) -> Iterator[tarfile.TarInfo]:
                 or item.offset_data + item.size > archive_size
             ):
                 raise ValueError("Unsafe backup archive member")
+            parents = [str(p) for p in path.parents]
+            if any(paths.get(p) is False for p in parents) or (item.isfile() and name in paths):
+                raise ValueError("Conflicting backup archive paths")
+            for parent in parents:
+                if parent not in paths:
+                    path_bytes += len(parent.encode())
+                    paths[parent] = True
+            if name not in paths:
+                path_bytes += len(name.encode())
+            paths[name] = item.isdir()
+            if path_bytes > 64 * 1024 * 1024 or len(paths) > 1000000:
+                raise ValueError("Archive path inventory exceeds budget")
             seen.add(name)
+            # Python 3.12 otherwise retains every parsed TarInfo, including PAX metadata.
+            archive.members.clear()
             yield item
 
 
