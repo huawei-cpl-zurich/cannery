@@ -6,6 +6,9 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import Field
 from redis import Redis
 from redis.exceptions import RedisError
@@ -38,6 +41,14 @@ class Token(Namespace):
 class Password(StrictModel):
     current_password: str = Field(min_length=1, max_length=1024)
     new_password: str = Field(min_length=12, max_length=1024)
+
+
+def route_path(request: Request) -> str:
+    path = str(request.scope["path"])
+    prefix = request.scope.get("root_path", "").rstrip("/")
+    if prefix and (path == prefix or path.startswith(prefix + "/")):
+        return path[len(prefix) :] or "/"
+    return path
 
 
 def credential(request: Request) -> tuple[str, str]:
@@ -81,7 +92,7 @@ def throttle(request: Request, username: str, settings: Settings) -> None:
         retry_on_timeout=False,
     )
     try:
-        for scope in ("account:" + username, "client:" + client):
+        for scope in ("client:" + client, "account:" + username):
             key = "cannery:login:" + hashlib.sha256(scope.encode()).hexdigest()
             # Atomic expiry, including recovery if a previous client disconnected.
             count = redis.eval(
@@ -102,6 +113,12 @@ def throttle(request: Request, username: str, settings: Settings) -> None:
 def install_auth(app: FastAPI, settings: Settings, engine: Engine) -> None:
     if not settings.auth_enabled:
         return
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_auth_request(request: Request, error: RequestValidationError) -> JSONResponse:
+        if route_path(request).startswith("/api/v1/auth/"):
+            return JSONResponse({"detail": "Invalid authentication request"}, status_code=422)
+        return await request_validation_exception_handler(request, error)
 
     @app.post("/api/v1/auth/login")
     def login(body: Login, request: Request, response: Response) -> dict[str, str]:

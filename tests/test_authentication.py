@@ -26,11 +26,11 @@ def setup(monkeypatch):
     app = FastAPI()
     install_auth(
         app,
-        Settings(auth_enabled=True, auth_cookie_secure=False, auth_origin="http://testserver"),
+        Settings(auth_enabled=True, auth_cookie_secure=False, auth_origin="http://127.0.0.1"),
         engine,
     )
     monkeypatch.setattr("cannery.accounts.api.throttle", lambda *args: None)
-    with TestClient(app) as client:
+    with TestClient(app, base_url="http://127.0.0.1") as client:
         yield engine, client
     engine.dispose()
 
@@ -149,6 +149,7 @@ def test_throttle_is_bounded_and_fails_closed(monkeypatch):
 
     class Redis:
         count = 0
+        calls = 0
         broken = False
 
         @classmethod
@@ -156,6 +157,7 @@ def test_throttle_is_bounded_and_fails_closed(monkeypatch):
             return cls()
 
         def eval(self, *args):
+            type(self).calls += 1
             if self.broken:
                 raise ConnectionError("private connection details")
             return self.count
@@ -165,10 +167,15 @@ def test_throttle_is_bounded_and_fails_closed(monkeypatch):
 
     monkeypatch.setattr("cannery.accounts.api.Redis", Redis)
     request = Request({"type": "http", "client": ("127.0.0.1", 123)})
-    Redis.count = 11
+    Redis.count = 51
     with pytest.raises(HTTPException) as error:
         throttle(request, "alice", Settings())
-    assert error.value.status_code == 429
+    assert error.value.status_code == 429 and Redis.calls == 1
+    Redis.count = 11
+    Redis.calls = 0
+    with pytest.raises(HTTPException) as error:
+        throttle(request, "alice", Settings())
+    assert error.value.status_code == 429 and Redis.calls == 2
     Redis.broken = True
     with pytest.raises(HTTPException) as error:
         throttle(request, "alice", Settings())
@@ -207,3 +214,34 @@ def test_malformed_csrf_returns_denied():
     with pytest.raises(HTTPException) as error:
         credential(request)
     assert error.value.status_code == 403
+
+
+def test_auth_validation_never_echoes_password_inputs(setup):
+    engine, client = setup
+    secret = "private-fixture-password"
+    reply = client.post(
+        "/api/v1/auth/password", json={"current_password": secret, "new_password": "short"}
+    )
+    assert reply.status_code == 422
+    assert secret not in reply.text and "short" not in reply.text
+    reply = client.post("/api/v1/auth/login", json={"username": "alice", "password": secret * 100})
+    assert reply.status_code == 422 and secret not in reply.text
+
+
+def test_prefixed_auth_validation_never_echoes_passwords(setup):
+    from cannery.accounts.api import install_auth
+
+    engine, _ = setup
+    app = FastAPI(root_path="/cannery")
+    install_auth(app, Settings(auth_enabled=True, auth_cookie_secure=False), engine)
+    secret = "private-fixture-prefixed-password"
+    with TestClient(app) as client:
+        reply = client.post(
+            "/cannery/api/v1/auth/password",
+            json={"current_password": secret, "new_password": "short"},
+        )
+        assert reply.status_code == 422 and secret not in reply.text and "short" not in reply.text
+        reply = client.post(
+            "/cannery/api/v1/auth/login", json={"username": "alice", "password": secret * 100}
+        )
+        assert reply.status_code == 422 and secret not in reply.text

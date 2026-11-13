@@ -21,16 +21,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     writer = settings.artifact_write_token
     if not reader or not writer:
         raise RuntimeError("Private artifact service requires read and write credentials")
-    read_token, write_token = reader.get_secret_value(), writer.get_secret_value()
-    if len(read_token) < 32 or len(write_token) < 32 or read_token == write_token:
+    readers = [reader.get_secret_value()]
+    writers = [writer.get_secret_value()]
+    if settings.artifact_previous_read_token:
+        readers.append(settings.artifact_previous_read_token.get_secret_value())
+    if settings.artifact_previous_write_token:
+        writers.append(settings.artifact_previous_write_token.get_secret_value())
+    values = readers + writers
+    if any(len(value) < 32 for value in values) or len(set(values)) != len(values):
         raise RuntimeError("Artifact credentials must be distinct and at least 32 characters")
     root = settings.artifact_root.resolve()
     root.mkdir(parents=True, exist_ok=True)
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
 
     def authorize(value: str | None, *, write: bool = False) -> None:
-        expected = f"Bearer {write_token if write else read_token}"
-        if value is None or not hmac.compare_digest(value.encode(), expected.encode()):
+        allowed = writers if write else readers
+        matches = [
+            hmac.compare_digest((value or "").encode(), f"Bearer {token}".encode())
+            for token in allowed
+        ]
+        if not any(matches):
             raise HTTPException(401, "Artifact authorization required")
 
     def target(checksum: str) -> Path:

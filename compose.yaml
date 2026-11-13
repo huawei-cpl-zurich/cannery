@@ -2,12 +2,9 @@ x-app: &app
   build:
     context: .
     target: app
-  environment:
+  environment: &app-environment
     CANNERY_DATABASE_URL: postgresql+psycopg://cannery:cannery@postgres:5432/cannery
     CANNERY_REDIS_URL: redis://redis:6379/0
-    CANNERY_DEV_IDENTITY_ENABLED: ${CANNERY_DEV_IDENTITY_ENABLED:-false}
-    CANNERY_DEV_NAMESPACE: ${CANNERY_DEV_NAMESPACE:-team}
-    CANNERY_DEV_ROLE: ${CANNERY_DEV_ROLE:-user}
   depends_on:
     postgres:
       condition: service_healthy
@@ -75,6 +72,14 @@ services:
     command: ["alembic", "upgrade", "head"]
   api:
     <<: *runtime
+    environment:
+      <<: *app-environment
+      CANNERY_AUTH_ENABLED: ${CANNERY_AUTH_ENABLED:-false}
+      CANNERY_AUTH_ORIGIN: ${CANNERY_AUTH_ORIGIN:-http://127.0.0.1:8095}
+      CANNERY_AUTH_COOKIE_SECURE: ${CANNERY_AUTH_COOKIE_SECURE:-true}
+      CANNERY_DEV_IDENTITY_ENABLED: ${CANNERY_DEV_IDENTITY_ENABLED:-false}
+      CANNERY_DEV_NAMESPACE: ${CANNERY_DEV_NAMESPACE:-team}
+      CANNERY_DEV_ROLE: ${CANNERY_DEV_ROLE:-user}
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=5)"]
       interval: 5s

@@ -9,7 +9,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
 
 from cannery.accounts import auth
-from cannery.accounts.api import credential
+from cannery.accounts.api import credential, route_path
 from cannery.settings import Settings
 
 CURRENT: ContextVar[auth.Principal | None] = ContextVar("cannery_principal", default=None)
@@ -49,7 +49,7 @@ def template_context(settings: Settings) -> dict[str, object]:
 def public(request: Request) -> bool:
     if request.method not in {"GET", "HEAD"}:
         return False
-    path = request.url.path
+    path = route_path(request)
     return (
         path
         in {
@@ -77,11 +77,12 @@ def install_context(app: FastAPI, settings: Settings, engine: Engine) -> None:
     async def authenticate(request: Request, call_next):  # type: ignore[no-untyped-def]
         token = CURRENT.set(None)
         try:
-            independent = request.url.path in {
+            path = route_path(request)
+            independent = path in {
                 "/health/live",
                 "/health/ready",
-            } or request.url.path.startswith("/static/")
-            if not independent and not request.url.path.startswith("/api/v1/auth/"):
+            } or path.startswith("/static/")
+            if not independent and not path.startswith("/api/v1/auth/"):
                 try:
                     raw, kind = credential(request)
                     user = await run_in_threadpool(auth.authenticate, engine, raw, kind)

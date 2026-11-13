@@ -12,6 +12,8 @@ services:
       CANNERY_ARTIFACT_ROOT: /home/cannery/artifacts
       CANNERY_ARTIFACT_READ_TOKEN: ${CANNERY_ARTIFACT_READ_TOKEN:?Set a private read token}
       CANNERY_ARTIFACT_WRITE_TOKEN: ${CANNERY_ARTIFACT_WRITE_TOKEN:?Set a distinct private write token}
+      CANNERY_ARTIFACT_PREVIOUS_READ_TOKEN: ${CANNERY_ARTIFACT_PREVIOUS_READ_TOKEN:-}
+      CANNERY_ARTIFACT_PREVIOUS_WRITE_TOKEN: ${CANNERY_ARTIFACT_PREVIOUS_WRITE_TOKEN:-}
     volumes:
       - artifact-data:/home/cannery/artifacts
     command: ["uvicorn", "cannery.artifacts.service:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000", "--limit-concurrency", "8"]
