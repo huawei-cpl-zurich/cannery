@@ -12,13 +12,19 @@ from cannery.submissions.state import IntakeState
 
 
 def existing_request(
-    session: Session, namespace: str, spec_id: UUID, source: GitSource, target: RequestedTarget
+    session: Session,
+    namespace: str,
+    spec_id: UUID,
+    source: GitSource,
+    target: RequestedTarget,
+    parent_id: UUID | None = None,
 ) -> UUID | None:
     # The caller holds the specification row lock, including across request insertion.
     requests = session.scalars(
         select(Submission)
         .where(
             Submission.namespace == namespace,
+            Submission.parent_id == parent_id,
             Submission.spec_id == spec_id,
             Submission.source["url"].as_string() == source.url,
             Submission.source["commit"].as_string() == source.commit,
@@ -63,6 +69,8 @@ def revise_submission(engine: Engine, namespace: str, parent_id: UUID, commit: s
         if parent is None or parent.namespace != namespace or accepted is None:
             raise SubmissionConflict("Retained parent submission not found")
         source = GitSource.model_validate(parent.source | {"commit": commit})
+        if source == GitSource.model_validate(parent.source):
+            return parent.id
         session.get(SpecVersion, parent.spec_id, with_for_update=True)
         existing = existing_request(
             session,
@@ -70,6 +78,7 @@ def revise_submission(engine: Engine, namespace: str, parent_id: UUID, commit: s
             parent.spec_id,
             source,
             RequestedTarget.model_validate(parent.target),
+            parent_id=parent.id,
         )
         if existing is not None:
             return existing

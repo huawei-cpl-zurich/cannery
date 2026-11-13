@@ -155,3 +155,42 @@ def test_request_identity_does_not_cross_source_or_target_boundaries(records, fi
     assert (
         new_submission(engine, "team", spec_id, GitSource.model_validate(source), target) != first
     )
+
+
+def test_revision_and_standalone_requests_keep_separate_binding_contexts(records):
+    engine, spec_id = records
+    parent = initial(records)
+    with Session(engine) as session, session.begin():
+        source = dict(session.get(Submission, parent).source)
+        session.add(
+            Candidate(
+                id=parent,
+                binding_id=parent,
+                binding={"entrypoint": "first"},
+                manifest={},
+                snapshot={},
+                content_sha256="b" * 64,
+                file_sha256={},
+            )
+        )
+    source["commit"] = "b" * 40
+    standalone = new_submission(
+        engine,
+        "team",
+        spec_id,
+        GitSource.model_validate(source),
+        RequestedTarget(device="a5", language="catlass"),
+    )
+    revision = revise_submission(engine, "team", parent, "b" * 40)
+    assert revision != standalone
+    assert revise_submission(engine, "team", parent, "b" * 40) == revision
+    assert (
+        new_submission(
+            engine,
+            "team",
+            spec_id,
+            GitSource.model_validate(source),
+            RequestedTarget(device="a5", language="catlass"),
+        )
+        == standalone
+    )
