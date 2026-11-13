@@ -116,7 +116,6 @@ def authenticate(engine: Engine, raw: str, kind: str) -> Principal:
 
 
 def reset_own_password(engine: Engine, raw: str, kind: str, old: str, new: str) -> None:
-    hashed = password_hash(new)
     with Session(engine) as db, db.begin():
         principal = resolve(db, raw, kind)
         user = account(db, principal.username)
@@ -124,5 +123,5 @@ def reset_own_password(engine: Engine, raw: str, kind: str, old: str, new: str) 
             PASSWORDS.verify(user.password_hash, old)
         except VerificationError:
             raise HTTPException(401, "Invalid credentials") from None
-        user.password_hash = hashed
+        user.password_hash = password_hash(new)
         db.execute(delete(Credential).where(Credential.account_id == user.id))

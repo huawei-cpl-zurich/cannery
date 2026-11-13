@@ -51,7 +51,7 @@ def credential(request: Request) -> tuple[str, str]:
     if not raw or len(raw) > 128:
         raise HTTPException(401, "Authentication required")
     if request.method not in SAFE and not hmac.compare_digest(
-        request.headers.get("x-csrf-token", ""), auth.csrf(raw)
+        request.headers.get("x-csrf-token", "").encode(), auth.csrf(raw).encode()
     ):
         raise HTTPException(403, "CSRF verification failed")
     return raw, "session"
