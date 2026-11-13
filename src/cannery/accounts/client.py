@@ -56,6 +56,8 @@ def private_directory(path: Path, *, create: bool = False) -> bool:
         info = path.lstat()
     except FileNotFoundError:
         return False
+    except OSError:
+        raise ValueError("Cannot read private CLI credential directory") from None
     if not stat.S_ISDIR(info.st_mode) or info.st_mode & 0o077 or info.st_uid != os.getuid():
         raise ValueError("CLI credential directory must be private and user-owned")
     return True
