@@ -9,6 +9,7 @@ from typing import Any, Literal
 from pydantic import Field, model_validator
 
 from cannery.artifacts import digest
+from cannery.devices import Device, matches_soc
 from cannery.numerics.recipes import RecipeSuite
 from cannery.registry.manifest import StrictModel, unique_pairs
 
@@ -21,7 +22,7 @@ SHA = r"^[a-f0-9]{64}$"
 class Cohort(StrictModel):
     """Trusted worker identity; device identity must come from hardware discovery."""
 
-    device: Literal["a5"] = "a5"
+    device: Device = "a5"
     hardware_id: str = Field(min_length=1, max_length=256)
     driver: str = Field(min_length=1, max_length=256)
     image: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
@@ -40,6 +41,8 @@ class Cohort(StrictModel):
             "soc",
         } or not all(self.runtime.values()):
             raise ValueError("Incomplete runtime fingerprint")
+        if not matches_soc(self.device, self.runtime["soc"]):
+            raise ValueError("Cohort device/SoC mismatch")
         return self
 
 

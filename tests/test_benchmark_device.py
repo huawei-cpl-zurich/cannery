@@ -105,7 +105,7 @@ def test_worker_processes_existing_deadlines_when_discovery_is_offline(tmp_path,
     monkeypatch.setattr(worker, "make_engine", lambda _: engine)
     monkeypatch.setattr(worker, "make_store", lambda _: MagicMock())
     monkeypatch.setattr(worker, "device_cohort", MagicMock(side_effect=RemotePending("offline")))
-    monkeypatch.setattr(worker, "due_jobs", lambda _: ["a" * 64])
+    monkeypatch.setattr(worker, "due_jobs", lambda _, **kwargs: ["a" * 64])
     process = MagicMock()
     monkeypatch.setattr(worker, "process", process)
     monkeypatch.setattr(worker, "cleanup_finished", MagicMock())

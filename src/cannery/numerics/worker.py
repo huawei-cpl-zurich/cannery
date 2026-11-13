@@ -55,7 +55,7 @@ def main() -> None:
     def clean() -> None:
         while not stopped.is_set():
             try:
-                cleanup_finished(engine, root, factory)
+                cleanup_finished(engine, root, factory, owner=profile)
             except (SQLAlchemyError, OSError):
                 logging.warning("Numerical cleanup unavailable; retaining journals")
             stopped.wait(10)
@@ -74,7 +74,7 @@ def main() -> None:
             except (SQLAlchemyError, OSError, ValueError):
                 logging.warning("Numerical worker unavailable; retrying")
             if args.once:
-                cleanup_finished(engine, root, factory)
+                cleanup_finished(engine, root, factory, owner=profile)
                 return
             stopped.wait(5)
     finally:
