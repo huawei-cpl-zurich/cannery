@@ -134,3 +134,21 @@ def test_authentication_outages_preserve_public_liveness_and_assets(setup, monke
     assert client.get("/api/v1/releases/kernels").status_code == 200
     response = client.get("/api/v1/registrations")
     assert response.status_code == 503 and "private" not in response.text
+
+
+def test_account_authentication_and_public_routes_under_asgi_prefix(setup, monkeypatch):
+    engine, client, _ = setup
+    client.app.root_path = "/cannery"
+    monkeypatch.setattr("cannery.accounts.api.throttle", lambda *args: None)
+    login = client.post(
+        "/cannery/api/v1/auth/login",
+        headers={"X-Cannery-Login": "1"},
+        json={"username": "alice", "password": "a long password!"},
+    )
+    assert login.status_code == 200
+    assert client.get("/cannery/api/v1/registrations").status_code == 200
+    assert client.get("/cannery/health/live").status_code == 200
+    csrf = {"X-CSRF-Token": login.json()["csrf_token"]}
+    assert client.post("/cannery/api/v1/auth/logout", headers=csrf).status_code == 204
+    assert client.get("/cannery/api/v1/registrations").status_code == 401
+    assert client.get("/cannery/api/v1/releases/kernels").status_code == 200
