@@ -43,6 +43,7 @@ def free_port():
 def deployment(tmp_path):
     slug = "cannery-m7c-" + uuid4().hex[:10]
     pg, redis = slug + "-pg", slug + "-redis"
+    network = slug + "-network"
     process = None
     environment = os.environ.copy()
     environment.update(
@@ -54,11 +55,14 @@ def deployment(tmp_path):
         CANNERY_ARTIFACT_ROOT=str(tmp_path / "artifacts"),
     )
     try:
+        docker("network", "create", "--label", "cannery.task=m7c", network)
         docker(
             "run",
             "-d",
             "--name",
             pg,
+            "--network",
+            network,
             "--label",
             "cannery.task=m7c",
             "-e",
@@ -76,6 +80,8 @@ def deployment(tmp_path):
             "-d",
             "--name",
             redis,
+            "--network",
+            network,
             "--label",
             "cannery.task=m7c",
             "-p",
@@ -151,6 +157,7 @@ def deployment(tmp_path):
                 process.wait(timeout=5)
         for name in [redis, pg]:
             subprocess.run(["docker", "rm", "-f", "-v", name], timeout=30, capture_output=True)
+        subprocess.run(["docker", "network", "rm", network], timeout=30, capture_output=True)
 
 
 def test_auth_browser_cli_and_outage_recovery(deployment, tmp_path):

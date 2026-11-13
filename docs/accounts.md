@@ -22,8 +22,8 @@ cannery accounts reset-password alice
 ```
 
 Create/reset prompts hide and confirm passwords. A user-owned regular UTF-8
-file with mode0600 can be supplied with `--password-file`; symlinks are rejected.
-Passwords must contain12–1024 characters and are hashed with Argon2id. There is
+file with mode 0600 can be supplied with `--password-file`; symlinks are rejected.
+Passwords must contain 12–1024 characters and are hashed with Argon2id. There is
 no public signup, email recovery or default account/password. Account and role
 changes revoke all credentials; namespace removal revokes affected credentials.
 Keep database access restricted to trusted operators.
@@ -31,8 +31,8 @@ Keep database access restricted to trusted operators.
 ## Browser and CLI
 
 Visit `/login`, then `/account` to switch namespaces, change your password or
-create/revoke a namespace-bound CLI token. Sessions expire after12hours; CLI
-tokens expire after30days. Password changes sign out all sessions and tokens.
+create/revoke a namespace-bound CLI token. Sessions expire after 12 hours; CLI
+tokens expire after 30 days. Password changes sign out all sessions and tokens.
 Neither sessions nor tokens are stored in browser local/session storage.
 
 ```sh
@@ -77,15 +77,15 @@ Authentication and development identity cannot be enabled together. Workers do
 not receive account identity configuration or user tokens.
 
 Login is limited per username and client address over five-minute windows.
-Redis failure temporarily blocks login with503 while existing database-backed
-sessions continue. Database failure blocks protected access with bounded503;
+Redis failure temporarily blocks login with 503 while existing database-backed
+sessions continue. Database failure blocks protected access with bounded 503;
 recovery reuses existing sessions without rerunning kernel jobs.
 
 ## Artifact credential rotation
 
 Only the artifact service accepts `CANNERY_ARTIFACT_PREVIOUS_READ_TOKEN` and
 `CANNERY_ARTIFACT_PREVIOUS_WRITE_TOKEN`. At most one previous value per capability
-is accepted. Every configured value must be distinct and at least32characters.
+is accepted. Every configured value must be distinct and at least 32 characters.
 Read credentials never authorize writes; write credentials never authorize reads.
 
 1. Generate new private read/write credentials and back up operator configuration.
