@@ -1,5 +1,6 @@
 from alembic import context
 
+import cannery.accounts.models  # noqa: F401
 import cannery.benchmark.state  # noqa: F401
 import cannery.builds.state  # noqa: F401
 import cannery.jobs  # noqa: F401
