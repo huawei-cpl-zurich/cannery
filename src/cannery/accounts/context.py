@@ -77,7 +77,11 @@ def install_context(app: FastAPI, settings: Settings, engine: Engine) -> None:
     async def authenticate(request: Request, call_next):  # type: ignore[no-untyped-def]
         token = CURRENT.set(None)
         try:
-            if not request.url.path.startswith("/api/v1/auth/"):
+            independent = request.url.path in {
+                "/health/live",
+                "/health/ready",
+            } or request.url.path.startswith("/static/")
+            if not independent and not request.url.path.startswith("/api/v1/auth/"):
                 try:
                     raw, kind = credential(request)
                     user = await run_in_threadpool(auth.authenticate, engine, raw, kind)
@@ -90,9 +94,10 @@ def install_context(app: FastAPI, settings: Settings, engine: Engine) -> None:
                             return RedirectResponse("/login", status_code=303)
                         return JSONResponse({"detail": error.detail}, status_code=error.status_code)
                 except SQLAlchemyError:
-                    return JSONResponse(
-                        {"detail": "Authentication temporarily unavailable"}, status_code=503
-                    )
+                    if not public(request):
+                        return JSONResponse(
+                            {"detail": "Authentication temporarily unavailable"}, status_code=503
+                        )
             response = await call_next(request)
             if not public(request):
                 response.headers["Cache-Control"] = "no-store"
