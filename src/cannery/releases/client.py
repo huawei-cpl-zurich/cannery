@@ -80,7 +80,10 @@ class ReleaseClient:
         # The wall deadline interrupts header waits and even a continuously dripping body.
         async with asyncio.timeout(budget):
             async with httpx.AsyncClient(
-                transport=self.transport, timeout=min(15, budget), follow_redirects=False
+                transport=self.transport,
+                timeout=min(15, budget),
+                follow_redirects=False,
+                trust_env=False,
             ) as client:
                 async with client.stream(
                     "GET" if body is None else "POST",

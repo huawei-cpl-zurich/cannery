@@ -22,7 +22,7 @@ def install(app: typer.Typer) -> None:
                 if password_file
                 else typer.prompt("Password", hide_input=True)
             )
-            with httpx.Client(timeout=5, follow_redirects=False) as connection:
+            with httpx.Client(timeout=5, follow_redirects=False, trust_env=False) as connection:
                 reply = connection.post(
                     base + "/api/v1/auth/login",
                     headers={"X-Cannery-Login": "1"},

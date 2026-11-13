@@ -24,7 +24,7 @@ def send(
     wait_build: bool = False,
 ) -> None:
     try:
-        with httpx.Client(timeout=5, headers=auth_headers(url)) as client:
+        with httpx.Client(timeout=5, headers=auth_headers(url), trust_env=False) as client:
             response = client.post(url.rstrip("/") + endpoint, json=body)
             response.raise_for_status()
             key = UUID(response.json()["id"])
@@ -168,6 +168,7 @@ def install_cli(app: typer.Typer) -> None:
                 url.rstrip("/") + f"/api/v1/submissions/{identifier}",
                 timeout=5,
                 headers=auth_headers(url),
+                trust_env=False,
             )
             response.raise_for_status()
             typer.echo(json.dumps(response.json(), indent=2))
