@@ -10,6 +10,8 @@ import dramatiq
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from cannery.artifacts import ArtifactError
+from cannery.artifacts.factory import make_store
 from cannery.database import make_engine
 from cannery.git_intake import SnapshotBinding
 from cannery.git_intake.process import IntakeError, run
@@ -18,6 +20,7 @@ from cannery.registration_worker import broker, settings
 from cannery.registry.models import SpecVersion
 from cannery.submissions.freeze import freeze_candidate
 from cannery.submissions.models import Submission, SubmissionConflict
+from cannery.submissions.reuse import reuse_completed
 from cannery.submissions.state import (
     claim_intake,
     clear_scratch,
@@ -98,7 +101,9 @@ def intake_submission(identifier: str) -> None:
             state = current_intake(session, claim)
             if state is None:
                 return
-            freeze_candidate(session, key, snapshot, store=SnapshotStore(settings.snapshot_root))
+            store = SnapshotStore(settings.snapshot_root)
+            candidate = freeze_candidate(session, key, snapshot, store=store)
+            reuse_completed(engine, session, candidate, store, lambda: make_store(settings))
             if current_intake(session, claim) is None:
                 raise IntakeError("Intake lease expired during snapshot verification")
             state.status, state.error = "awaiting_build", None
@@ -106,7 +111,7 @@ def intake_submission(identifier: str) -> None:
     except SubmissionConflict:
         if claim is not None:
             fail_intake(engine, claim, "binding_mismatch", False)
-    except (IntakeError, OSError, ValueError, SQLAlchemyError):
+    except (ArtifactError, IntakeError, OSError, ValueError, SQLAlchemyError):
         logging.warning("Submission intake unavailable: %s", key)
         if claim is not None:
             try:

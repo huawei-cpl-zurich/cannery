@@ -4,6 +4,7 @@ import json
 import os
 import pickle
 import secrets
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -62,6 +63,39 @@ if mode=='seed':
   jobs=list(pool.map(lambda _:state.request_publication(engine,key,actor),range(4)))
  assert len(set(jobs))==1
  print(json.dumps(snapshot()));raise SystemExit
+if mode=='reuse':
+ from cannery.git_intake import GitSource,SnapshotBinding
+ from cannery.git_intake.snapshots import SnapshotStore,SelectedTree
+ from cannery.submissions.models import Candidate,Submission,SubmissionReuse
+ from cannery.submissions.state import IntakeState
+ from cannery.submissions.reuse import reuse_completed
+ from cannery.submissions.api import get_info
+ from cannery.builds.state import BuildState
+ snapshots=SnapshotStore(root/'snapshots')
+ with Session(engine) as db,db.begin():
+  old=db.get(Candidate,key);parent=db.get(Submission,key)
+  source=GitSource.model_validate(parent.source|{'commit':'b'*40})
+  selected=snapshots.read(SnapshotBinding.model_validate(old.snapshot))
+  binding=snapshots.commit(old.snapshot['internal_repository'],source,
+   SelectedTree(selected.files,selected.modes,'c'*40))
+  sub=Submission(namespace=parent.namespace,spec_id=parent.spec_id,
+   source=source.model_dump(mode='json'),target=parent.target)
+  db.add(sub);db.flush()
+  candidate=Candidate(id=sub.id,binding_id=sub.id,binding=old.binding,manifest=old.manifest,
+   snapshot=binding.model_dump(mode='json'),content_sha256=old.content_sha256,
+   file_sha256=old.file_sha256)
+  db.add_all([candidate,IntakeState(id=sub.id,status='awaiting_build')]);db.flush()
+  reuse_completed(engine,db,candidate,snapshots,lambda:backend);db.flush()
+  assert db.get(SubmissionReuse,sub.id).original_id==key
+  assert db.get(BuildState,sub.id) is None
+  info=get_info(db,'team',sub.id)
+  assert info['status']=='complete' and info['reused_from']==str(key)
+ from sqlalchemy.exc import DBAPIError
+ try:
+  with engine.begin() as c:c.exec_driver_sql('UPDATE submission_reuse SET original_id=original_id')
+ except DBAPIError:pass
+ else:raise AssertionError('PostgreSQL reuse trigger did not protect immutable links')
+ print(json.dumps({'reused':True,'new_builds':0}));raise SystemExit
 if mode=='query':
  command=sys.argv[2]
  if command=='expire':
@@ -97,7 +131,7 @@ while True:
 @pytest.mark.skipif(
     os.environ.get("CANNERY_RELEASE_DOCKER") != "1", reason="opt-in Docker acceptance"
 )
-def test_two_publishers_recover_and_fence_withdrawal(admission, tmp_path):
+def test_two_publishers_recover_and_fence_withdrawal(admission, setup_executor, tmp_path):
     engine, key, memory, _ = admission
     project = "cannery-release-" + uuid4().hex[:10]
     image = project + ":app"
@@ -111,6 +145,7 @@ def test_two_publishers_recover_and_fence_withdrawal(admission, tmp_path):
     control.mkdir()
     (control / "fixture").write_bytes(pickle.dumps((tables, memory.data)))
     (control / "key").write_text(str(key))
+    shutil.copytree(setup_executor[0].snapshots.root, control / "snapshots")
     node = tmp_path / "node.py"
     node.write_text(NODE)
     settings = {
@@ -214,12 +249,17 @@ def test_two_publishers_recover_and_fence_withdrawal(admission, tmp_path):
             "else:raise RuntimeError('Artifact HTTP readiness deadline exceeded')",
         )
 
+    built = False
     try:
         compose("build", "migrate", timeout=600)
+        built = True
         compose("up", "-d", "postgres", "artifacts", "migrate")
         compose("wait", "migrate")
         artifact_ready()
         compose("run", "--rm", "--no-deps", "node1", "python", "/probe/node.py", "seed")
+        assert json.loads(
+            compose("run", "--rm", "--no-deps", "node1", "python", "/probe/node.py", "reuse")
+        )["reused"]
         compose("up", "-d", "--no-deps", "node1", "node2")
         first = wait(lambda r: (control / "owner").exists())
         assert first["status"] == "publishing" and first["count"] == 0
@@ -234,11 +274,16 @@ def test_two_publishers_recover_and_fence_withdrawal(admission, tmp_path):
         (control / "allow").unlink()
         (control / "owner").unlink()
         compose("stop", "artifacts")
+        with pytest.raises(subprocess.CalledProcessError):
+            compose("run", "--rm", "--no-deps", "node1", "python", "/probe/node.py", "reuse")
         query("publish")
         offline = wait(lambda r: r["job"] == "queued" and r["attempts"] >= 1)
         assert offline["status"] == "publishing" and offline["count"] == 1
         compose("start", "artifacts")
         artifact_ready()
+        assert json.loads(
+            compose("run", "--rm", "--no-deps", "node1", "python", "/probe/node.py", "reuse")
+        )["reused"]
         (control / "storage-failed").unlink(missing_ok=True)
         wait(lambda r: (control / "owner").exists())
         query("withdraw")
@@ -263,5 +308,19 @@ def test_two_publishers_recover_and_fence_withdrawal(admission, tmp_path):
             )
         )
     finally:
-        compose("down", "-v", "--remove-orphans")
-        subprocess.run(["docker", "image", "rm", image], check=False, timeout=30)
+        try:
+            if built:
+                compose(
+                    "run",
+                    "--rm",
+                    "--no-deps",
+                    "node1",
+                    "chown",
+                    "-R",
+                    f"{os.getuid()}:{os.getgid()}",
+                    "/control",
+                    timeout=30,
+                )
+        finally:
+            compose("down", "-v", "--remove-orphans")
+            subprocess.run(["docker", "image", "rm", image], check=False, timeout=30)

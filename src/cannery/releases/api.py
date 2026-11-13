@@ -14,7 +14,7 @@ from cannery.releases.eligibility import PublicationUnavailable, publication_man
 from cannery.releases.models import Publication, PublicationJob
 from cannery.releases.state import request_publication, withdraw
 from cannery.settings import Settings
-from cannery.submissions.models import Submission
+from cannery.submissions.models import Submission, SubmissionReuse
 
 
 class Action(StrictModel):
@@ -26,6 +26,16 @@ def owned(settings: Settings, db: Session, identifier: UUID) -> Submission:
     sub = db.get(Submission, identifier)
     if sub is None or sub.namespace != namespace and settings.dev_role != "admin":
         raise HTTPException(404, "Submission not found")
+    reuse = db.get(SubmissionReuse, identifier)
+    if reuse is not None:
+        original = db.get(Submission, reuse.original_id)
+        if (
+            original is None
+            or original.namespace != sub.namespace
+            or original.spec_id != sub.spec_id
+        ):
+            raise HTTPException(409, "Invalid retained submission reuse")
+        return original
     return sub
 
 
@@ -58,7 +68,7 @@ def publication_info(db: Session, identifier: UUID) -> dict[str, Any]:
 
 def publish(settings: Settings, engine: Engine, identifier: UUID) -> dict[str, str]:
     with Session(engine) as db:
-        owned(settings, db, identifier)
+        identifier = owned(settings, db, identifier).id
     try:
         publication_manifest(engine, identifier)
     except PublicationUnavailable as error:
@@ -75,7 +85,7 @@ def publish(settings: Settings, engine: Engine, identifier: UUID) -> dict[str, s
 
 def withdraw_publication(settings: Settings, engine: Engine, identifier: UUID) -> dict[str, Any]:
     with Session(engine) as db:
-        owned(settings, db, identifier)
+        identifier = owned(settings, db, identifier).id
     if not withdraw(
         engine, identifier, {"namespace": identity(settings), "role": settings.dev_role}
     ):
@@ -106,7 +116,7 @@ def install_publications(app: FastAPI, settings: Settings, engine: Engine) -> No
     @app.get("/api/v1/submissions/{identifier}/publication")
     def status(identifier: UUID, user: Annotated[str, Depends(principal)]) -> dict[str, Any]:
         with Session(engine) as db:
-            owned(settings, db, identifier)
+            identifier = owned(settings, db, identifier).id
             return publication_info(db, identifier)
 
     @app.get("/api/v1/publication-jobs/{identifier}")

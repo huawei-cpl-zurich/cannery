@@ -33,6 +33,10 @@ to try its toy submission.</p>{% endif %}
   <p>Submission <code>{{ job.id }}</code>: <strong>{{ job.status }}</strong>. ETA: Unknown.</p>
   <p>{{ job.kernel.namespace }}/{{ job.kernel.name }}@spec-v{{ job.spec_version }} · {{ job.target.device }} · {{ job.target.language }}</p>
   <p>Source: {{ job.source.url }} · <code>{{ job.source.commit }}</code> · {{ job.source.path }}</p>
+  {% if job.reused_from %}<p>Selected source and dependencies are unchanged.
+  Reusing the completed build, validation and measurements from
+  <a href="/submissions/{{ job.reused_from }}">{{ job.reused_from }}</a> in their original environment.
+  No new execution was performed.</p>{% endif %}
   {% if job.parent_id %}<p>Revision of <a href="/submissions/{{ job.parent_id }}">{{ job.parent_id }}</a></p>{% endif %}
   {% if job.error %}<p role="alert">{% if job.status == 'failed' %}Submission failed: {{ job.error }}.
   {% elif job.benchmark and job.benchmark.status == 'blocked' %}Benchmark blocked: {{ job.error }}.
@@ -47,10 +51,10 @@ to try its toy submission.</p>{% endif %}
       <p>Release <a href="/releases/{{ job.publication.release_id }}">{{ job.publication.release_id }}</a>.</p>
     {% endif %}
     {% if job.publication.status in ['published', 'publishing'] %}
-      <form method="post" action="/submissions/{{ job.id }}/withdraw"><button>Withdraw publication</button></form>
+      <form method="post" action="/submissions/{{ job.reused_from or job.id }}/withdraw"><button>Withdraw publication</button></form>
     {% elif job.benchmark and job.benchmark.status == 'passed' %}
       <p>Publishing makes the retained binary, pinned source and validated measurements available to this installation. No rebuild or baseline rerun.</p>
-      <form method="post" action="/submissions/{{ job.id }}/publish"><button>{% if job.publication.status == 'withdrawn' %}Republish release{% else %}Publish release{% endif %}</button></form>
+      <form method="post" action="/submissions/{{ job.reused_from or job.id }}/publish"><button>{% if job.publication.status == 'withdrawn' %}Republish release{% else %}Publish release{% endif %}</button></form>
     {% endif %}
   </section>
   {% endif %}
