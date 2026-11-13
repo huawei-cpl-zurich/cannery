@@ -58,3 +58,57 @@ remove its remote attempt directory until the original operation is reconciled.
 Pipeline deadlines still terminate SQL work; unresolved cleanup journals remain
 for operator reconciliation rather than claiming cleanup succeeded. Restore the
 listener's retained transfer state and observe the same handle before cleanup.
+
+## Dual-worker deployment
+
+Keep the existing A5 profile and loader pins unchanged. Install the validated A3
+profile separately at `~/.config/cannery/a3-worker.json`, and retain the 0.3.0
+loader wheel outside temporary task directories. Pin the verified SDK image,
+compiler and full runtime fingerprint from the actual registered A3 target.
+For the current setup the image contains the SDK, the host route is
+`gz-a3-host`, `runtime` is null, `device` is `a3`, and physical NPU 4 maps to
+logical device 0. Do not copy those hardware selections onto another server.
+
+Add the following operator environment values to the private service environment
+file (use absolute paths; keep existing A5 values):
+
+```dotenv
+CANNERY_A3_WORKER_PROFILE=/absolute/path/to/a3-worker.json
+CANNERY_A3_LOADER_WHEEL=/absolute/path/to/cannery_kernels_runtime-0.3.0-py3-none-any.whl
+CANNERY_A3_LOADER_SHA256=<sha256 of that exact wheel>
+CANNERY_REMOTE_AGENT_ROOT=/absolute/installed/remote-agent
+CANNERY_A3_DATABASE_PORT=15435
+CANNERY_A3_ARTIFACT_PORT=18096
+```
+
+The remote-agent client root must match the path already named in the user-wide
+route registry. The overlay mounts it read-only. A3 coordinators use the host
+network to reach the registered loopback listener; submitted code runs remotely
+in its isolated sandbox. PostgreSQL and the private artifact backend gain only
+loopback host ports. Check those ports are free before rollout. A5 coordinators
+keep their bridge-network addresses and original pins.
+
+After the mandatory drain, verified backup and hardware acceptance, start with:
+
+```bash
+export COMPOSE_FILE=compose.yaml:compose.artifacts.yaml:compose.builds.yaml:compose.numerics.yaml:compose.benchmarks.yaml:compose.releases.yaml:compose.a3.yaml
+docker compose --env-file "$HOME/.config/cannery/service.env" --profile a3 up -d
+```
+
+Omitting the `a3` profile leaves all three A3 coordinators disabled. All workers
+share the backed-up build-control volume; claims and cleanup are scoped to the
+configured device route. Stop A3 workers as well as A5 workers before upgrades,
+backup or restore. Existing published A5 releases and the cached CPU baseline
+are reused, not recomputed or republished.
+
+Local verification includes the rendered Compose configuration and an opt-in
+Docker drill with two worker nodes and PostgreSQL. The drill partitions the A3
+node's network, lets A5 finish, then verifies A3 recovers the original fenced
+attempts without duplicate effects:
+
+```bash
+CANNERY_DEVICE_DOCKER=1 pytest -q tests/test_device_workers_docker.py
+```
+
+This drill verifies SQL routing and recovery, not NPU execution. Use actual A3
+acceptance for device behavior, and keep A3/A5 timing cohorts separate.
