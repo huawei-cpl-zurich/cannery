@@ -8,6 +8,7 @@ from sqlalchemy import Engine
 
 from cannery.accounts.context import identity, role, template_context
 from cannery.settings import Settings
+from cannery.web.accounts import install_account_web
 from cannery.web.registration import install_registration
 from cannery.web.releases import install_release_web
 from cannery.web.submissions import install_submission_web
@@ -52,6 +53,8 @@ def install_web(app: FastAPI, settings: Settings, engine: Engine) -> None:
         return render(
             request, "Administration", "Worker and storage management is not available yet."
         )
+
+    install_account_web(app, settings, templates, {"pages": PAGES})
 
     install_registration(
         app,

@@ -3,7 +3,7 @@
 from contextvars import ContextVar
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
@@ -38,7 +38,12 @@ def signed_in(settings: Settings) -> bool:
 
 
 def template_context(settings: Settings) -> dict[str, object]:
-    return {"admin": role(settings) == "admin", "development": settings.dev_identity_enabled}
+    return {
+        "admin": role(settings) == "admin",
+        "development": settings.dev_identity_enabled,
+        "signed_in": signed_in(settings),
+        "auth_enabled": settings.auth_enabled,
+    }
 
 
 def public(request: Request) -> bool:
@@ -83,6 +88,10 @@ def install_context(app: FastAPI, settings: Settings, engine: Engine) -> None:
                     CURRENT.set(user)
                 except HTTPException as error:
                     if not public(request):
+                        if request.method == "GET" and "text/html" in request.headers.get(
+                            "accept", ""
+                        ):
+                            return RedirectResponse("/login", status_code=303)
                         return JSONResponse({"detail": error.detail}, status_code=error.status_code)
                 except SQLAlchemyError:
                     if not public(request):

@@ -183,8 +183,9 @@ Use a transient constrained Git fetch to resolve the external full SHA, then saf
 ## Staged account rollout
 
 Local account authentication is opt-in with `CANNERY_AUTH_ENABLED`. The current
-slice supports authenticated API requests and fences private browser routes.
-Account-mode browser form submission is intentionally deferred to the following
-browser integration slice; do not enable account mode in a browser deployment
-until that slice lands. Existing development-mode forms continue working.
+implementation supports authenticated API requests and browser forms. Sign in
+at `/login`, then use `/account` for namespace selection, password changes and
+CLI token management. Browser mutations send same-origin CSRF credentials;
+unauthenticated private navigation redirects to sign-in. Existing explicit
+development-mode forms continue working when account mode is disabled.
 Development identity and account authentication cannot be enabled together.
