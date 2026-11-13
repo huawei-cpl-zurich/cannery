@@ -130,37 +130,59 @@ def remove_containers():
                 raise RuntimeError('Container cleanup uncertain; preserve device ownership')
 
 def check_device():
-    for kind in ['health', 'usages', 'proc-mem', 'current-fault-event']:
+    a3 = config.get('device', 'a5') == 'a3'
+    for kind in ['health', 'usages', 'proc-mem', 'ecc' if a3 else 'current-fault-event']:
         try:
-            result = subprocess.run(['npu-smi', 'info', '-t', kind, '-i', str(config['npu'])],
+            result = subprocess.run(['npu-smi', 'info', '-t', kind, '-i', str(config['npu'])]
+                                    + (['-c', '0'] if a3 else []),
                                     capture_output=True, text=True, timeout=12)
         except (OSError, subprocess.TimeoutExpired):
             raise SystemExit(75)
         text = result.stdout
         if result.returncode or not text.strip():
             raise SystemExit(75)
-        if kind == 'health' and not re.search(r'Health Status\s*:\s*OK', text):
-            raise SystemExit(75)
+        if kind == 'health':
+            values = re.findall(r'^\s*Health Status\s*:\s*(\S+)\s*$', text, re.M)
+            if values != ['OK']:
+                raise SystemExit(75)
+            if a3 and not re.search(r'^\s*Error Code\s*:\s*NA\s*$', text, re.M):
+                raise SystemExit(75)
         if kind == 'usages':
-            memory = re.search(r'HBM Usage Rate\(%\)\s*:\s*(\d+)', text)
+            memory = re.search(r'^\s*HBM Usage Rate\(%\)\s*:\s*(\d+)\s*$', text, re.M)
             if not memory or int(memory.group(1)) >= 50:
                 raise SystemExit(75)
-            if not re.search(r'NPU Utilization\(%\)\s*:\s*0\b', text):
-                raise SystemExit(75)
+            metrics = ['Aicore Usage Rate', 'Aivector Usage Rate'] if a3 else ['NPU Utilization']
+            for metric in metrics:
+                if not re.search(r'^\s*' + metric + r'\(%\)\s*:\s*0\s*$', text, re.M):
+                    raise SystemExit(75)
         if kind == 'proc-mem' and 'No process in device' not in text:
             raise SystemExit(75)
         if kind == 'current-fault-event' and not re.search(r'Fault Event Count\s*:\s*0\b', text):
             raise SystemExit(75)
+        if kind == 'ecc':
+            for metric in ['HBM Double Bit Error Count', 'HBM Double Bit Aggregate Total Err Cnt']:
+                if not re.search(r'^\s*' + metric + r'\s*:\s*0\s*$', text, re.M):
+                    raise SystemExit(75)
 
 def device_identity():
     reply=subprocess.run(['npu-smi','info','-t','board','-i',str(config['npu'])],
                          capture_output=True,text=True,timeout=12,check=True).stdout
     values={}
-    for name in ['Serial Number','DDie ID']:
-        found=re.search(r'^\s*'+name+r'\s*:\s*(\S[^\r\n]*)$',reply,re.M)
+    a3 = config.get('device', 'a5') == 'a3'
+    chip = (subprocess.run(['npu-smi','info','-t','board','-i',str(config['npu']),'-c','0'],
+                           capture_output=True,text=True,timeout=12,check=True).stdout
+            if a3 else reply)
+    for name in ['Serial Number', 'VDie ID' if a3 else 'DDie ID']:
+        found=re.search(r'^\s*'+name+r'\s*:\s*(\S[^\r\n]*)$',
+                        reply if name=='Serial Number' else chip,re.M)
         if not found or found.group(1).strip() in {'NA','N/A','Unknown'}:
             raise ValueError('Stable physical device identity unavailable')
         values[name]=found.group(1).strip()
+        if a3 and name=='VDie ID' and not re.fullmatch(
+                r'[a-fA-F0-9]{8}(?:\s+[a-fA-F0-9]{8}){4}',values[name]):
+            raise ValueError('Invalid physical die identity')
+        if name.endswith('Die ID') and not re.search(r'[1-9a-fA-F]',values[name]):
+            raise ValueError('Empty physical die identity')
     version=Path('/usr/local/Ascend/driver/version.info').read_bytes()
     if not 0<len(version)<=16384:raise ValueError('Invalid driver identity')
     return {'hardware_id':hashlib.sha256(json.dumps(values,sort_keys=True).encode()).hexdigest(),
@@ -250,20 +272,28 @@ else:
         marker.write(token)
         marker.flush()
         os.fsync(marker.fileno())
+    a3 = config.get('device', 'a5') == 'a3'
+    mask = str(config['npu']) if a3 else '0'
     args += ['--group-add', str(config['device_group']), '--ulimit', 'memlock=-1:-1',
-             '--env', 'ASCEND_RT_VISIBLE_DEVICES=0',
+             '--env', 'ASCEND_RT_VISIBLE_DEVICES=' + mask,
              '--env', 'CANNERY_PHYSICAL_DEVICE=' + str(config['npu']),
              '--tmpfs', '/ascend:rw,noexec,nosuid,nodev,size=32m,mode=1777',
              '--env', 'ASCEND_VISIBLE_DEVICES=' + str(config['npu'])]
     for path in [f"/dev/davinci{config['npu']}", '/dev/davinci_manager',
-                 '/dev/hisi_hdc', '/dev/ummu/tid']:
+                 '/dev/hisi_hdc', '/dev/devmm_svm' if a3 else '/dev/ummu/tid']:
         args += ['--device', path]
     for path in config['transport_devices']:
         args += ['--device', path]
     for path in config['readonly_mounts']:
         args += ['--mount', f'type=bind,src={path},dst={path},readonly']
     command = RUNTIME
-args += [config['image'], 'python', '-c', command]
+    if a3:
+        # Only trusted image code initializes the driver with privileges. The
+        # bootstrap irreversibly drops them before any submitted code is loaded.
+        args[args.index('--user') + 1] = '0:0'
+        args += ['--cap-add', 'ALL']
+isolated = ['-I'] if phase == 'runtime' and config.get('device') == 'a3' else []
+args += [config['image'], 'python', *isolated, '-c', command]
 resource.setrlimit(resource.RLIMIT_FSIZE, ((128 if benchmark else 64) * 1024 * 1024,) * 2)
 capturing = phase == 'compile' or (phase == 'runtime' and config.get('capture_runtime', False))
 result_path = output / ('kernel.so' if phase == 'compile' else 'results.json')
@@ -314,6 +344,52 @@ binary = work / 'kernel.so'
 assert binary.is_file() and not binary.is_symlink() and binary.stat().st_size <= 63*1024*1024
 sys.stdout.buffer.write(binary.read_bytes())
 """
+
+A3_BOOTSTRAP = r"""
+import ctypes, os, pathlib, sys
+_bootstrap_wire = os.dup(sys.stdout.fileno())
+os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
+import torch, torch_npu
+assert torch.npu.device_count() == 1, 'runtime device mask failed'
+# This must run before importing the loader or reading any submitted package.
+acl = ctypes.CDLL(os.environ['ASCEND_HOME_PATH'] + '/lib64/libascendcl.so')
+physical = ctypes.c_int32(-1)
+get_physical = getattr(acl, 'aclrtGetPhyDevIdByUserDevId', acl.aclrtGetPhyDevIdByLogicDevId)
+get_physical.argtypes = [ctypes.c_int32, ctypes.POINTER(ctypes.c_int32)]
+get_physical.restype = ctypes.c_int
+assert get_physical(0, ctypes.byref(physical)) == 0
+assert physical.value == int(os.environ['CANNERY_PHYSICAL_DEVICE']), 'physical device mismatch'
+torch.npu.set_device(0)
+torch.empty(0, device='npu')
+torch.npu.synchronize()
+for root in ['/tmp/ascend', '/ascend']:
+    if pathlib.Path(root).exists():
+        for directory, _, files in os.walk(root, followlinks=False):
+            os.chown(directory, 10001, 10001, follow_symlinks=False)
+            for name in files:
+                os.chown(os.path.join(directory, name), 10001, 10001, follow_symlinks=False)
+libc = ctypes.CDLL(None, use_errno=True)
+assert libc.prctl(38, 1, 0, 0, 0) == 0, 'no-new-privileges failed'
+last = int(pathlib.Path('/proc/sys/kernel/cap_last_cap').read_text())
+assert 0 <= last <= 63
+for cap in range(last + 1):
+    assert libc.prctl(24, cap, 0, 0, 0) == 0, 'capability bounding drop failed'
+os.setgroups([CANNERY_DEVICE_GROUP])
+os.setgid(10001)
+os.setuid(10001)
+assert os.getuid() == os.geteuid() == 10001
+for status in pathlib.Path('/proc/self/task').glob('*/status'):
+    fields = dict(line.split(':', 1) for line in status.read_text().splitlines() if ':' in line)
+    assert set(fields['Uid'].split()) == {'10001'}, 'thread identity drop failed'
+    assert int(fields['CapEff'].strip(), 16) == int(fields['CapPrm'].strip(), 16) == 0
+    assert fields['NoNewPrivs'].strip() == '1', 'thread privilege guard failed'
+assert libc.prctl(23, 0, 0, 0, 0) == 0, 'bounding capabilities remain'
+sys.stdout.flush()
+libc.fflush(None)
+os.dup2(_bootstrap_wire, sys.stdout.fileno())
+os.close(_bootstrap_wire)
+"""
+
 
 RUNTIME = r"""
 import ctypes, hashlib, json, os, pathlib, subprocess, sys
@@ -371,6 +447,8 @@ def job_script(
     if capture_runtime:
         config["capture_runtime"] = True
     program = RUNTIME if runtime_program is None else runtime_program
+    if profile.device == "a3" and phase == "runtime":
+        program = A3_BOOTSTRAP.replace("CANNERY_DEVICE_GROUP", str(profile.device_group)) + program
     if profile.catlass is None:
         config.pop("catlass")
     serialized = json.dumps(config, sort_keys=True)
