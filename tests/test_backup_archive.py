@@ -211,3 +211,19 @@ def test_unrestorable_paths_are_rejected_before_extraction(backup, entries):
     repin(directory, manifest, "snapshots", output.getvalue())
     with pytest.raises(ValueError):
         verify(directory)
+
+
+def test_pax_size_cannot_hide_an_unbounded_extension_header(backup):
+    directory, manifest = backup
+    output = io.BytesIO()
+    with tarfile.open(fileobj=output, mode="w", format=tarfile.PAX_FORMAT) as archive:
+        hidden = tarfile.TarInfo("hidden")
+        hidden.type, hidden.size = tarfile.XHDTYPE, 32768
+        payload = hidden.tobuf() + bytes(32768 + 512)
+        outer = tarfile.TarInfo("outer")
+        outer.size = len(payload)
+        outer.pax_headers = {"size": "0"}
+        archive.addfile(outer, io.BytesIO(payload))
+    repin(directory, manifest, "snapshots", output.getvalue())
+    with pytest.raises(ValueError, match="Unsupported PAX key"):
+        verify(directory)

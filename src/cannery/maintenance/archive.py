@@ -92,6 +92,20 @@ def checksum(path: Path) -> tuple[int, str]:
     return size, sha.hexdigest()
 
 
+def pax_metadata(data: bytes) -> None:
+    while data:
+        space = data.find(b" ")
+        if not 0 < space <= 8 or not data[:space].isdigit():
+            raise ValueError("Invalid PAX record")
+        length = int(data[:space])
+        if not space + 3 <= length <= len(data) or data[length - 1 : length] != b"\n":
+            raise ValueError("Invalid PAX record size")
+        key = data[space + 1 : length - 1].split(b"=", 1)[0]
+        if key not in {b"path", b"mtime", b"atime", b"ctime", b"uname", b"gname", b"comment"}:
+            raise ValueError("Unsupported PAX key (size and sparse overrides are forbidden)")
+        data = data[length:]
+
+
 def preflight(stream: BinaryIO) -> int:
     size = stream.seek(0, os.SEEK_END)
     stream.seek(0)
@@ -119,6 +133,8 @@ def preflight(stream: BinaryIO) -> int:
             data = stream.read(item.size)
             if b"GNU.sparse" in data:
                 raise ValueError("Sparse metadata is unsupported")
+            if item.type == tarfile.XHDTYPE:
+                pax_metadata(data)
             stream.seek(padded - item.size, os.SEEK_CUR)
         elif item.type in (tarfile.REGTYPE, tarfile.AREGTYPE, tarfile.DIRTYPE):
             extensions = 0
