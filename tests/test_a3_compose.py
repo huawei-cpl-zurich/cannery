@@ -5,10 +5,25 @@ import os
 import subprocess
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_a3_overlay_is_opt_in_and_keeps_existing_workers_on_bridge():
+    try:
+        available = (
+            subprocess.run(
+                ["docker", "compose", "version"], capture_output=True, timeout=10
+            ).returncode
+            == 0
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        available = False
+    if not available:
+        if os.environ.get("CANNERY_COMPOSE_REQUIRED") == "1":
+            pytest.fail("Docker Compose is required for this acceptance job")
+        pytest.skip("Docker Compose unavailable; covered by explicit Compose acceptance")
     environment = os.environ | {
         "COMPOSE_PROJECT_NAME": "cannery-m7b-config-test",
         "CANNERY_OPERATOR_UID": "1000",
