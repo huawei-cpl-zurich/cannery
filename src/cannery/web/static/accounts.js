@@ -78,6 +78,9 @@
       }
     } catch (e) { error(e.message); }
   });
-  document.getElementById('account-logout')?.addEventListener('click', () => request('/api/v1/auth/logout', 'POST').then(() => location.assign('/login')).catch(e => error(e.message)));
+  document.addEventListener('click', event => {
+    if (event.target.id === 'account-logout') request('/api/v1/auth/logout', 'POST').then(() => location.assign('/login')).catch(e => error(e.message));
+  });
+  document.addEventListener('htmx:afterSwap', () => account().catch(e => error(e.message)));
   account().catch(e => error(e.message));
 })();

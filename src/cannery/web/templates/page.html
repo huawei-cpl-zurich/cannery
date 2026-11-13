@@ -14,7 +14,7 @@
       {% for path, item in pages.items() %}
       <a href="/{{ path }}"{% if item[0] == title %} aria-current="page"{% endif %}>{{ item[0] }}</a>
       {% endfor %}
-      {% if request.app.state.auth_enabled %}<a href="/account">Account</a><a href="/login">Sign in</a>{% endif %}
+      {% if request.app.state.auth_enabled %}{% if signed_in %}<a href="/account">Account</a>{% else %}<a href="/login">Sign in</a>{% endif %}{% endif %}
       {% if admin %}<a href="/admin">Administration</a>{% endif %}
     </nav>
   </header>

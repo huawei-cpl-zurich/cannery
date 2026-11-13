@@ -38,7 +38,11 @@ def signed_in(settings: Settings) -> bool:
 
 
 def template_context(settings: Settings) -> dict[str, object]:
-    return {"admin": role(settings) == "admin", "development": settings.dev_identity_enabled}
+    return {
+        "admin": role(settings) == "admin",
+        "development": settings.dev_identity_enabled,
+        "signed_in": signed_in(settings),
+    }
 
 
 def public(request: Request) -> bool:
