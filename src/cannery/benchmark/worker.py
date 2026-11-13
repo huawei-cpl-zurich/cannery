@@ -3,7 +3,6 @@
 import argparse
 import logging
 import threading
-import time
 
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -20,6 +19,7 @@ from cannery.database import make_engine
 from cannery.git_intake.snapshots import SnapshotStore
 from cannery.numerics.baselines import BaselinePending, BaselineUnavailable
 from cannery.settings import Settings
+from cannery.shutdown import stop_on_term
 
 
 def main() -> None:
@@ -57,6 +57,7 @@ def main() -> None:
         )
 
     stopped = threading.Event()
+    restore_signals = stop_on_term(stopped)
 
     def clean() -> None:
         while not stopped.is_set():
@@ -70,7 +71,7 @@ def main() -> None:
     if not args.once:
         cleaner.start()
     try:
-        while True:
+        while not stopped.is_set():
             try:
                 cohort = device_cohort(
                     profile,
@@ -93,14 +94,17 @@ def main() -> None:
                 logging.warning("Performance worker pending; retaining attempts")
             try:
                 for key in due_jobs(engine):
+                    if stopped.is_set():
+                        break
                     process(engine, key, factory)
             except (SQLAlchemyError, OSError, ValueError):
                 logging.warning("Performance coordinator pending; retaining attempts")
             if args.once:
                 cleanup_finished(engine, root, factory)
                 return
-            time.sleep(5)
+            stopped.wait(5)
     finally:
+        restore_signals()
         stopped.set()
         if cleaner.is_alive():
             cleaner.join(timeout=2)

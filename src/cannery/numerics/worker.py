@@ -3,7 +3,6 @@
 import argparse
 import logging
 import threading
-import time
 
 from sqlalchemy.exc import SQLAlchemyError
 
@@ -16,6 +15,7 @@ from cannery.numerics.coordinator import cleanup_finished, discover, process
 from cannery.numerics.executor import NumericalExecutor
 from cannery.numerics.state import NumericalClaim, due_numericals
 from cannery.settings import Settings
+from cannery.shutdown import stop_on_term
 
 
 def main() -> None:
@@ -50,6 +50,7 @@ def main() -> None:
         )
 
     stopped = threading.Event()
+    restore_signals = stop_on_term(stopped)
 
     def clean() -> None:
         while not stopped.is_set():
@@ -63,18 +64,21 @@ def main() -> None:
     if not args.once:
         cleaner.start()
     try:
-        while True:
+        while not stopped.is_set():
             try:
                 discover(engine)
                 for key in due_numericals(engine):
+                    if stopped.is_set():
+                        break
                     process(engine, UUID(key), factory)
             except (SQLAlchemyError, OSError, ValueError):
                 logging.warning("Numerical worker unavailable; retrying")
             if args.once:
                 cleanup_finished(engine, root, factory)
                 return
-            time.sleep(5)
+            stopped.wait(5)
     finally:
+        restore_signals()
         stopped.set()
         if cleaner.is_alive():
             cleaner.join(timeout=2)
