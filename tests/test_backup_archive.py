@@ -1,0 +1,138 @@
+import hashlib
+import io
+import json
+import os
+import tarfile
+from datetime import UTC, datetime
+from uuid import uuid4
+
+import pytest
+
+from cannery.maintenance.archive import BackupManifest, checksum, verify
+
+
+def tar(entries):
+    output = io.BytesIO()
+    with tarfile.open(fileobj=output, mode="w") as archive:
+        for name, kind in entries:
+            info = tarfile.TarInfo(name)
+            info.type = kind
+            info.mode = 0o700
+            info.linkname = "/tmp/outside" if kind in (tarfile.SYMTYPE, tarfile.LNKTYPE) else ""
+            archive.addfile(info, io.BytesIO())
+    return output.getvalue()
+
+
+@pytest.fixture
+def backup(tmp_path):
+    roles = {
+        "database": ("database.dump", b"PGDMPdata"),
+        "snapshots": ("git-snapshots.tar", tar([(".", tarfile.DIRTYPE)])),
+        "artifacts": ("artifact-data.tar", tar([("blob", tarfile.REGTYPE)])),
+    }
+    files = []
+    for role, (name, data) in roles.items():
+        (tmp_path / name).write_bytes(data)
+        files.append(dict(role=role, size=len(data), sha256=hashlib.sha256(data).hexdigest()))
+    manifest = BackupManifest.model_validate_json(
+        json.dumps(
+            {
+                "id": str(uuid4()),
+                "created_at": datetime.now(UTC).isoformat(),
+                "project": "source",
+                "postgres_version": 170000,
+                "migration": "0013",
+                "images": {"api": "sha256:" + "a" * 64},
+                "files": files,
+            }
+        )
+    )
+    (tmp_path / "manifest.json").write_bytes(manifest.encoded())
+    return tmp_path, manifest
+
+
+def repin(directory, manifest, role, data):
+    file = next(f for f in manifest.files if f.role == role)
+    (directory / file.filename).write_bytes(data)
+    document = manifest.model_dump(mode="json")
+    for item in document["files"]:
+        if item["role"] == role:
+            item.update(size=len(data), sha256=hashlib.sha256(data).hexdigest())
+    (directory / "manifest.json").write_bytes(
+        BackupManifest.model_validate_json(json.dumps(document)).encoded()
+    )
+
+
+def test_valid_backup_and_streaming_digest(backup):
+    directory, manifest = backup
+    assert verify(directory) == manifest
+    data = b"x" * (2 * 1024 * 1024 + 1)
+    (directory / "large").write_bytes(data)
+    assert checksum(directory / "large") == (len(data), hashlib.sha256(data).hexdigest())
+
+
+@pytest.mark.parametrize("fault", ["corrupt", "truncated", "missing", "extra", "symlink", "fifo"])
+def test_incomplete_or_modified_backup_is_rejected(backup, fault, tmp_path):
+    directory, _ = backup
+    path = directory / "database.dump"
+    if fault == "extra":
+        (directory / "unexpected").write_bytes(b"x")
+    elif fault == "corrupt":
+        path.write_bytes(b"bad")
+    elif fault == "truncated":
+        path.write_bytes(path.read_bytes()[:-1])
+    else:
+        path.unlink()
+        if fault == "symlink":
+            path.symlink_to(directory / "manifest.json")
+        elif fault == "fifo":
+            os.mkfifo(path)
+    with pytest.raises((ValueError, OSError)):
+        verify(directory)
+
+
+@pytest.mark.parametrize(
+    "name,kind",
+    [
+        ("../escape", tarfile.REGTYPE),
+        ("/absolute", tarfile.REGTYPE),
+        ("nested/../../escape", tarfile.REGTYPE),
+        ("back\\slash", tarfile.REGTYPE),
+        ("link", tarfile.SYMTYPE),
+        ("hardlink", tarfile.LNKTYPE),
+        ("fifo", tarfile.FIFOTYPE),
+        ("device", tarfile.CHRTYPE),
+    ],
+)
+def test_unsafe_archive_is_rejected_even_with_matching_checksum(backup, name, kind):
+    directory, manifest = backup
+    repin(directory, manifest, "snapshots", tar([(name, kind)]))
+    with pytest.raises(ValueError, match="Unsafe"):
+        verify(directory)
+
+
+def test_duplicate_members_and_wrong_database_format_are_rejected(backup):
+    directory, manifest = backup
+    repin(directory, manifest, "artifacts", tar([("blob", tarfile.REGTYPE)] * 2))
+    with pytest.raises(ValueError):
+        verify(directory)
+    repin(directory, manifest, "artifacts", tar([("blob", tarfile.REGTYPE)]))
+    manifest = verify(directory)
+    repin(directory, manifest, "database", b"plain SQL is unsupported")
+    with pytest.raises(ValueError, match="custom-format"):
+        verify(directory)
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"project": "../bad"},
+        {"created_at": "2026-01-01T00:00:00"},
+        {"images": {"api": "latest"}},
+        {"postgres_version": 160000},
+    ],
+)
+def test_manifest_rejects_ambiguous_identity_or_unsupported_database(backup, change):
+    _, manifest = backup
+    with pytest.raises(ValueError):
+        BackupManifest.model_validate_json(json.dumps(manifest.model_dump(mode="json") | change))
