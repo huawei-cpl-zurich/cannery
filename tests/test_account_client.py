@@ -88,3 +88,26 @@ def test_private_directory_is_required():
         client.headers(url)
     with pytest.raises(ValueError, match="directory"):
         client.save(url, "b" * 43)
+
+
+def test_service_prefix_is_preserved_for_public_and_authenticated_requests():
+    import httpx
+
+    from cannery.releases.client import ReleaseClient
+
+    url = "https://example.com/cannery"
+    observed = []
+
+    def response(request):
+        observed.append(request)
+        return httpx.Response(200, json={"ok": True})
+
+    service = ReleaseClient(url, transport=httpx.MockTransport(response))
+    assert service.json("/api/v1/registrations") == {"ok": True}
+    assert observed[-1].url.path == "/cannery/api/v1/registrations"
+    assert "authorization" not in observed[-1].headers
+    assert client.secure(url + "/") == url
+    client.save(url, "a" * 43)
+    assert service.json("/api/v1/registrations") == {"ok": True}
+    assert observed[-1].headers["authorization"] == "Bearer " + "a" * 43
+    assert observed[-1].url.path == "/cannery/api/v1/registrations"
