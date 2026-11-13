@@ -128,7 +128,7 @@ def test_explicit_a5_abi_and_trusted_build_plan():
     manifest["implementation"]["device"] = "a3"
     files["candidate/submission.yaml"] = yaml.safe_dump(manifest).encode()
     a3 = validate_submission(files, "candidate")
-    assert "--npu-arch=dav-c220" in AscendCAdapter().build(a3.manifest).command
+    assert "--npu-arch=dav-2201" in AscendCAdapter().build(a3.manifest).command
 
 
 def test_generated_wrapper_is_separate_from_author_launch_filename():

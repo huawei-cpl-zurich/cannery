@@ -15,4 +15,4 @@ def matches_soc(device: Device, soc: str) -> bool:
 
 
 def compiler_arch(device: Device) -> str:
-    return {"a3": "dav-c220", "a5": "dav-3510"}[device]
+    return {"a3": "dav-2201", "a5": "dav-3510"}[device]

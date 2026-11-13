@@ -49,7 +49,7 @@ def test_native_adapter_and_package_use_matching_device(tmp_path):
     declaration["implementation"]["device"] = "a3"
     declaration["implementation"]["build"]["abi"] = "unary-f32-v1"
     manifest = SubmissionManifest.model_validate(declaration)
-    assert "--npu-arch=dav-c220" in AscendCAdapter().build(manifest).command
+    assert "--npu-arch=dav-2201" in AscendCAdapter().build(manifest).command
     raw = binary_package(elf(), "a" * 64, a3_profile(tmp_path), manifest)
     with tarfile.open(fileobj=io.BytesIO(raw)) as archive:
         metadata = json.load(archive.extractfile("metadata.json"))
