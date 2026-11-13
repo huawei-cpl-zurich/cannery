@@ -176,3 +176,13 @@ def test_tar_end_marker_and_padding_are_verified(backup):
     repin(directory, manifest, "snapshots", data + b"hidden")
     with pytest.raises(ValueError, match="after tar end"):
         verify(directory)
+
+
+@pytest.mark.parametrize("format", [tarfile.PAX_FORMAT, tarfile.GNU_FORMAT])
+def test_bounded_long_name_extensions_remain_supported(backup, format):
+    directory, manifest = backup
+    output = io.BytesIO()
+    with tarfile.open(fileobj=output, mode="w", format=format) as archive:
+        archive.addfile(tarfile.TarInfo("nested/" + "a" * 180), io.BytesIO())
+    repin(directory, manifest, "snapshots", output.getvalue())
+    assert verify(directory).project == "source"
