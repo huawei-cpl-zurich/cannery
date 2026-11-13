@@ -24,11 +24,14 @@ def secret(path: Path | None) -> str:
     import os
 
     descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    with os.fdopen(descriptor, "r", encoding="utf-8") as source:
-        info = os.fstat(source.fileno())
+    try:
+        info = os.fstat(descriptor)
         if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_uid != os.getuid():
             raise ValueError("Password file must be a user-owned private regular file")
-        value = source.read(1026)
+        with os.fdopen(descriptor, "r", encoding="utf-8", closefd=False) as source:
+            value = source.read(1026)
+    finally:
+        os.close(descriptor)
     return value.removesuffix("\n")
 
 
