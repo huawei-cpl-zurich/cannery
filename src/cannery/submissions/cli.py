@@ -152,7 +152,10 @@ def install_cli(app: typer.Typer) -> None:
         """List recent owned submission IDs, status and ETA."""
         try:
             response = httpx.get(
-                url.rstrip("/") + "/api/v1/submissions/mine", timeout=5, headers=auth_headers(url)
+                url.rstrip("/") + "/api/v1/submissions/mine",
+                timeout=5,
+                headers=auth_headers(url),
+                trust_env=False,
             )
             response.raise_for_status()
             for job in response.json():

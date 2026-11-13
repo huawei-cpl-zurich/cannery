@@ -117,7 +117,10 @@ def registrations(url: str = "http://127.0.0.1:8000") -> None:
 
     try:
         response = httpx.get(
-            url.rstrip("/") + "/api/v1/registrations", timeout=5, headers=auth_headers(url)
+            url.rstrip("/") + "/api/v1/registrations",
+            timeout=5,
+            headers=auth_headers(url),
+            trust_env=False,
         )
         response.raise_for_status()
         for job in response.json():

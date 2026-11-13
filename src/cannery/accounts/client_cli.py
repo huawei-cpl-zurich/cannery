@@ -62,7 +62,10 @@ def install(app: typer.Typer) -> None:
             headers = client.headers(url)
             if headers:
                 reply = httpx.post(
-                    client.secure(url) + "/api/v1/auth/logout", headers=headers, timeout=5
+                    client.secure(url) + "/api/v1/auth/logout",
+                    headers=headers,
+                    timeout=5,
+                    trust_env=False,
                 )
                 if reply.status_code != 401:
                     reply.raise_for_status()
