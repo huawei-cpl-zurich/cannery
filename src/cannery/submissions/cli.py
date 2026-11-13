@@ -9,6 +9,7 @@ import httpx
 import typer
 from pydantic import TypeAdapter
 
+from cannery.accounts.client import headers as auth_headers
 from cannery.git_intake import GitSource
 from cannery.submissions.manifest import Device, KernelPath, Language
 
@@ -23,7 +24,7 @@ def send(
     wait_build: bool = False,
 ) -> None:
     try:
-        with httpx.Client(timeout=5) as client:
+        with httpx.Client(timeout=5, headers=auth_headers(url)) as client:
             response = client.post(url.rstrip("/") + endpoint, json=body)
             response.raise_for_status()
             key = UUID(response.json()["id"])
@@ -150,7 +151,9 @@ def install_cli(app: typer.Typer) -> None:
     def submissions(url: str = "http://127.0.0.1:8000") -> None:
         """List recent owned submission IDs, status and ETA."""
         try:
-            response = httpx.get(url.rstrip("/") + "/api/v1/submissions/mine", timeout=5)
+            response = httpx.get(
+                url.rstrip("/") + "/api/v1/submissions/mine", timeout=5, headers=auth_headers(url)
+            )
             response.raise_for_status()
             for job in response.json():
                 typer.echo(f"{job['id']} {job['status']} ETA unknown")
@@ -161,7 +164,11 @@ def install_cli(app: typer.Typer) -> None:
     def submission(identifier: UUID, url: str = "http://127.0.0.1:8000") -> None:
         """Inspect owned source, stage status, numerical and private performance reports."""
         try:
-            response = httpx.get(url.rstrip("/") + f"/api/v1/submissions/{identifier}", timeout=5)
+            response = httpx.get(
+                url.rstrip("/") + f"/api/v1/submissions/{identifier}",
+                timeout=5,
+                headers=auth_headers(url),
+            )
             response.raise_for_status()
             typer.echo(json.dumps(response.json(), indent=2))
         except (httpx.HTTPError, ValueError, KeyError, TypeError):

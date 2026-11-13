@@ -15,6 +15,7 @@ from uuid import UUID
 
 import httpx
 
+from cannery.accounts.client import headers as auth_headers
 from cannery.releases.assets import verify_package
 from cannery.releases.contract import SHA, ReleaseManifest, Tolerance, read_manifest
 from cannery.releases.resolution import ResolveRequest
@@ -86,7 +87,7 @@ class ReleaseClient:
                     self.url + path,
                     json=body,
                     params=params,
-                    headers={"Accept-Encoding": "identity"},
+                    headers={"Accept-Encoding": "identity", **auth_headers(self.url)},
                 ) as response:
                     if response.headers.get("content-encoding", "identity").lower() != "identity":
                         raise ValueError("Encoded release responses are unsupported")
