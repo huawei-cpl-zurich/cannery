@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from uuid import uuid4
 
@@ -162,11 +163,25 @@ assert file.read_text()=='{"handle":"remote:fixture:job:original"}'
         # A restored SQL queue needs no Redis backup. Two independent deliveries have one effect.
         replay = (
             "from cannery.database import make_engine; from cannery.settings import Settings; "
-            "from cannery.jobs import pending_probes,complete_probe; "
-            f"engine=make_engine(Settings()); assert '{probe}' in pending_probes(engine); "
-            f"complete_probe(engine,'{probe}'); complete_probe(engine,'{probe}')"
+            "from cannery.jobs import complete_probe; "
+            f"engine=make_engine(Settings()); complete_probe(engine,'{probe}')"
         )
-        compose(target_name, "run", "--rm", "--no-deps", "api", "python", "-c", replay)
+        compose(target_name, "pause", "postgres")
+        try:
+            with pytest.raises(subprocess.CalledProcessError):
+                compose(target_name, "run", "--rm", "--no-deps", "api", "python", "-c", replay)
+        finally:
+            compose(target_name, "unpause", "postgres")
+        assert (
+            target.sql(f"SELECT status||':'||effects FROM probe_jobs WHERE id='{probe}'")
+            == "queued:0"
+        )
+
+        def delivery(_):
+            return compose(target_name, "run", "--rm", "--no-deps", "api", "python", "-c", replay)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            list(pool.map(delivery, range(2)))
         assert (
             target.sql(f"SELECT status||':'||effects FROM probe_jobs WHERE id='{probe}'")
             == "complete:1"
