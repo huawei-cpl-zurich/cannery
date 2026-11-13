@@ -6,7 +6,8 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import Engine
 
-from cannery.accounts.context import identity, role, template_context
+from cannery.accounts.admin import install_admin
+from cannery.accounts.context import identity, template_context
 from cannery.settings import Settings
 from cannery.web.accounts import install_account_web
 from cannery.web.registration import install_registration
@@ -45,14 +46,7 @@ def install_web(app: FastAPI, settings: Settings, engine: Engine) -> None:
             },
         )
 
-    @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
-    async def admin(request: Request) -> HTMLResponse:
-        identity(settings)
-        if role(settings) != "admin":
-            raise HTTPException(403, "Administrator role required")
-        return render(
-            request, "Administration", "Worker and storage management is not available yet."
-        )
+    install_admin(app, settings, engine, templates, {"pages": PAGES})
 
     install_account_web(app, settings, templates, {"pages": PAGES})
 
