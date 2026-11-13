@@ -6,6 +6,9 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.exception_handlers import request_validation_exception_handler
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import Field
 from redis import Redis
 from redis.exceptions import RedisError
@@ -102,6 +105,12 @@ def throttle(request: Request, username: str, settings: Settings) -> None:
 def install_auth(app: FastAPI, settings: Settings, engine: Engine) -> None:
     if not settings.auth_enabled:
         return
+
+    @app.exception_handler(RequestValidationError)
+    async def invalid_auth_request(request: Request, error: RequestValidationError) -> JSONResponse:
+        if request.url.path.startswith("/api/v1/auth/"):
+            return JSONResponse({"detail": "Invalid authentication request"}, status_code=422)
+        return await request_validation_exception_handler(request, error)
 
     @app.post("/api/v1/auth/login")
     def login(body: Login, request: Request, response: Response) -> dict[str, str]:

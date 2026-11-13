@@ -214,3 +214,15 @@ def test_malformed_csrf_returns_denied():
     with pytest.raises(HTTPException) as error:
         credential(request)
     assert error.value.status_code == 403
+
+
+def test_auth_validation_never_echoes_password_inputs(setup):
+    engine, client = setup
+    secret = "private-fixture-password"
+    reply = client.post(
+        "/api/v1/auth/password", json={"current_password": secret, "new_password": "short"}
+    )
+    assert reply.status_code == 422
+    assert secret not in reply.text and "short" not in reply.text
+    reply = client.post("/api/v1/auth/login", json={"username": "alice", "password": secret * 100})
+    assert reply.status_code == 422 and secret not in reply.text
