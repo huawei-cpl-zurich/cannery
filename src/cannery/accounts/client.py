@@ -21,7 +21,6 @@ def origin(url: str) -> str:
                 parsed.password,
                 parsed.query,
                 parsed.fragment,
-                parsed.path.strip("/"),
             )
         )
     ):
