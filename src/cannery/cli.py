@@ -3,11 +3,14 @@ from typing import Annotated
 import typer
 
 from cannery.accounts.cli import app as accounts
+from cannery.accounts.client import headers as auth_headers
+from cannery.accounts.client_cli import install as install_account_cli
 from cannery.maintenance.cli import app as maintenance
 from cannery.releases.cli import install_release_cli
 from cannery.submissions.cli import install_cli
 
 app = typer.Typer(no_args_is_help=True)
+install_account_cli(app)
 app.add_typer(accounts, name="accounts")
 app.add_typer(maintenance, name="maintenance")
 
@@ -64,7 +67,7 @@ def register(
     try:
         source = GitSource(url=repo, commit=commit, path=path, dependencies=tuple(dependency or ()))
         body = {"source": source.model_dump(mode="json"), "namespace": namespace, "name": name}
-        with httpx.Client(timeout=5) as client:
+        with httpx.Client(timeout=5, headers=auth_headers(url)) as client:
             response = client.post(url.rstrip("/") + "/api/v1/kernels", json=body)
             response.raise_for_status()
             key = response.json()["id"]
@@ -113,7 +116,9 @@ def registrations(url: str = "http://127.0.0.1:8000") -> None:
     import httpx
 
     try:
-        response = httpx.get(url.rstrip("/") + "/api/v1/registrations", timeout=5)
+        response = httpx.get(
+            url.rstrip("/") + "/api/v1/registrations", timeout=5, headers=auth_headers(url)
+        )
         response.raise_for_status()
         for job in response.json():
             typer.echo(f"{job['id']} {job['status']}")
