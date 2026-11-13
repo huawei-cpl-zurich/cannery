@@ -12,7 +12,9 @@ from uuid import uuid4
 import pytest
 import yaml
 
+from cannery.maintenance.artifacts import audit
 from cannery.maintenance.capture import Docker, capture, inventory
+from cannery.maintenance.collect import collect
 from cannery.maintenance.restore import restore
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -124,6 +126,17 @@ file.chmod(0o600);os.chown(file,12345,12345);os.chown(root,12345,12345)
 """,
                 writable=True,
             )
+        orphan = hashlib.sha256(b"unused output").hexdigest()
+        source.docker.volume(
+            image,
+            source.volumes["artifacts"],
+            "import os\nfrom pathlib import Path\n"
+            f"Path('/data/{orphan}').write_bytes(b'unused output')\n"
+            f"os.utime('/data/{orphan}',ns=(0,0))\n"
+            "Path('/data/tmpabcdefgh').write_bytes(b'interrupted upload')\n"
+            "os.utime('/data/tmpabcdefgh',ns=(0,0))",
+            writable=True,
+        )
         saved = capture(docker, source_name, tmp_path / "backup")
         assert len(saved.files) == 5
         restored = restore(docker, tmp_path / "backup", target_name)
@@ -188,6 +201,15 @@ assert file.read_text()=='{"handle":"remote:fixture:job:original"}'
         )
         with pytest.raises(ValueError, match="must be empty"):
             restore(docker, tmp_path / "backup", target_name)
+        target_backup = tmp_path / "target-backup"
+        capture(docker, target_name, target_backup)
+        before = audit(docker, target_name, 24)
+        assert before["errors"] == []
+        assert {row["name"] for row in before["candidates"]} == {orphan, "tmpabcdefgh"}
+        removed = collect(docker, target_name, target_backup, 24)
+        assert set(removed["deleted"]) == {orphan, "tmpabcdefgh"}
+        after = audit(docker, target_name, 24)
+        assert after["objects"] == 1 and after["required"] == 1 and after["errors"] == []
         print(
             json.dumps(
                 {
