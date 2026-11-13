@@ -9,6 +9,7 @@ from sqlalchemy import Engine, select
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 
+from cannery.accounts.context import identity, role
 from cannery.git_intake import GitSource
 from cannery.registry.dispatch import publish_registration
 from cannery.registry.freeze import kernel_key
@@ -25,18 +26,12 @@ class RegistrationRequest(BaseModel):
     name: Name | None = None
 
 
-def identity(settings: Settings) -> str:
-    if not settings.dev_identity_enabled:
-        raise HTTPException(401, "Authentication required")
-    return settings.dev_namespace
-
-
 def submit(settings: Settings, engine: Engine, request: RegistrationRequest) -> UUID:
     namespace = identity(settings)
     if request.namespace is not None and request.namespace != namespace:
         raise HTTPException(403, "Namespace access denied")
     key = create_registration(
-        engine, request.source, namespace, request.name, settings.dev_role == "admin"
+        engine, request.source, namespace, request.name, role(settings) == "admin"
     )
     try:
         publish_registration(settings.redis_url.get_secret_value(), str(key))

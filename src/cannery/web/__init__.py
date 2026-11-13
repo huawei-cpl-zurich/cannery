@@ -6,6 +6,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from sqlalchemy import Engine
 
+from cannery.accounts.context import identity, role, template_context
 from cannery.settings import Settings
 from cannery.web.registration import install_registration
 from cannery.web.releases import install_release_web
@@ -39,16 +40,14 @@ def install_web(app: FastAPI, settings: Settings, engine: Engine) -> None:
                 "title": title,
                 "message": message,
                 "pages": PAGES,
-                "admin": settings.dev_identity_enabled and settings.dev_role == "admin",
-                "development": settings.dev_identity_enabled,
+                **template_context(settings),
             },
         )
 
     @app.get("/admin", response_class=HTMLResponse, include_in_schema=False)
     async def admin(request: Request) -> HTMLResponse:
-        if not settings.dev_identity_enabled:
-            raise HTTPException(401, "Authentication required")
-        if settings.dev_role != "admin":
+        identity(settings)
+        if role(settings) != "admin":
             raise HTTPException(403, "Administrator role required")
         return render(
             request, "Administration", "Worker and storage management is not available yet."
@@ -61,8 +60,7 @@ def install_web(app: FastAPI, settings: Settings, engine: Engine) -> None:
         templates,
         {
             "pages": PAGES,
-            "admin": settings.dev_identity_enabled and settings.dev_role == "admin",
-            "development": settings.dev_identity_enabled,
+            "settings": settings,
         },
     )
 
@@ -73,8 +71,7 @@ def install_web(app: FastAPI, settings: Settings, engine: Engine) -> None:
         templates,
         {
             "pages": PAGES,
-            "admin": settings.dev_identity_enabled and settings.dev_role == "admin",
-            "development": settings.dev_identity_enabled,
+            "settings": settings,
         },
     )
 
@@ -85,8 +82,7 @@ def install_web(app: FastAPI, settings: Settings, engine: Engine) -> None:
         templates,
         {
             "pages": PAGES,
-            "admin": settings.dev_identity_enabled and settings.dev_role == "admin",
-            "development": settings.dev_identity_enabled,
+            "settings": settings,
         },
     )
 
@@ -94,6 +90,6 @@ def install_web(app: FastAPI, settings: Settings, engine: Engine) -> None:
     async def page_view(request: Request, page: str) -> HTMLResponse:
         if page not in PAGES:
             raise HTTPException(404, "Page not found")
-        if page == "my-submissions" and not settings.dev_identity_enabled:
-            raise HTTPException(401, "Authentication required")
+        if page == "my-submissions":
+            identity(settings)
         return render(request, *PAGES[page])

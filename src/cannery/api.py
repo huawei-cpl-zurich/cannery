@@ -8,6 +8,7 @@ from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
 from cannery.accounts.api import install_auth
+from cannery.accounts.context import install_context
 from cannery.artifacts.factory import make_store
 from cannery.database import make_engine
 from cannery.health import postgres_ready
@@ -63,6 +64,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.state.artifacts = make_store(config)
     install_auth(app, config, engine)
+    install_context(app, config, engine)
     install_registry(app, config, engine)
     install_submissions(app, config, engine)
     install_publications(app, config, engine)

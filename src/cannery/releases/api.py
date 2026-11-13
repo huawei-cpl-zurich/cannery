@@ -7,8 +7,8 @@ from fastapi import Depends, FastAPI, HTTPException
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
+from cannery.accounts.context import identity, role
 from cannery.database import aware
-from cannery.registry.api import identity
 from cannery.registry.manifest import StrictModel
 from cannery.releases.eligibility import PublicationUnavailable, publication_manifest
 from cannery.releases.models import Publication, PublicationJob
@@ -24,7 +24,7 @@ class Action(StrictModel):
 def owned(settings: Settings, db: Session, identifier: UUID) -> Submission:
     namespace = identity(settings)
     sub = db.get(Submission, identifier)
-    if sub is None or sub.namespace != namespace and settings.dev_role != "admin":
+    if sub is None or sub.namespace != namespace and role(settings) != "admin":
         raise HTTPException(404, "Submission not found")
     reuse = db.get(SubmissionReuse, identifier)
     if reuse is not None:
@@ -74,7 +74,7 @@ def publish(settings: Settings, engine: Engine, identifier: UUID) -> dict[str, s
     except PublicationUnavailable as error:
         raise HTTPException(409, str(error)) from None
     job = request_publication(
-        engine, identifier, {"namespace": identity(settings), "role": settings.dev_role}
+        engine, identifier, {"namespace": identity(settings), "role": role(settings)}
     )
     return {
         "id": str(job),
@@ -86,9 +86,7 @@ def publish(settings: Settings, engine: Engine, identifier: UUID) -> dict[str, s
 def withdraw_publication(settings: Settings, engine: Engine, identifier: UUID) -> dict[str, Any]:
     with Session(engine) as db:
         identifier = owned(settings, db, identifier).id
-    if not withdraw(
-        engine, identifier, {"namespace": identity(settings), "role": settings.dev_role}
-    ):
+    if not withdraw(engine, identifier, {"namespace": identity(settings), "role": role(settings)}):
         raise HTTPException(409, "No publication to withdraw")
     with Session(engine) as db:
         return publication_info(db, identifier)

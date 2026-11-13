@@ -10,12 +10,12 @@ from redis.exceptions import RedisError
 from sqlalchemy import Engine, Select, func, select
 from sqlalchemy.orm import Session
 
+from cannery.accounts.context import identity
 from cannery.artifacts import digest
 from cannery.benchmark.state import PerformanceJob, PerformanceResult
 from cannery.builds.state import BuildResult, BuildState
 from cannery.git_intake import GitSource
 from cannery.numerics.state import NumericalResult, NumericalState
-from cannery.registry.api import identity
 from cannery.registry.dispatch import publish_submission
 from cannery.registry.freeze import kernel_key
 from cannery.registry.manifest import Name
