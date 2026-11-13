@@ -123,6 +123,8 @@ def preflight(stream: BinaryIO) -> int:
             stream.seek(0)
             return size
         item = tarfile.TarInfo.frombuf(header, "utf-8", "surrogateescape")
+        if item.isdir() and item.size != 0:
+            raise ValueError("Directory payloads are unsupported")
         padded = (item.size + 511) // 512 * 512
         if item.size < 0 or padded > size - stream.tell():
             raise ValueError("Truncated tar member")
