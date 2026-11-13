@@ -171,7 +171,7 @@ def members(stream: BinaryIO) -> Iterator[tarfile.TarInfo]:
                 raise ValueError("Archive path inventory exceeds budget")
             seen.add(name)
             # Python 3.12 otherwise retains every parsed TarInfo, including PAX metadata.
-            archive.members.clear()
+            archive.members.clear()  # type: ignore[attr-defined]
             yield item
 
 
