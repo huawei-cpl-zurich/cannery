@@ -106,6 +106,10 @@ Implemented for supported A5 recipes; see [publication and offline consumption](
 
 ## M7 — A3 and operations
 
+M7a offline backup/restore, conservative artifact collection and graceful coordinator
+shutdown are implemented; see [maintenance](maintenance.md). A3 and remaining
+role/credential/UI work are next.
+
 - Add A3 worker and matching Ascend C/CATLASS binary variants; completely separate A3 rankings/history.
 - Apply device leases, idempotent dispatch, heartbeat recovery, restricted Git intake, sandbox execution, credential scoping and artifact cleanup.
 - Back up **PostgreSQL and internal Git snapshot repositories**, test restore, reconcile orphaned private staging artifacts.

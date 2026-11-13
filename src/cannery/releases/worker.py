@@ -19,6 +19,7 @@ from cannery.releases.contract import ReleaseManifest, read_manifest
 from cannery.releases.eligibility import PublicationUnavailable, publication_manifest
 from cannery.releases.state import Claim, claim_job, complete, due_jobs, heartbeat, retry_job
 from cannery.settings import Settings
+from cannery.shutdown import stop_on_term
 
 
 class OwnershipLost(Exception):
@@ -106,10 +107,13 @@ def main() -> None:
     engine = make_engine(settings)
     store = make_store(settings)
     stopped = threading.Event()
+    restore_signals = stop_on_term(stopped)
     try:
-        while True:
+        while not stopped.is_set():
             try:
                 for identifier in due_jobs(engine):
+                    if stopped.is_set():
+                        break
                     process(engine, identifier, store)
             except (SQLAlchemyError, ArtifactError, OSError):
                 logging.warning("Publication worker pending")
@@ -117,6 +121,7 @@ def main() -> None:
                 return
             stopped.wait(2)
     finally:
+        restore_signals()
         engine.dispose()
 
 

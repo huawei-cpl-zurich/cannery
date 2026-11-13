@@ -4,7 +4,6 @@ import argparse
 import json
 import logging
 import threading
-import time
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -42,6 +41,7 @@ from cannery.builds.state import (
 from cannery.database import make_engine
 from cannery.git_intake.snapshots import SnapshotStore
 from cannery.settings import Settings
+from cannery.shutdown import stop_on_term
 from cannery.submissions.models import Candidate
 
 
@@ -286,6 +286,7 @@ def main() -> None:
         )
 
     stopped = threading.Event()
+    restore_signals = stop_on_term(stopped)
 
     def cleanup_loop() -> None:
         while not stopped.is_set():
@@ -299,18 +300,21 @@ def main() -> None:
     if not args.once:
         cleaner.start()
     try:
-        while True:
+        while not stopped.is_set():
             try:
                 discover(engine)
                 for key in due_builds(engine):
+                    if stopped.is_set():
+                        break
                     process(engine, UUID(key), factory)
             except (SQLAlchemyError, OSError, ValueError):
                 logging.warning("Binary admission coordinator unavailable; retrying")
             if args.once:
                 cleanup_finished(engine, settings.build_control_root, factory)
                 return
-            time.sleep(5)
+            stopped.wait(5)
     finally:
+        restore_signals()
         stopped.set()
         if cleaner.is_alive():
             cleaner.join(timeout=2)

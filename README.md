@@ -12,6 +12,8 @@ Authors register a frozen, versioned, Git-backed PyTorch specification and subse
 - [Implementation notes](docs/implementation.md) — Python libraries, API/data contracts, scheduling, benchmark engine and security.
 - [Roadmap](docs/roadmap.md) — incremental PoC milestones, acceptance criteria and cross-repository runtime work.
 
+- [Offline maintenance](docs/maintenance.md) — backup/restore drills, artifact auditing and backed-up collection.
+
 ## Related repository
 
 - [cannery-kernels](https://github.com/huawei-cpl-zurich/cannery-kernels) — Ascend extensions to Hugging Face's kernel loader/runtime.
@@ -38,3 +40,6 @@ migration. Opt-in [publication and offline consumption](docs/publication.md) add
 explicit release visibility, Global Best, verified CLI downloads and the existing
 offline SDK. Existing submissions stay private until explicitly published. CPU diagnostics and binary
 loadability alone do not prove correctness.
+
+M7a adds [offline recovery and maintenance](docs/maintenance.md), including durable
+controller journals; A3 and broader operational controls remain planned.
