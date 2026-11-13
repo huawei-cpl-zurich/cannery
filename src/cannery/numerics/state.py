@@ -20,6 +20,8 @@ from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Mapped, Mapper, Session, mapped_column
 
 from cannery.database import Base, aware
+from cannery.devices import Device
+from cannery.submissions.models import Candidate
 
 
 class NumericalResult(Base):
@@ -89,11 +91,17 @@ def _failure(session: Session, row: NumericalState, code: str) -> None:
     row.status, row.error, row.lease, row.lease_until = "failed", code, None, None
 
 
-def claim_numerical(engine: Engine, key: UUID) -> NumericalClaim | None:
+def claim_numerical(engine: Engine, key: UUID, *, device: Device = "a5") -> NumericalClaim | None:
     now = datetime.now(UTC)
     with Session(engine) as session, session.begin():
         row = session.scalar(
-            select(NumericalState).where(NumericalState.id == key).with_for_update(skip_locked=True)
+            select(NumericalState)
+            .join(Candidate, Candidate.id == NumericalState.id)
+            .where(
+                NumericalState.id == key,
+                Candidate.manifest["implementation"]["device"].as_string() == device,
+            )
+            .with_for_update(of=NumericalState, skip_locked=True)
         )
         if row is None or row.status not in ("queued", "validating"):
             return None
@@ -203,14 +211,16 @@ def finish_numerical(
         return True
 
 
-def due_numericals(engine: Engine) -> list[str]:
+def due_numericals(engine: Engine, *, device: Device = "a5") -> list[str]:
     now = datetime.now(UTC)
     with Session(engine) as session:
         return [
             str(key)
             for key in session.scalars(
                 select(NumericalState.id)
+                .join(Candidate, Candidate.id == NumericalState.id)
                 .where(
+                    Candidate.manifest["implementation"]["device"].as_string() == device,
                     NumericalState.status.in_(("queued", "validating")),
                     or_(
                         NumericalState.deadline <= now,

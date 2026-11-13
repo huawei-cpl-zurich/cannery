@@ -39,17 +39,19 @@ from cannery.builds.state import (
     queue_build,
 )
 from cannery.database import make_engine
+from cannery.devices import Device
 from cannery.git_intake.snapshots import SnapshotStore
 from cannery.settings import Settings
 from cannery.shutdown import stop_on_term
 from cannery.submissions.models import Candidate, SubmissionReuse
 
 
-def discover(engine: Engine) -> None:
+def discover(engine: Engine, *, device: Device = "a5") -> None:
     with Session(engine) as session, session.begin():
         candidates = session.scalars(
             select(Candidate)
             .where(
+                Candidate.manifest["implementation"]["device"].as_string() == device,
                 Candidate.manifest["implementation"]["build"]["abi"]
                 .as_string()
                 .in_(("unary-f32-v1", "catlass-unary-f32-v1")),
@@ -143,8 +145,14 @@ def evidence(executor: BuildExecutor) -> dict[str, Any]:
     return details
 
 
-def process(engine: Engine, key: UUID, factory: Callable[[BuildClaim], BuildExecutor]) -> None:
-    claim = claim_build(engine, key)
+def process(
+    engine: Engine,
+    key: UUID,
+    factory: Callable[[BuildClaim], BuildExecutor],
+    *,
+    device: Device = "a5",
+) -> None:
+    claim = claim_build(engine, key, device=device)
     if claim is None:
         return
     with LeaseKeeper(engine, claim) as keeper:
@@ -303,11 +311,11 @@ def main() -> None:
     try:
         while not stopped.is_set():
             try:
-                discover(engine)
-                for key in due_builds(engine):
+                discover(engine, device=profile.device)
+                for key in due_builds(engine, device=profile.device):
                     if stopped.is_set():
                         break
-                    process(engine, UUID(key), factory)
+                    process(engine, UUID(key), factory, device=profile.device)
             except (SQLAlchemyError, OSError, ValueError):
                 logging.warning("Binary admission coordinator unavailable; retrying")
             if args.once:

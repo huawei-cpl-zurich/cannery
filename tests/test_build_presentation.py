@@ -23,7 +23,7 @@ def test_owned_build_progress_artifact_and_terminal_web_polling(client):
                 id=key,
                 binding_id=key,
                 binding={},
-                manifest={},
+                manifest={"implementation": {"device": "a5"}},
                 snapshot={},
                 content_sha256="a" * 64,
                 file_sha256={},

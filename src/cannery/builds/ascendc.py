@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from typing import Literal
 
+from cannery.devices import compiler_arch
 from cannery.submissions.manifest import SubmissionManifest
 
 
@@ -20,12 +21,8 @@ class BuildPlan:
 class AscendCAdapter:
     def preflight(self, manifest: SubmissionManifest) -> None:
         implementation = manifest.implementation
-        if (implementation.device, implementation.language, implementation.build.abi) != (
-            "a5",
-            "ascendc",
-            "unary-f32-v1",
-        ):
-            raise BuildError("Unsupported build contract; requires A5 Ascend C unary-f32-v1")
+        if (implementation.language, implementation.build.abi) != ("ascendc", "unary-f32-v1"):
+            raise BuildError("Unsupported build contract; requires Ascend C unary-f32-v1")
         entry, _ = implementation.entrypoint.split(":")
         # Initial ABI supports one translation unit and declared headers only.
         if any(
@@ -65,7 +62,7 @@ extern "C" void cannery_launch(void* stream, void* input, void* output, uint64_t
                 "launch.asc",
                 "-I",
                 "source",
-                "--npu-arch=dav-3510",
+                "--npu-arch=" + compiler_arch(manifest.implementation.device),
                 optimization,
                 "-o",
                 "kernel.so",

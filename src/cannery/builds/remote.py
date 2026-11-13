@@ -132,7 +132,7 @@ class CplRemote:
         script: bytes,
         *,
         workspace: str,
-        runtime: str,
+        runtime: str | None,
         npu: int | None = None,
     ) -> str:
         """Submit once, then observe the retained handle across coordinator restarts."""
@@ -167,13 +167,13 @@ class CplRemote:
                 self.target,
                 "--cwd",
                 workspace,
-                "--runtime",
-                runtime,
                 "--file",
                 str(payload),
                 "--receipt-file",
                 str(receipt),
             ]
+            if runtime is not None:
+                args.extend(["--runtime", runtime])
             if npu is not None:
                 args.extend(["--npu", str(npu)])
             self.call(*args)
