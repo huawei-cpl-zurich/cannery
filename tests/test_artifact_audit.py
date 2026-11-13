@@ -86,3 +86,37 @@ def test_invalid_refs_network_failure_and_running_writers_fail_closed():
 
     with pytest.raises(ValueError):
         audit(Offline(), "source")
+
+
+@pytest.mark.parametrize("nested", [False, True])
+def test_journal_enumeration_errors_abort(monkeypatch, tmp_path, nested):
+    import os
+
+    from cannery.maintenance.artifacts import scan_journals
+
+    (tmp_path / "nested").mkdir()
+    original_walk, original_scandir = os.walk, os.scandir
+    failed = tmp_path / "nested" if nested else tmp_path
+
+    def scandir(path):
+        if str(path) == str(failed):
+            raise OSError("injected enumeration failure")
+        return original_scandir(path)
+
+    monkeypatch.setattr(os, "walk", lambda root, **kwargs: original_walk(tmp_path, **kwargs))
+    monkeypatch.setattr(os, "scandir", scandir)
+    with pytest.raises(OSError, match="injected"):
+        scan_journals()
+
+
+def test_oversized_json_journal_aborts_reference_scan(monkeypatch, tmp_path):
+    import os
+
+    from cannery.maintenance.artifacts import scan_journals
+
+    reference = dict(repository="private", revision=LIVE, path="missing", sha256=LIVE)
+    (tmp_path / "receipt.json").write_text(json.dumps(dict(ref=reference, padding="x" * 262144)))
+    original_walk = os.walk
+    monkeypatch.setattr(os, "walk", lambda root, **kwargs: original_walk(tmp_path, **kwargs))
+    with pytest.raises(ValueError, match="JSON exceeds"):
+        scan_journals()

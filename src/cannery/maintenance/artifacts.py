@@ -47,7 +47,11 @@ def scan_journals() -> dict[str, list[str]]:
     protected: set[str] = set()
     required: set[str] = set()
     total = count = 0
-    for directory, dirs, files in os.walk("/data", followlinks=False):
+
+    def fail(error: OSError) -> None:
+        raise error
+
+    for directory, dirs, files in os.walk("/data", followlinks=False, onerror=fail):
         for name in dirs:
             if (Path(directory) / name).is_symlink():
                 raise ValueError("Symlink in controller journal")
@@ -67,7 +71,9 @@ def scan_journals() -> dict[str, list[str]]:
                     tail = chunk[-64:]
                     if len(data) <= 256 * 1024:
                         data.extend(chunk)
-            if path.suffix == ".json" and len(data) <= 256 * 1024:
+            if path.suffix == ".json":
+                if len(data) > 256 * 1024:
+                    raise ValueError("Journal JSON exceeds parsing budget")
                 values = references(json.loads(data))
                 protected.update(values[0])
                 required.update(values[1])
