@@ -177,13 +177,35 @@ def test_auth_browser_cli_and_outage_recovery(deployment, tmp_path):
             page.locator('[name="password"]').fill(password.read_text())
             page.get_by_role("button", name="Sign in", exact=True).click()
             page.wait_for_url(base + "/my-submissions")
+            page.goto(base + "/register-kernel")
+            page.get_by_label("Git repository URL").fill("https://example.com/kernel.git")
+            page.get_by_label("Full commit SHA").fill("a" * 40)
+            page.get_by_label("Source directory").fill("spec")
+            page.get_by_role("button", name="Register specification", exact=True).click()
+            page.wait_for_url("**/registrations/*")
+            assert "queued" in page.locator("#registration").inner_text()
             page.goto(base + "/account")
             page.locator("#account-identity").get_by_text("alice", exact=False).wait_for()
             page.locator('#account-token [name="label"]').fill("browser-token")
+
+            def disconnected(route):
+                if route.request.method == "POST":
+                    route.abort("internetdisconnected")
+                else:
+                    route.continue_()
+
+            page.route("**/api/v1/auth/tokens", disconnected)
+            page.get_by_role("button", name="Create 30-day CLI token").click()
+            page.wait_for_function(
+                "document.getElementById('account-error').textContent.length > 0"
+            )
+            assert page.locator("#account-new-token").inner_text() == ""
+            page.unroute("**/api/v1/auth/tokens", disconnected)
             page.get_by_role("button", name="Create 30-day CLI token").click()
             page.wait_for_function(
                 "document.getElementById('account-new-token').textContent.length > 30"
             )
+            assert page.locator("#account-error").inner_text() == ""
             token = page.locator("#account-new-token").inner_text()
             assert (
                 httpx.get(
@@ -257,6 +279,9 @@ def test_auth_browser_cli_and_outage_recovery(deployment, tmp_path):
         started = time.monotonic()
         assert connection.get("/api/v1/auth/me").status_code == 503
         assert time.monotonic() - started < 5
+        assert connection.get("/health/live").status_code == 200
+        assert connection.get("/static/style.css").status_code == 200
+        assert connection.get("/api/v1/registrations").status_code == 503
         docker("start", pg)
 
         def recovered():
