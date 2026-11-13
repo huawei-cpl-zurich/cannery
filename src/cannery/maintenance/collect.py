@@ -2,6 +2,8 @@
 
 import hashlib
 import inspect
+import io
+import json
 import os
 import stat
 import tarfile
@@ -73,10 +75,18 @@ def collect(docker: Docker, name: str, backup: Path, age_hours: float = 168) -> 
     if audit(docker, name, age_hours) != result:
         raise ValueError("Artifact audit changed; retry maintenance")
     program = (
-        "from __future__ import annotations\nimport os,stat,hashlib\nfrom pathlib import Path\n"
+        "from __future__ import annotations\nimport os,stat,hashlib,json,sys\n"
+        "from pathlib import Path\n"
         "from typing import Any\n"
         + inspect.getsource(unlink_verified)
-        + f"\nunlink_verified({list(expected.values())!r})"
+        + "\nunlink_verified(json.load(sys.stdin))"
     )
-    docker.volume(project.helper_image, project.volumes["artifacts"], program, writable=True)
+    with io.BytesIO(json.dumps(list(expected.values())).encode()) as source:
+        docker.volume(
+            project.helper_image,
+            project.volumes["artifacts"],
+            program,
+            source=source,
+            writable=True,
+        )
     return result | {"deleted": sorted(expected), "backup_id": str(manifest.id)}

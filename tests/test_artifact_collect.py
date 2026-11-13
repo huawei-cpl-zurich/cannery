@@ -1,5 +1,6 @@
 import hashlib
 import io
+import json
 import tarfile
 
 import pytest
@@ -27,6 +28,7 @@ def prepare(backup, data=b"orphan"):
             if writable:
                 self.deleted = True
                 assert "unlink_verified" in program
+                assert json.load(kwargs["source"]) == [self.rows[-1]]
                 return b""
             return super().volume(image, name, program, **kwargs)
 
@@ -63,3 +65,30 @@ def test_collection_fails_before_deletion_when_backup_or_live_state_is_unsafe(ba
     with pytest.raises(ValueError):
         collect(docker, "other" if fault == "foreign" else "source", directory, 24)
     assert not docker.deleted
+
+
+def test_large_candidate_inventory_uses_stdin(backup, monkeypatch):
+    import importlib
+
+    module = importlib.import_module("cannery.maintenance.collect")
+    directory, docker = prepare(backup)
+    rows = [dict(docker.rows[-1], name=f"{i:064x}") for i in range(700)]
+    output = io.BytesIO()
+    with tarfile.open(fileobj=output, mode="w") as archive:
+        for row in rows:
+            member = tarfile.TarInfo(row["name"])
+            member.size = 6
+            archive.addfile(member, io.BytesIO(b"orphan"))
+    repin(directory, verify(directory), "artifacts", output.getvalue())
+    monkeypatch.setattr(module, "audit", lambda *args: dict(errors=[], candidates=rows))
+    original = docker.volume
+
+    def volume(image, name, program, **kwargs):
+        if kwargs.get("writable"):
+            assert len(program.encode()) < 8192
+            assert json.load(kwargs["source"]) == rows
+            return b""
+        return original(image, name, program, **kwargs)
+
+    monkeypatch.setattr(docker, "volume", volume)
+    assert len(collect(docker, "source", directory)["deleted"]) == 700
