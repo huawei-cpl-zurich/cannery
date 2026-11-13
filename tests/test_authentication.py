@@ -173,3 +173,37 @@ def test_throttle_is_bounded_and_fails_closed(monkeypatch):
     with pytest.raises(HTTPException) as error:
         throttle(request, "alice", Settings())
     assert error.value.status_code == 503 and "private" not in error.value.detail
+
+
+def test_invalid_password_reset_does_not_hash(setup, monkeypatch):
+    engine, client = setup
+
+    def forbidden_hash(value):
+        raise AssertionError("Untrusted reset reached expensive hashing")
+
+    monkeypatch.setattr("cannery.accounts.auth.password_hash", forbidden_hash)
+    assert (
+        client.post(
+            "/api/v1/auth/password",
+            headers={"Authorization": "Bearer forged"},
+            json={"current_password": "old", "new_password": "new long password"},
+        ).status_code
+        == 401
+    )
+
+
+def test_malformed_csrf_returns_denied():
+    from starlette.requests import Request
+
+    from cannery.accounts.api import credential
+
+    request = Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "headers": [(b"cookie", b"cannery_session=abc"), (b"x-csrf-token", b"\xff")],
+        }
+    )
+    with pytest.raises(HTTPException) as error:
+        credential(request)
+    assert error.value.status_code == 403
