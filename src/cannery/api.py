@@ -62,7 +62,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             status_code=200 if ok else 503,
         )
 
-    app.state.auth_enabled = config.auth_enabled
     app.state.artifacts = make_store(config)
     install_auth(app, config, engine)
     install_context(app, config, engine)
