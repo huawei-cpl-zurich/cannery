@@ -42,7 +42,8 @@ offline SDK. Existing submissions stay private until explicitly published. CPU d
 loadability alone do not prove correctness.
 
 M7a adds [offline recovery and maintenance](docs/maintenance.md), including durable
-controller journals; A3 and broader operational controls remain planned.
+controller journals. M7b adds [A3 native Ascend C workers](docs/a3-worker.md);
+M7c adds [local accounts, namespace permissions and credential rotation](docs/accounts.md).
 # Submission reuse
 
 Submitting the same pinned source, specification and target returns the existing
