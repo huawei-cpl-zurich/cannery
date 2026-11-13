@@ -35,11 +35,11 @@ def records(tmp_path):
     engine.dispose()
 
 
-def initial(records):
+def initial(records, *, commit="a" * 40):
     engine, key = records
     source = GitSource(
         url="https://example.com/repo.git",
-        commit="a" * 40,
+        commit=commit,
         path="candidate",
         dependencies=("shared",),
     )

@@ -68,7 +68,7 @@ def test_expired_deadline_and_permanent_failure_do_not_retry(records):
     with Session(engine) as session, session.begin():
         session.get(IntakeState, expired).deadline = datetime.now(UTC) - timedelta(seconds=1)
     assert claim_intake(engine, expired) is None
-    other = initial(records)
+    other = initial(records, commit="b" * 40)
     claim = claim_intake(engine, other)
     fail_intake(engine, claim, "invalid_submission", False)
     assert claim_intake(engine, other) is None
@@ -80,8 +80,8 @@ def test_expired_deadline_and_permanent_failure_do_not_retry(records):
 def test_cleanup_backlog_cannot_starve_active_work(records):
     engine, _ = records
     cleanup = []
-    for _ in range(120):
-        key = initial(records)
+    for index in range(120):
+        key = initial(records, commit=f"{index:040x}")
         cleanup.append(str(key))
         with Session(engine) as session, session.begin():
             job = session.get(IntakeState, key)
