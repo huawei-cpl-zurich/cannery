@@ -5,6 +5,7 @@ from uuid import UUID
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 
+from cannery.benchmark.state import PerformanceJob
 from cannery.git_intake import GitSource
 from cannery.registry.models import SpecVersion
 from cannery.submissions.models import Candidate, RequestedTarget, Submission, SubmissionConflict
@@ -34,7 +35,14 @@ def existing_request(
             Submission.target["device"].as_string() == target.device,
             Submission.target["language"].as_string() == target.language,
         )
-        .order_by(Submission.created_at, Submission.id)
+        .order_by(
+            select(PerformanceJob.key)
+            .where(PerformanceJob.candidate_id == Submission.id, PerformanceJob.status == "ready")
+            .exists()
+            .desc(),
+            Submission.created_at,
+            Submission.id,
+        )
     )
     for request in requests:
         if set(request.source.get("dependencies", [])) == set(source.dependencies):

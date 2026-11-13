@@ -43,3 +43,22 @@ loadability alone do not prove correctness.
 
 M7a adds [offline recovery and maintenance](docs/maintenance.md), including durable
 controller journals; A3 and broader operational controls remain planned.
+# Submission reuse
+
+Submitting the same pinned source, specification and target returns the existing
+request. Revision requests also preserve their parent binding. There is no
+force-rerun option. Completed executions keep their recorded outcome; failed
+pre-admission intake can retry after its cause is fixed.
+
+A different commit is retained with its own provenance. If its selected source
+directory and declared dependency paths are byte-for-byte identical, including
+file names and Git modes, Cannery can reuse a verified completed execution in the
+same namespace, specification and frozen binding. Changes outside those paths do
+not cause execution. All files inside the selected paths are conservatively
+treated as inputs because submitted code can read them.
+
+Status exposes `reused_from`. Build, validation and measurements retain the
+original execution context; they are historical results, not a new measurement
+of the current runtime. Publication actions address the original execution and
+never publish automatically. Missing/corrupt private artifacts block reuse.
+

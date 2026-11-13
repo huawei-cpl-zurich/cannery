@@ -1,6 +1,7 @@
 """Link equivalent retained Git trees to verified historical completed executions."""
 
 from collections.abc import Callable
+from typing import Any
 
 from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
@@ -12,6 +13,10 @@ from cannery.git_intake.snapshots import SnapshotStore
 from cannery.releases.assets import verify_assets
 from cannery.releases.eligibility import publication_manifest
 from cannery.submissions.models import Candidate, Submission, SubmissionReuse
+
+
+def binding_identity(binding: dict[str, Any]) -> dict[str, Any]:
+    return binding | {"dependencies": sorted(set(binding.get("dependencies", [])))}
 
 
 def reuse_completed(
@@ -40,7 +45,7 @@ def reuse_completed(
         .order_by(Submission.created_at, Candidate.id)
     )
     for original in previous:
-        if original.binding != candidate.binding:
+        if binding_identity(original.binding) != binding_identity(candidate.binding):
             continue
         # Re-read the protected snapshot, validate all saved stage identities, and
         # verify the binary/timing bytes. These checks execute no submitted code.

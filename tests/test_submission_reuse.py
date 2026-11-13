@@ -1,4 +1,6 @@
 import copy
+import subprocess
+from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
@@ -15,10 +17,13 @@ from cannery.benchmark.state import PerformanceJob
 from cannery.builds.coordinator import discover
 from cannery.builds.state import BuildState
 from cannery.git_intake import GitSource, SnapshotBinding
-from cannery.git_intake.snapshots import SelectedTree
+from cannery.git_intake.snapshots import SelectedTree, extract_tree
+from cannery.releases.api import publish, withdraw_publication
+from cannery.settings import Settings
 from cannery.submissions.api import get_info
 from cannery.submissions.manifest import validate_submission
-from cannery.submissions.models import Candidate, Submission, SubmissionReuse
+from cannery.submissions.models import Candidate, RequestedTarget, Submission, SubmissionReuse
+from cannery.submissions.requests import new_submission
 from cannery.submissions.reuse import reuse_completed
 from cannery.submissions.state import IntakeState
 
@@ -94,6 +99,20 @@ def test_unchanged_tree_reuses_verified_results_without_new_execution(admission,
             == 0
         )
     assert memory.puts == before
+    config = Settings(dev_identity_enabled=True, dev_namespace="team", release_enabled=True)
+    publication = publish(config, engine, identifier)
+    assert publication["publication_url"] == f"/api/v1/submissions/{key}/publication"
+    assert withdraw_publication(config, engine, identifier)["status"] == "withdrawn"
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    from cannery.web import install_web
+
+    app = FastAPI()
+    install_web(app, config, engine)
+    page = TestClient(app).get(f"/submissions/{identifier}")
+    assert page.status_code == 200 and "No new execution was performed" in page.text
+    assert f'action="/submissions/{key}/publish"' in page.text
 
 
 @pytest.mark.parametrize("change", ["source", "addition", "mode", "dependency", "binding"])
@@ -139,3 +158,84 @@ def test_unavailable_or_corrupt_artifacts_roll_back_reuse(admission, setup_execu
     with Session(engine) as db:
         assert db.get(SubmissionReuse, identifier) is None
         assert db.get(Candidate, identifier) is None
+
+
+@pytest.mark.parametrize("change", ["outside", "source", "dependency", "mode", "rename", "add"])
+def test_real_git_commit_diff_covers_selected_files_and_dependencies(tmp_path, change):
+    repository = tmp_path / "repository"
+    repository.mkdir()
+
+    def git(*args):
+        return (
+            subprocess.check_output(
+                ["git", "-C", str(repository), *args], stderr=subprocess.DEVNULL, timeout=10
+            )
+            .decode()
+            .strip()
+        )
+
+    git("init")
+    git("config", "user.name", "fixture")
+    git("config", "user.email", "fixture@local")
+    (repository / "candidate").mkdir()
+    (repository / "shared").mkdir()
+    kernel = repository / "candidate/kernel.cpp"
+    kernel.write_text("// kernel")
+    (repository / "shared/header.h").write_text("// header")
+    (repository / "README.md").write_text("documentation")
+    git("add", ".")
+    git("commit", "-m", "initial")
+    source = GitSource(
+        url="https://example.com/repo.git",
+        commit=git("rev-parse", "HEAD"),
+        path="candidate",
+        dependencies=("shared",),
+    )
+    before = extract_tree(repository / ".git", source)
+    if change == "mode":
+        kernel.chmod(0o755)
+    elif change == "rename":
+        kernel.rename(repository / "candidate/renamed.cpp")
+    else:
+        path = {
+            "outside": "README.md",
+            "source": "candidate/kernel.cpp",
+            "dependency": "shared/header.h",
+            "add": "candidate/new.h",
+        }[change]
+        (repository / path).write_text("changed")
+    git("add", ".")
+    git("commit", "-m", "revision")
+    after = extract_tree(
+        repository / ".git", source.model_copy(update={"commit": git("rev-parse", "HEAD")})
+    )
+    assert ((before.files, before.modes) == (after.files, after.modes)) == (change == "outside")
+    if change == "dependency":
+        assert before.external_tree_id == after.external_tree_id
+
+
+def test_historical_duplicates_prefer_completed_execution(admission):
+    engine, key, _, _ = admission
+    with Session(engine) as db, db.begin():
+        original = db.get(Submission, key)
+        source, target, spec_id = original.source, original.target, original.spec_id
+        older = Submission(
+            namespace=original.namespace,
+            spec_id=spec_id,
+            source=source,
+            target=target,
+            created_at=datetime(2000, 1, 1, tzinfo=UTC),
+        )
+        db.add(older)
+        db.flush()
+        db.add(IntakeState(id=older.id))
+    assert (
+        new_submission(
+            engine,
+            "team",
+            spec_id,
+            GitSource.model_validate(source),
+            RequestedTarget.model_validate(target),
+        )
+        == key
+    )
