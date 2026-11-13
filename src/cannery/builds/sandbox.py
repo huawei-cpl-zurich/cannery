@@ -55,7 +55,7 @@ class WorkerProfile(StrictModel):
     @model_serializer(mode="wrap")
     def serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
         value: dict[str, Any] = handler(self)
-        # Keep existing A5 attempt contexts byte-identical across this upgrade.
+        # Preserve A5 profile bytes; supervisor code upgrades still require a drain.
         if self.device == "a5":
             value.pop("device", None)
         if not self.toolchain_in_image:

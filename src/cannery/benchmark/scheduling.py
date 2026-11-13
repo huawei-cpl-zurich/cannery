@@ -54,6 +54,7 @@ def discover(engine: Engine, cohort: Cohort) -> None:
                 .join(BuildResult, BuildResult.id == BuildState.attempt_id)
                 .where(
                     NumericalState.status == "passed",
+                    Candidate.manifest["implementation"]["device"].as_string() == cohort.device,
                     NumericalResult.status == "passed",
                     BuildState.status == "awaiting_validation",
                     BuildResult.status == "complete",

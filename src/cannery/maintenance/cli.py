@@ -11,6 +11,7 @@ from cannery.maintenance.archive import verify
 from cannery.maintenance.artifacts import audit
 from cannery.maintenance.capture import Docker, capture
 from cannery.maintenance.collect import collect
+from cannery.maintenance.drain import require_drained
 from cannery.maintenance.restore import restore
 
 app = typer.Typer(
@@ -23,6 +24,15 @@ def report(error: Exception) -> None:
         f"Maintenance failed: {error}. Keep restore targets stopped after a failure.", err=True
     )
     raise typer.Exit(1)
+
+
+@app.command("require-drained")
+def drained(project: Annotated[str, typer.Option()]) -> None:
+    """Refuse an upgrade while stopped application writers retain queued or active work."""
+    try:
+        typer.echo(json.dumps(require_drained(Docker(), project), sort_keys=True))
+    except (OSError, ValueError) as error:
+        report(error)
 
 
 @app.command("backup")
