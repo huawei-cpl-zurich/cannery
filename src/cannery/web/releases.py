@@ -10,6 +10,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
+from cannery.accounts.context import template_context
 from cannery.devices import Device
 from cannery.releases import catalog
 from cannery.releases.details import detail
@@ -92,7 +93,7 @@ def install_release_web(
         return templates.TemplateResponse(
             request=request,
             name="releases.html",
-            context=context | {"title": "Global Best"} | values,
+            context=context | template_context(settings) | {"title": "Global Best"} | values,
         )
 
     @app.get("/releases/{identifier}", response_class=HTMLResponse, include_in_schema=False)
@@ -106,5 +107,7 @@ def install_release_web(
         return templates.TemplateResponse(
             request=request,
             name="releases.html",
-            context=context | {"title": "Global Best", "release": value},
+            context=context
+            | template_context(settings)
+            | {"title": "Global Best", "release": value},
         )

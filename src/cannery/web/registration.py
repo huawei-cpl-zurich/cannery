@@ -11,7 +11,8 @@ from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from cannery.registry.api import RegistrationRequest, identity, job_info, submit
+from cannery.accounts.context import identity, template_context
+from cannery.registry.api import RegistrationRequest, job_info, submit
 from cannery.registry.registrations import Registration
 from cannery.settings import Settings
 from cannery.web.examples import NAMESPACE, NUMERICAL_REGISTRATION, REGISTRATION
@@ -30,8 +31,9 @@ def install_registration(
             name="registration.html",
             context={
                 **context,
+                **template_context(settings),
                 "title": "Register Kernel",
-                "namespace": settings.dev_namespace,
+                "namespace": identity(settings),
                 **values,
             },
         )

@@ -11,7 +11,7 @@ from sqlalchemy import Engine, select
 from sqlalchemy.orm import Session
 from starlette.concurrency import run_in_threadpool
 
-from cannery.registry.api import identity
+from cannery.accounts.context import identity, template_context
 from cannery.registry.models import Kernel, SpecVersion
 from cannery.releases.api import publish, withdraw_publication
 from cannery.settings import Settings
@@ -110,6 +110,7 @@ def install_submission_web(
             name="submissions.html",
             context={
                 **context,
+                **template_context(settings),
                 "release_enabled": settings.release_enabled,
                 "title": title,
                 **values,
@@ -160,7 +161,7 @@ def install_submission_web(
             specs=choices,
             example_available=any(spec["label"] == SPEC_LABEL for spec in choices),
             numerical_available=any(spec["label"] == NUMERICAL_SPEC_LABEL for spec in choices),
-            example_namespace=settings.dev_namespace == NAMESPACE,
+            example_namespace=identity(settings) == NAMESPACE,
             example={**values, "spec_id": sample["id"]} if selected and sample else {},
         )
 

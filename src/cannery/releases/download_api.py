@@ -8,8 +8,8 @@ from fastapi.responses import Response
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
+from cannery.accounts.context import identity
 from cannery.artifacts import ArtifactError, ArtifactRef, ArtifactStore
-from cannery.registry.api import identity
 from cannery.releases import catalog
 from cannery.releases.assets import verify_package
 from cannery.releases.contract import read_manifest
