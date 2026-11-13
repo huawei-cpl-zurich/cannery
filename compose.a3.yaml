@@ -1,0 +1,33 @@
+# Opt-in A3 coordinators. Include after artifacts/builds/numerics/benchmarks/releases.
+# The registered remote-agent listener binds controller-host loopback.
+x-a3-worker: &a3-worker
+  extends:
+    file: compose.builds.yaml
+    service: builder
+  profiles: [a3]
+  network_mode: host
+  environment:
+    CANNERY_DATABASE_URL: postgresql+psycopg://cannery:cannery@127.0.0.1:${CANNERY_A3_DATABASE_PORT:-15435}/cannery
+    CANNERY_ARTIFACT_URL: http://127.0.0.1:${CANNERY_A3_ARTIFACT_PORT:-18096}
+    CANNERY_BUILD_LOADER_WHEEL: ${CANNERY_A3_LOADER_WHEEL:?Set the pinned A3 loader wheel path}
+    CANNERY_BUILD_LOADER_SHA256: ${CANNERY_A3_LOADER_SHA256:?Pin the A3 loader wheel digest}
+  volumes:
+    - ${CANNERY_A3_WORKER_PROFILE:?Set the validated A3 profile}:/etc/cannery/worker.json:ro
+    - ${CANNERY_A3_LOADER_WHEEL}:${CANNERY_A3_LOADER_WHEEL}:ro
+    - ${CANNERY_REMOTE_AGENT_ROOT:?Set the installed remote-agent client root}:${CANNERY_REMOTE_AGENT_ROOT}:ro
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${CANNERY_A3_DATABASE_PORT:-15435}:5432"
+  artifacts:
+    ports:
+      - "127.0.0.1:${CANNERY_A3_ARTIFACT_PORT:-18096}:8000"
+  builder-a3:
+    <<: *a3-worker
+    command: [python, -m, cannery.builds.coordinator]
+  validator-a3:
+    <<: *a3-worker
+    command: [python, -m, cannery.numerics.worker]
+  benchmarker-a3:
+    <<: *a3-worker
+    command: [python, -m, cannery.benchmark.worker]
