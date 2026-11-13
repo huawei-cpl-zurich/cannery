@@ -18,6 +18,7 @@ from cannery.artifacts import ArtifactError
 from cannery.artifacts.factory import make_store
 from cannery.builds.ascendc import BuildError
 from cannery.builds.executor import BuildExecutor, ExecutionFailure
+from cannery.builds.journals import retained_profile
 from cannery.builds.remote import (
     CplRemote,
     RemoteFailure,
@@ -213,6 +214,8 @@ def cleanup_finished(
     engine: Engine,
     root: Path,
     factory: Callable[[BuildClaim], BuildExecutor],
+    *,
+    owner: WorkerProfile | None = None,
 ) -> None:
     if not root.exists():
         return
@@ -240,13 +243,13 @@ def cleanup_finished(
         count += 1
         durable_write(cursor, journal.name.encode())
         try:
+            saved = retained_profile(journal, owner)
+            if owner is not None and saved is None:
+                continue
             executor = factory(claim)
-            context = journal / "context.json"
-            if context.exists():
-                executor.profile = WorkerProfile.model_validate_json(
-                    json.dumps(json.loads(context.read_bytes())["profile"])
-                )
-                executor.remote.target = executor.profile.target
+            if saved is not None:
+                executor.profile = saved
+                executor.remote.target = saved.target
             for receipt in operation_receipts(journal):
                 saved = json.loads(receipt.read_bytes())
                 if "handle" in saved:
@@ -299,7 +302,7 @@ def main() -> None:
     def cleanup_loop() -> None:
         while not stopped.is_set():
             try:
-                cleanup_finished(engine, settings.build_control_root, factory)
+                cleanup_finished(engine, settings.build_control_root, factory, owner=profile)
             except (SQLAlchemyError, OSError):
                 logging.warning("Build cleanup unavailable; retaining journals")
             stopped.wait(10)
@@ -318,7 +321,7 @@ def main() -> None:
             except (SQLAlchemyError, OSError, ValueError):
                 logging.warning("Binary admission coordinator unavailable; retrying")
             if args.once:
-                cleanup_finished(engine, settings.build_control_root, factory)
+                cleanup_finished(engine, settings.build_control_root, factory, owner=profile)
                 return
             stopped.wait(5)
     finally:

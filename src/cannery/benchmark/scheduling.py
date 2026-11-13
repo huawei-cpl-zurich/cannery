@@ -99,7 +99,8 @@ def discover(engine: Engine, cohort: Cohort) -> None:
 def retained(engine: Engine, job: PerformanceJob, executor: BenchmarkExecutor) -> dict[str, Any]:
     cohort = Cohort.model_validate_json(json.dumps(job.identity["cohort"]))
     if (
-        cohort.image != executor.profile.image
+        cohort.device != executor.profile.device
+        or cohort.image != executor.profile.image
         or cohort.runtime != executor.profile.fingerprint
         or cohort.loader_sha256 != executor.wheel_sha256
     ):
@@ -111,7 +112,11 @@ def retained(engine: Engine, job: PerformanceJob, executor: BenchmarkExecutor) -
                 select(Candidate.id)
                 .join(Submission, Submission.id == Candidate.id)
                 .join(NumericalState, NumericalState.id == Candidate.id)
-                .where(Submission.spec_id == spec_id, NumericalState.status == "passed")
+                .where(
+                    Submission.spec_id == spec_id,
+                    NumericalState.status == "passed",
+                    Candidate.manifest["implementation"]["device"].as_string() == cohort.device,
+                )
                 .order_by(Candidate.id)
                 .limit(1)
             )

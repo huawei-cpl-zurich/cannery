@@ -62,7 +62,7 @@ def main() -> None:
     def clean() -> None:
         while not stopped.is_set():
             try:
-                cleanup_finished(engine, root, factory)
+                cleanup_finished(engine, root, factory, owner=profile)
             except (SQLAlchemyError, OSError):
                 logging.warning("Performance cleanup pending")
             stopped.wait(10)
@@ -75,7 +75,10 @@ def main() -> None:
             try:
                 cohort = device_cohort(
                     profile,
-                    settings.build_control_root / "benchmark-identity",
+                    settings.build_control_root
+                    / "benchmark-identity"
+                    / profile.target
+                    / str(profile.npu),
                     settings.build_remote_client,
                     settings.build_remote_registry,
                     settings.build_loader_sha256,
@@ -93,14 +96,14 @@ def main() -> None:
             ):
                 logging.warning("Performance worker pending; retaining attempts")
             try:
-                for key in due_jobs(engine):
+                for key in due_jobs(engine, device=profile.device):
                     if stopped.is_set():
                         break
-                    process(engine, key, factory)
+                    process(engine, key, factory, device=profile.device)
             except (SQLAlchemyError, OSError, ValueError):
                 logging.warning("Performance coordinator pending; retaining attempts")
             if args.once:
-                cleanup_finished(engine, root, factory)
+                cleanup_finished(engine, root, factory, owner=profile)
                 return
             stopped.wait(5)
     finally:
