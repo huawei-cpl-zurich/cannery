@@ -81,7 +81,7 @@ def throttle(request: Request, username: str, settings: Settings) -> None:
         retry_on_timeout=False,
     )
     try:
-        for scope in ("account:" + username, "client:" + client):
+        for scope in ("client:" + client, "account:" + username):
             key = "cannery:login:" + hashlib.sha256(scope.encode()).hexdigest()
             # Atomic expiry, including recovery if a previous client disconnected.
             count = redis.eval(

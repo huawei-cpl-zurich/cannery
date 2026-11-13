@@ -149,6 +149,7 @@ def test_throttle_is_bounded_and_fails_closed(monkeypatch):
 
     class Redis:
         count = 0
+        calls = 0
         broken = False
 
         @classmethod
@@ -156,6 +157,7 @@ def test_throttle_is_bounded_and_fails_closed(monkeypatch):
             return cls()
 
         def eval(self, *args):
+            type(self).calls += 1
             if self.broken:
                 raise ConnectionError("private connection details")
             return self.count
@@ -165,10 +167,15 @@ def test_throttle_is_bounded_and_fails_closed(monkeypatch):
 
     monkeypatch.setattr("cannery.accounts.api.Redis", Redis)
     request = Request({"type": "http", "client": ("127.0.0.1", 123)})
-    Redis.count = 11
+    Redis.count = 51
     with pytest.raises(HTTPException) as error:
         throttle(request, "alice", Settings())
-    assert error.value.status_code == 429
+    assert error.value.status_code == 429 and Redis.calls == 1
+    Redis.count = 11
+    Redis.calls = 0
+    with pytest.raises(HTTPException) as error:
+        throttle(request, "alice", Settings())
+    assert error.value.status_code == 429 and Redis.calls == 2
     Redis.broken = True
     with pytest.raises(HTTPException) as error:
         throttle(request, "alice", Settings())
