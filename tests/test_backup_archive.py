@@ -227,3 +227,15 @@ def test_pax_size_cannot_hide_an_unbounded_extension_header(backup):
     repin(directory, manifest, "snapshots", output.getvalue())
     with pytest.raises(ValueError, match="Unsupported PAX key"):
         verify(directory)
+
+
+def test_directory_payload_cannot_hide_extension_headers(backup):
+    directory, manifest = backup
+    hidden = tarfile.TarInfo("hidden")
+    hidden.type, hidden.size = tarfile.XHDTYPE, 32768
+    payload = hidden.tobuf() + bytes(32768 + 512)
+    outer = tarfile.TarInfo("directory")
+    outer.type, outer.size = tarfile.DIRTYPE, len(payload)
+    repin(directory, manifest, "snapshots", outer.tobuf() + payload + bytes(1024))
+    with pytest.raises(ValueError, match="Directory payload"):
+        verify(directory)
