@@ -178,3 +178,14 @@ The **CATLASS binary export contract** is the biggest early technical unknown: w
 ### Subtree importer implementation contract
 
 Use a transient constrained Git fetch to resolve the external full SHA, then safely export selected paths into a clean **per-kernel internal Git repository** as a new commit. Store both upstream and internal commit SHAs in PostgreSQL, with declared dependency paths and content digests. The internal commit lineage represents *accepted CANNery revisions*, not full upstream directory history. The build worker checks out the internal snapshot; admission never executes Git hooks. Git blob deduplication bounds incremental storage, but fetched upstream objects may temporarily occupy more disk. See [Architecture](architecture.md#git-subtree-snapshot-policy).
+
+
+## Staged account rollout
+
+Local account authentication is opt-in with `CANNERY_AUTH_ENABLED`. The current
+implementation supports authenticated API requests and browser forms. Sign in
+at `/login`, then use `/account` for namespace selection, password changes and
+CLI token management. Browser mutations send same-origin CSRF credentials;
+unauthenticated private navigation redirects to sign-in. Existing explicit
+development-mode forms continue working when account mode is disabled.
+Development identity and account authentication cannot be enabled together.
