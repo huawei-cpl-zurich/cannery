@@ -171,6 +171,14 @@ def test_auth_browser_cli_and_outage_recovery(deployment, tmp_path):
             args=["--no-sandbox"],
         )
         try:
+            fallback = browser.new_page(java_script_enabled=False)
+            fallback.goto(base + "/login")
+            fallback.locator('[name="username"]').fill("alice")
+            fallback.locator('[name="password"]').fill(password.read_text())
+            with fallback.expect_navigation() as sent:
+                fallback.get_by_role("button", name="Sign in", exact=True).click()
+            assert sent.value.request.method == "POST" and sent.value.url == base + "/login"
+            fallback.close()
             page = browser.new_page()
             page.goto(base + "/login")
             page.locator('[name="username"]').fill("alice")
@@ -215,6 +223,18 @@ def test_auth_browser_cli_and_outage_recovery(deployment, tmp_path):
             )
             page.get_by_role("button", name="Revoke", exact=True).click()
             until(lambda: assert_revoked(base, token))
+            fallback = browser.new_page(java_script_enabled=False)
+            fallback.context.add_cookies(page.context.cookies())
+            fallback.goto(base + "/account")
+            fallback.locator('[name="current_password"]').fill(password.read_text())
+            fallback.locator('[name="new_password"]').fill("a rejected fallback password")
+            with fallback.expect_navigation() as sent:
+                fallback.get_by_role(
+                    "button", name="Change password and sign out everywhere"
+                ).click()
+            assert sent.value.request.method == "POST" and sent.value.url == base + "/account"
+            assert sent.value.status == 403
+            fallback.close()
             page.get_by_role("button", name="Sign out", exact=True).click()
             page.wait_for_url(base + "/login")
         finally:
