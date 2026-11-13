@@ -239,7 +239,13 @@ def test_auth_browser_cli_and_outage_recovery(deployment, tmp_path):
             page.wait_for_url(base + "/login")
         finally:
             browser.close()
-    cli_env = environment | {"HOME": str(tmp_path / "cli-home")}
+    cli_env = environment | {
+        "HOME": str(tmp_path / "cli-home"),
+        "HTTP_PROXY": "http://127.0.0.1:1",
+        "HTTPS_PROXY": "http://127.0.0.1:1",
+        "ALL_PROXY": "http://127.0.0.1:1",
+        "NO_PROXY": "",
+    }
     command = [sys.executable, "-c", "from cannery.cli import app; app()"]
     subprocess.run(
         command + ["login", "--url", base, "--username", "alice", "--password-file", str(password)],
@@ -255,6 +261,20 @@ def test_auth_browser_cli_and_outage_recovery(deployment, tmp_path):
         timeout=10,
         capture_output=True,
     )
+    direct = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "import sys; from cannery.releases.client import ReleaseClient; "
+            "assert ReleaseClient(sys.argv[1]).json('/api/v1/auth/me')['username']=='alice'",
+            base,
+        ],
+        env=cli_env,
+        check=True,
+        timeout=10,
+        capture_output=True,
+    )
+    assert direct.returncode == 0
     with httpx.Client(base_url=base, timeout=5) as connection:
         login = connection.post(
             "/api/v1/auth/login",

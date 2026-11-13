@@ -45,7 +45,8 @@ cannery logout --url http://127.0.0.1:8095
 CLI login creates a token in a private file under `~/.config/cannery/tokens/`.
 Credentials are bound to the exact service origin, including its port. Use the
 same URL for login and subsequent commands. HTTPS is required except for
-loopback HTTP. Logout revokes the token before deleting its local file; network
+loopback HTTP. CLI connections ignore ambient HTTP proxy settings to keep
+credentials on the selected service connection. Logout revokes the token before deleting its local file; network
 failure preserves it for retry. Tokens can also be revoked from the browser.
 
 API clients send `Authorization: Bearer <token>`. Cookie-authenticated mutations
