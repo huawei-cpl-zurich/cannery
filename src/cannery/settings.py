@@ -1,7 +1,9 @@
+import ipaddress
 from pathlib import Path
 from typing import Literal
+from urllib.parse import urlsplit
 
-from pydantic import Field, SecretStr
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from cannery.git_intake.transport import RemoteRule
@@ -10,6 +12,27 @@ from cannery.registry.manifest import Name
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_prefix="CANNERY_", extra="ignore")
+
+    @model_validator(mode="after")
+    def authentication_configuration(self) -> "Settings":
+        if not self.auth_enabled:
+            return self
+        if self.dev_identity_enabled:
+            raise ValueError("Account authentication and development identity cannot be combined")
+        parsed = urlsplit(self.auth_origin)
+        if (
+            parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or any((parsed.username, parsed.password, parsed.query, parsed.fragment, parsed.path))
+        ):
+            raise ValueError("Authentication origin must be an HTTP origin")
+        try:
+            loopback = ipaddress.ip_address(parsed.hostname).is_loopback
+        except ValueError:
+            loopback = parsed.hostname == "localhost"
+        if not loopback and (parsed.scheme != "https" or not self.auth_cookie_secure):
+            raise ValueError("Public authentication requires HTTPS and Secure cookies")
+        return self
 
     service_name: str = "cannery"
     release_enabled: bool = False
