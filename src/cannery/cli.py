@@ -9,7 +9,7 @@ from cannery.maintenance.cli import app as maintenance
 from cannery.releases.cli import install_release_cli
 from cannery.submissions.cli import install_cli
 
-app = typer.Typer(no_args_is_help=True)
+app = typer.Typer(no_args_is_help=True, pretty_exceptions_show_locals=False)
 install_account_cli(app)
 app.add_typer(accounts, name="accounts")
 app.add_typer(maintenance, name="maintenance")
@@ -34,7 +34,7 @@ def health(url: str = "http://127.0.0.1:8000") -> None:
     import httpx
 
     try:
-        response = httpx.get(f"{url.rstrip('/')}/health/ready", timeout=5)
+        response = httpx.get(f"{url.rstrip('/')}/health/ready", timeout=5, trust_env=False)
         response.raise_for_status()
         body = response.json()
         if not isinstance(body, dict) or body.get("status") != "ok":
@@ -67,7 +67,7 @@ def register(
     try:
         source = GitSource(url=repo, commit=commit, path=path, dependencies=tuple(dependency or ()))
         body = {"source": source.model_dump(mode="json"), "namespace": namespace, "name": name}
-        with httpx.Client(timeout=5, headers=auth_headers(url)) as client:
+        with httpx.Client(timeout=5, headers=auth_headers(url), trust_env=False) as client:
             response = client.post(url.rstrip("/") + "/api/v1/kernels", json=body)
             response.raise_for_status()
             key = response.json()["id"]
@@ -117,7 +117,10 @@ def registrations(url: str = "http://127.0.0.1:8000") -> None:
 
     try:
         response = httpx.get(
-            url.rstrip("/") + "/api/v1/registrations", timeout=5, headers=auth_headers(url)
+            url.rstrip("/") + "/api/v1/registrations",
+            timeout=5,
+            headers=auth_headers(url),
+            trust_env=False,
         )
         response.raise_for_status()
         for job in response.json():
