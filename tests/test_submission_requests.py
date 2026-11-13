@@ -194,3 +194,41 @@ def test_revision_and_standalone_requests_keep_separate_binding_contexts(records
         )
         == standalone
     )
+
+
+@pytest.mark.parametrize("revision", [False, True])
+def test_failed_pre_admission_intake_can_recover_without_rerunning_accepted_work(records, revision):
+    from cannery.submissions.state import IntakeState
+
+    engine, _ = records
+    parent = initial(records)
+    if revision:
+        with Session(engine) as session, session.begin():
+            session.add(
+                Candidate(
+                    id=parent,
+                    binding_id=parent,
+                    binding={},
+                    manifest={},
+                    snapshot={},
+                    content_sha256="b" * 64,
+                    file_sha256={},
+                )
+            )
+
+        def submit():
+            return revise_submission(engine, "team", parent, "b" * 40)
+    else:
+
+        def submit():
+            return initial(records)
+
+    failed = submit()
+    with Session(engine) as session, session.begin():
+        state = session.get(IntakeState, failed)
+        state.status, state.error = "failed", "repository_denied"
+    recovered = submit()
+    assert recovered != failed and submit() == recovered
+    with Session(engine) as session:
+        assert session.get(IntakeState, failed).status == "failed"
+        assert session.get(IntakeState, recovered).status == "queued"
