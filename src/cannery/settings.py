@@ -31,6 +31,8 @@ class Settings(BaseSettings):
     artifact_url: str = "http://artifacts:8000"
     artifact_read_token: SecretStr | None = None
     artifact_write_token: SecretStr | None = None
+    artifact_previous_read_token: SecretStr | None = None
+    artifact_previous_write_token: SecretStr | None = None
     hf_repository: str | None = None
     hf_token: SecretStr | None = None
 
