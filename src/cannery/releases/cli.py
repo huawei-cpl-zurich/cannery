@@ -167,6 +167,8 @@ def install_release_cli(app: typer.Typer) -> None:
                 if runtime_json is not None:
                     raise ValueError("Use --no-detect with --runtime-json")
                 runtime = detect_runtime()
+            if not isinstance(runtime, dict) or not isinstance(runtime.get("soc"), str):
+                raise ValueError("Invalid runtime fingerprint")
             selection = ResolveRequest.model_validate(
                 {
                     "kernel": kernel,

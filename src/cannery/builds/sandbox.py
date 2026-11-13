@@ -448,7 +448,9 @@ def job_script(
         config["capture_runtime"] = True
     program = RUNTIME if runtime_program is None else runtime_program
     if profile.device == "a3" and phase == "runtime":
-        program = A3_BOOTSTRAP.replace("CANNERY_DEVICE_GROUP", str(profile.device_group)) + program
+        program = A3_BOOTSTRAP.replace("CANNERY_DEVICE_GROUP", str(profile.device_group)) + (
+            f"\nexec(compile({program!r}, '<cannery-runtime>', 'exec'))\n"
+        )
     if profile.catlass is None:
         config.pop("catlass")
     serialized = json.dumps(config, sort_keys=True)

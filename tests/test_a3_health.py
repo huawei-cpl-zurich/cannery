@@ -94,24 +94,35 @@ def test_a3_physical_identity_requires_card_serial_and_valid_vdie(
             supervise(config, uuid4(), "identify")
 
 
-def test_a3_runtime_bootstrap_is_isolated_and_precedes_submitted_runtime(tmp_path):
+@pytest.mark.parametrize("kind", ["admission", "numerical", "reference", "candidate"])
+def test_a3_bootstrap_preserves_future_imports_in_real_runtime_programs(tmp_path, kind):
     import ast
     from uuid import uuid4
 
-    from cannery.builds.sandbox import A3_BOOTSTRAP, job_script
+    from cannery.benchmark.runtime import runtime_program as benchmark_program
+    from cannery.builds.sandbox import A3_BOOTSTRAP, RUNTIME, job_script
+    from cannery.numerics.validation_runtime import runtime_program as numerical_program
 
+    source = (
+        RUNTIME
+        if kind == "admission"
+        else numerical_program()
+        if kind == "numerical"
+        else benchmark_program(kind)
+    )
     config = a3_profile(tmp_path)
-    code = job_script(config, uuid4(), "runtime", runtime_program="AUTHOR_RUNTIME()")
-    tree = ast.parse(code)
+    code = job_script(config, uuid4(), "runtime", runtime_program=source)
     assignment = next(
         node
-        for node in tree.body
+        for node in ast.parse(code).body
         if isinstance(node, ast.Assign)
         and any(isinstance(target, ast.Name) and target.id == "RUNTIME" for target in node.targets)
     )
     program = ast.literal_eval(assignment.value)
-    assert (
-        program
-        == A3_BOOTSTRAP.replace("CANNERY_DEVICE_GROUP", str(config.device_group))
-        + "AUTHOR_RUNTIME()"
+    assert program.startswith(
+        A3_BOOTSTRAP.replace("CANNERY_DEVICE_GROUP", str(config.device_group))
     )
+    compile(program, "a3-runtime", "exec")
+    invocation = ast.parse(program).body[-1].value
+    assert invocation.func.id == "exec" and invocation.args[0].func.id == "compile"
+    assert ast.literal_eval(invocation.args[0].args[0]) == source
