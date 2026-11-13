@@ -1,4 +1,5 @@
 import os
+import selectors
 import signal
 import subprocess
 import sys
@@ -61,6 +62,9 @@ def test_actual_process_exits_successfully_after_sigterm(tmp_path):
         env=os.environ.copy(),
     )
     try:
+        with selectors.DefaultSelector() as selector:
+            selector.register(process.stdout, selectors.EVENT_READ)
+            assert selector.select(timeout=3), "Subprocess readiness deadline exceeded"
         assert process.stdout.readline().strip() == "ready"
         process.send_signal(signal.SIGTERM)
         assert process.wait(timeout=3) == 0
