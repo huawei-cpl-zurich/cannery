@@ -144,3 +144,29 @@ def test_docker_timeout_is_useful_and_does_not_echo_environment(monkeypatch):
     monkeypatch.setattr(subprocess, "run", fail)
     with pytest.raises(ValueError, match="deadline"):
         Docker().run("inspect", "container", timeout=1)
+
+
+def test_directory_entries_are_durable_before_backup_becomes_visible(tmp_path, monkeypatch):
+    import os
+    import stat
+
+    from cannery.maintenance import capture as module
+
+    synced = []
+    original_sync = os.fsync
+    original_publish = module.publish_directory
+
+    def sync(fd):
+        info = os.fstat(fd)
+        if stat.S_ISDIR(info.st_mode):
+            synced.append(info.st_ino)
+        original_sync(fd)
+
+    def publish(source, destination):
+        assert source.stat().st_ino in synced
+        original_publish(source, destination)
+
+    monkeypatch.setattr(module.os, "fsync", sync)
+    monkeypatch.setattr(module, "publish_directory", publish)
+    capture(Fake(), "source", tmp_path / "backup")
+    assert synced[-1] == tmp_path.stat().st_ino

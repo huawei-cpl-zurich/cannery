@@ -293,6 +293,11 @@ def capture(docker: Docker, project: str, destination: Path) -> BackupManifest:
         verify(temporary)
         if inventory(docker, project) != current:
             raise ValueError("Project changed during backup")
+        descriptor = os.open(temporary, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
         publish_directory(temporary, destination)
         descriptor = os.open(destination.parent, os.O_RDONLY | os.O_DIRECTORY)
         try:
