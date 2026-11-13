@@ -1,0 +1,33 @@
+{% extends "page.html" %}
+{% block content %}
+<h1>{{ title }}</h1>
+<p id="account-error" role="alert"></p>
+{% if login %}
+<form id="account-login">
+  <label>Username <input name="username" autocomplete="username" required maxlength="64"></label>
+  <label>Password <input name="password" type="password" autocomplete="current-password" required maxlength="1024"></label>
+  <label>Namespace (optional) <input name="namespace" maxlength="64"></label>
+  <button>Sign in</button>
+</form>
+{% else %}
+<p id="account-identity"></p>
+<form id="account-namespace">
+  <label>Active namespace <input name="namespace" required maxlength="64" list="account-namespaces"></label>
+  <datalist id="account-namespaces"></datalist><button>Switch namespace</button>
+</form>
+<form id="account-token">
+  <label>Token label <input name="label" maxlength="64"></label>
+  <label>Token namespace <input name="namespace" required maxlength="64" list="account-namespaces"></label>
+  <button>Create 30-day CLI token</button>
+</form>
+<p>Copy a new token now. It is displayed only once.</p>
+<output id="account-new-token"></output>
+<ul id="account-tokens"></ul>
+<form id="account-password">
+  <label>Current password <input name="current_password" type="password" autocomplete="current-password" required maxlength="1024"></label>
+  <label>New password <input name="new_password" type="password" autocomplete="new-password" required minlength="12" maxlength="1024"></label>
+  <button>Change password and sign out everywhere</button>
+</form>
+<button id="account-logout" type="button">Sign out</button>
+{% endif %}
+{% endblock %}

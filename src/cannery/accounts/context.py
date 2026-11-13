@@ -3,7 +3,7 @@
 from contextvars import ContextVar
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, RedirectResponse
 from sqlalchemy import Engine
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.concurrency import run_in_threadpool
@@ -79,6 +79,10 @@ def install_context(app: FastAPI, settings: Settings, engine: Engine) -> None:
                     CURRENT.set(user)
                 except HTTPException as error:
                     if not public(request):
+                        if request.method == "GET" and "text/html" in request.headers.get(
+                            "accept", ""
+                        ):
+                            return RedirectResponse("/login", status_code=303)
                         return JSONResponse({"detail": error.detail}, status_code=error.status_code)
                 except SQLAlchemyError:
                     return JSONResponse(

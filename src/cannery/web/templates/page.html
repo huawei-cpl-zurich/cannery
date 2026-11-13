@@ -5,6 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{{ title }} · CANNery</title>
   <script src="/static/htmx.min.js" defer></script>
+  {% if request.app.state.auth_enabled %}<script src="/static/accounts.js" defer></script>{% endif %}
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -13,6 +14,7 @@
       {% for path, item in pages.items() %}
       <a href="/{{ path }}"{% if item[0] == title %} aria-current="page"{% endif %}>{{ item[0] }}</a>
       {% endfor %}
+      {% if request.app.state.auth_enabled %}<a href="/account">Account</a><a href="/login">Sign in</a>{% endif %}
       {% if admin %}<a href="/admin">Administration</a>{% endif %}
     </nav>
   </header>
