@@ -22,7 +22,9 @@ def existing_request(
     # The caller holds the specification row lock, including across request insertion.
     requests = session.scalars(
         select(Submission)
+        .join(IntakeState, IntakeState.id == Submission.id)
         .where(
+            IntakeState.status != "failed",
             Submission.namespace == namespace,
             Submission.parent_id == parent_id,
             Submission.spec_id == spec_id,
