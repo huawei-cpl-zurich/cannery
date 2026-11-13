@@ -4,11 +4,10 @@ Current A5 contracts include [Ascend C admission](binary-admission.md),
 [CATLASS admission](catlass-admission.md), [seeded numerical validation](numerical-worker.md),
 and opt-in [private performance reports](benchmark-worker.md). Artifacts are
 self-hosted; no actual Hugging Face service is required. [Publication and Global Best](publication.md)
-are implemented for A5 and native Ascend C on A3. See [A3 workers](a3-worker.md)
-and [local accounts](accounts.md).
+are implemented for A5; A3 remains planned.
 
 
-Status: M0–M7 implemented for supported A5 and A3 native recipes · 2026-11-13
+Status: M0–M6 implemented for supported A5 recipe contracts; A3 remains planned · 2026-11-12
 
 Build a working user journey with thin end-to-end slices. **No non-Git source intake.** Every implementation commit contains a supported build contract, and binary artifacts are produced by our workers before validation and published from private artifact storage. **Initial adapters: Ascend C and CATLASS DSL only**; Triton-Ascend and PyPTO are future phases.
 
@@ -108,12 +107,10 @@ Implemented for supported A5 recipes; see [publication and offline consumption](
 ## M7 — A3 and operations
 
 M7a offline backup/restore, conservative artifact collection and graceful coordinator
-shutdown are implemented; see [maintenance](maintenance.md). M7b adds isolated
-[A3 native workers](a3-worker.md). M7c adds [local accounts](accounts.md),
-namespace authorization, read-only administration and credential rotation.
-UI polish and build-speed improvements remain separate follow-up work.
+shutdown are implemented; see [maintenance](maintenance.md). A3 and remaining
+role/credential/UI work are next.
 
-- Add A3 native Ascend C workers (CATLASS DSL remains A5-only); completely separate A3 rankings/history.
+- Add A3 worker and matching Ascend C/CATLASS binary variants; completely separate A3 rankings/history.
 - Apply device leases, idempotent dispatch, heartbeat recovery, restricted Git intake, sandbox execution, credential scoping and artifact cleanup.
 - Back up **PostgreSQL and internal Git snapshot repositories**, test restore, reconcile orphaned private staging artifacts.
 - Role gate workers/storage/Git snapshot admin UI; expose only user-relevant submission ETA.

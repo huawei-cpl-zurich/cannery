@@ -4,8 +4,7 @@ Current A5 contracts include [Ascend C admission](binary-admission.md),
 [CATLASS admission](catlass-admission.md), [seeded numerical validation](numerical-worker.md)
 and [private performance reports](benchmark-worker.md). Artifacts are self-hosted;
 no actual Hugging Face service is required. [Publication and Global Best](publication.md)
-are implemented for A5 and native Ascend C on A3. See [A3 workers](a3-worker.md)
-and [local accounts](accounts.md).
+are implemented for A5; A3 remains planned.
 
 
 Status: proposed PoC journey · 2026-11-09

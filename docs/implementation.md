@@ -4,10 +4,10 @@ Current A5 contracts include [Ascend C admission](binary-admission.md),
 [CATLASS admission](catlass-admission.md), [seeded numerical validation](numerical-worker.md)
 [private performance reports](benchmark-worker.md) and
 [publication/Global Best/offline consumption](publication.md). Artifacts are self-hosted;
-no actual Hugging Face service is required. A3 native Ascend C and [local accounts](accounts.md) are implemented.
+no actual Hugging Face service is required. A3 remains a later milestone.
 
 
-Status: M0–M7 implemented for supported A5 and A3 native recipes · 2026-11-13
+Status: M0–M6 implemented for supported A5 recipes; A3 remains planned · 2026-11-12
 
 See [Architecture](architecture.md) for services, data movement and storage; [User Story](user-story.md) for UI, CLI, REST and private artifact consumption; [Design](design.md) for product requirements; [Roadmap](roadmap.md) for milestones.
 
