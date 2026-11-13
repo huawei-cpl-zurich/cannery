@@ -55,6 +55,8 @@ def headers(url: str) -> dict[str, str]:
         descriptor = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
     except FileNotFoundError:
         return {}
+    except OSError:
+        raise ValueError("Cannot read private CLI credentials") from None
     try:
         info = os.fstat(descriptor)
         if not stat.S_ISREG(info.st_mode) or info.st_mode & 0o077 or info.st_uid != os.getuid():
