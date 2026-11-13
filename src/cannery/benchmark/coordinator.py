@@ -27,8 +27,10 @@ from cannery.benchmark.state import (
 )
 from cannery.builds.coordinator import evidence
 from cannery.builds.executor import ExecutionFailure
+from cannery.builds.journals import retained_profile
 from cannery.builds.remote import RemoteFailure, RemotePending, durable_write, operation_receipts
 from cannery.builds.sandbox import WorkerProfile
+from cannery.devices import Device
 from cannery.numerics.baselines import BaselinePending, BaselineUnavailable
 
 
@@ -69,9 +71,13 @@ def prune(journal: Path) -> None:
 
 
 def process(
-    engine: Engine, key: str, factory: Callable[[PerformanceClaim], BenchmarkExecutor]
+    engine: Engine,
+    key: str,
+    factory: Callable[[PerformanceClaim], BenchmarkExecutor],
+    *,
+    device: Device = "a5",
 ) -> None:
-    claim = claim_job(engine, key)
+    claim = claim_job(engine, key, device=device)
     if claim is None:
         return
     with LeaseKeeper(engine, claim) as keeper:
@@ -169,7 +175,11 @@ def process(
 
 
 def cleanup_finished(
-    engine: Engine, root: Path, factory: Callable[[PerformanceClaim], BenchmarkExecutor]
+    engine: Engine,
+    root: Path,
+    factory: Callable[[PerformanceClaim], BenchmarkExecutor],
+    *,
+    owner: WorkerProfile | None = None,
 ) -> None:
     if not root.exists():
         return
@@ -196,13 +206,13 @@ def cleanup_finished(
         count += 1
         durable_write(cursor, journal.name.encode())
         try:
+            saved = retained_profile(journal, owner)
+            if owner is not None and saved is None:
+                continue
             executor = factory(PerformanceClaim(result.job_key, result.id, result.id))
-            context = journal / "context.json"
-            if context.exists():
-                executor.profile = WorkerProfile.model_validate_json(
-                    json.dumps(json.loads(context.read_bytes())["profile"])
-                )
-                executor.remote.target = executor.profile.target
+            if saved is not None:
+                executor.profile = saved
+                executor.remote.target = saved.target
             for receipt in operation_receipts(journal):
                 saved = json.loads(receipt.read_bytes())
                 state = executor.remote.call("observe", saved["handle"]).get("state")

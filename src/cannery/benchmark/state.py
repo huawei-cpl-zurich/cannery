@@ -14,6 +14,7 @@ from sqlalchemy import (
     ForeignKey,
     UniqueConstraint,
     event,
+    func,
     inspect,
     or_,
     select,
@@ -26,6 +27,7 @@ import cannery.registry.models  # noqa: F401
 import cannery.submissions.models  # noqa: F401
 from cannery.artifacts import ArtifactRef
 from cannery.database import Base, aware
+from cannery.devices import Device
 
 
 class PerformanceJob(Base):
@@ -136,12 +138,16 @@ class PerformanceClaim:
     token: UUID
 
 
-def claim_job(engine: Engine, key: str) -> PerformanceClaim | None:
+def claim_job(engine: Engine, key: str, *, device: Device = "a5") -> PerformanceClaim | None:
     now = datetime.now(UTC)
     with Session(engine) as db, db.begin():
         row = db.scalar(
             select(PerformanceJob)
-            .where(PerformanceJob.key == key)
+            .where(
+                PerformanceJob.key == key,
+                func.coalesce(PerformanceJob.identity["cohort"]["device"].as_string(), "a5")
+                == device,
+            )
             .with_for_update(skip_locked=True)
         )
         if row is None or row.status not in {"queued", "running"}:
@@ -251,13 +257,15 @@ def finish_job(
         return True
 
 
-def due_jobs(engine: Engine) -> list[str]:
+def due_jobs(engine: Engine, *, device: Device = "a5") -> list[str]:
     now = datetime.now(UTC)
     with Session(engine) as db:
         return list(
             db.scalars(
                 select(PerformanceJob.key)
                 .where(
+                    func.coalesce(PerformanceJob.identity["cohort"]["device"].as_string(), "a5")
+                    == device,
                     PerformanceJob.status.in_(("queued", "running")),
                     PerformanceJob.due_at <= now,
                     or_(PerformanceJob.lease_until.is_(None), PerformanceJob.lease_until <= now),

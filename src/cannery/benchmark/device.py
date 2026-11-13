@@ -85,6 +85,7 @@ def device_cohort(
             raise ValueError("Invalid trusted device identity")
         cohort = Cohort(
             **identity,
+            device=pinned.device,
             image=pinned.image,
             loader_sha256=saved["loader"],
             runtime=pinned.fingerprint,

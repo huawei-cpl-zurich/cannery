@@ -18,6 +18,7 @@ from cannery.artifacts import ArtifactError
 from cannery.artifacts.factory import make_store
 from cannery.builds.ascendc import BuildError
 from cannery.builds.executor import BuildExecutor, ExecutionFailure
+from cannery.builds.journals import retained_profile
 from cannery.builds.remote import (
     CplRemote,
     RemoteFailure,
@@ -212,6 +213,8 @@ def cleanup_finished(
     engine: Engine,
     root: Path,
     factory: Callable[[BuildClaim], BuildExecutor],
+    *,
+    owner: WorkerProfile | None = None,
 ) -> None:
     if not root.exists():
         return
@@ -239,13 +242,13 @@ def cleanup_finished(
         count += 1
         durable_write(cursor, journal.name.encode())
         try:
+            saved = retained_profile(journal, owner)
+            if owner is not None and saved is None:
+                continue
             executor = factory(claim)
-            context = journal / "context.json"
-            if context.exists():
-                executor.profile = WorkerProfile.model_validate_json(
-                    json.dumps(json.loads(context.read_bytes())["profile"])
-                )
-                executor.remote.target = executor.profile.target
+            if saved is not None:
+                executor.profile = saved
+                executor.remote.target = saved.target
             for receipt in operation_receipts(journal):
                 data = json.loads(receipt.read_bytes())
                 if "handle" in data:

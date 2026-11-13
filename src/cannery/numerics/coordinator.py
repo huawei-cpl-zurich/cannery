@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from cannery.artifacts import ArtifactError, ArtifactRef
 from cannery.builds.coordinator import evidence
 from cannery.builds.executor import BuildExecutor, ExecutionFailure
+from cannery.builds.journals import retained_profile
 from cannery.builds.remote import RemoteFailure, RemotePending, durable_write, operation_receipts
 from cannery.builds.sandbox import WorkerProfile
 from cannery.builds.state import BuildResult, BuildState
@@ -226,7 +227,11 @@ def process(
 
 
 def cleanup_finished(
-    engine: Engine, root: Path, factory: Callable[[NumericalClaim], NumericalExecutor]
+    engine: Engine,
+    root: Path,
+    factory: Callable[[NumericalClaim], NumericalExecutor],
+    *,
+    owner: WorkerProfile | None = None,
 ) -> None:
     if not root.exists():
         return
@@ -253,13 +258,13 @@ def cleanup_finished(
         durable_write(cursor, journal.name.encode())
         count += 1
         try:
+            saved = retained_profile(journal, owner)
+            if owner is not None and saved is None:
+                continue
             executor = factory(NumericalClaim(result.candidate_id, result.id, result.id))
-            context = journal / "context.json"
-            if context.exists():
-                executor.profile = WorkerProfile.model_validate_json(
-                    json.dumps(json.loads(context.read_bytes())["profile"])
-                )
-                executor.remote.target = executor.profile.target
+            if saved is not None:
+                executor.profile = saved
+                executor.remote.target = saved.target
             for receipt in operation_receipts(journal):
                 data = json.loads(receipt.read_bytes())
                 if "handle" in data:
