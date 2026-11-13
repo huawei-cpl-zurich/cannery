@@ -42,6 +42,7 @@ def template_context(settings: Settings) -> dict[str, object]:
         "admin": role(settings) == "admin",
         "development": settings.dev_identity_enabled,
         "signed_in": signed_in(settings),
+        "auth_enabled": settings.auth_enabled,
     }
 
 
