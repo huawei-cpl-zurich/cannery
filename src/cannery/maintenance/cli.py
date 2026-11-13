@@ -10,6 +10,7 @@ import typer
 from cannery.maintenance.archive import verify
 from cannery.maintenance.artifacts import audit
 from cannery.maintenance.capture import Docker, capture
+from cannery.maintenance.collect import collect
 from cannery.maintenance.restore import restore
 
 app = typer.Typer(
@@ -78,6 +79,27 @@ def artifact_audit(
     """Read-only offline audit of retained references, missing bytes and aged orphans."""
     try:
         result = audit(Docker(), project, age_hours)
+        typer.echo(json.dumps(result, sort_keys=True, indent=2))
+        if result["errors"]:
+            raise typer.Exit(1)
+    except (OSError, ValueError, tarfile.TarError) as error:
+        report(error)
+
+
+@app.command("gc-artifacts")
+def artifact_gc(
+    project: Annotated[str, typer.Option()],
+    backup: Annotated[Path, typer.Option()],
+    age_hours: Annotated[float, typer.Option(min=24)] = 168,
+    apply: bool = False,
+) -> None:
+    """Preview orphan cleanup; --apply requires verified backup copies and stopped writers."""
+    try:
+        result = (
+            collect(Docker(), project, backup, age_hours)
+            if apply
+            else audit(Docker(), project, age_hours)
+        )
         typer.echo(json.dumps(result, sort_keys=True, indent=2))
         if result["errors"]:
             raise typer.Exit(1)
