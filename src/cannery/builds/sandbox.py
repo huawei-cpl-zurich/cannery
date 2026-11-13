@@ -2,11 +2,12 @@
 
 import json
 from pathlib import PurePosixPath
-from typing import Literal, Self
+from typing import Any, Literal, Self
 from uuid import UUID
 
-from pydantic import Field, model_validator
+from pydantic import Field, SerializerFunctionWrapHandler, model_serializer, model_validator
 
+from cannery.devices import Device, matches_soc
 from cannery.registry.manifest import StrictModel
 
 
@@ -36,6 +37,8 @@ class CatlassToolchain(StrictModel):
 
 
 class WorkerProfile(StrictModel):
+    device: Device = "a5"
+    toolchain_in_image: bool = False
     target: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
     runtime: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
     workspace: str
@@ -48,6 +51,16 @@ class WorkerProfile(StrictModel):
     fingerprint: dict[str, str]
     compiler: str = Field(min_length=1, max_length=4096)
     catlass: CatlassToolchain | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        value: dict[str, Any] = handler(self)
+        # Keep existing A5 attempt contexts byte-identical across this upgrade.
+        if self.device == "a5":
+            value.pop("device", None)
+        if not self.toolchain_in_image:
+            value.pop("toolchain_in_image", None)
+        return value
 
     @model_validator(mode="after")
     def confined_profile(self) -> Self:
@@ -81,10 +94,14 @@ class WorkerProfile(StrictModel):
             raise ValueError("Incomplete runtime fingerprint")
         if (
             self.fingerprint["machine"] != "aarch64"
-            or not self.fingerprint["soc"].startswith("Ascend950")
+            or not matches_soc(self.device, self.fingerprint["soc"])
             or not all(self.fingerprint.values())
         ):
-            raise ValueError("Expected an A5 runtime fingerprint")
+            raise ValueError("Device and runtime fingerprint disagree")
+        if self.device == "a3" and self.catlass is not None:
+            raise ValueError("CATLASS DSL toolchains require A5")
+        if self.toolchain_in_image and self.catlass is not None:
+            raise ValueError("CATLASS DSL requires host-mounted pinned toolchains")
         return self
 
 
@@ -179,10 +196,6 @@ if benchmark and device_identity()!=benchmark:
     raise ValueError('Performance device cohort changed')
 output_limit=128*1024*1024 if benchmark else 63*1024*1024
 
-cann = os.environ['ASCEND_HOME_PATH']
-if (not Path(cann).is_absolute() or len(Path(cann).parts) < 4
-        or not cann.startswith(('/opt/', '/usr/local/Ascend/'))):
-    raise ValueError('Invalid registered CANN root')
 args = ['docker', 'run', '--rm', '--init', '--pull', 'never', '--name', names[phase],
         '--network', 'none', '--user', '10001:10001', '--cap-drop', 'ALL',
         '--security-opt', 'no-new-privileges', '--read-only', '--log-driver', 'none',
@@ -192,11 +205,16 @@ args = ['docker', 'run', '--rm', '--init', '--pull', 'never', '--name', names[ph
         '--ulimit', 'fsize=' + ('134217728:134217728' if benchmark else '67108864:67108864'),
         '--env', 'HOME=/tmp',
         '--env', 'ASCEND_PROCESS_LOG_PATH=/tmp/ascend/log',
-        '--mount', f'type=bind,src={source},dst=/input,readonly',
-        '--mount', f'type=bind,src={cann},dst={cann},readonly']
-for key in ['PATH', 'LD_LIBRARY_PATH', 'ASCEND_HOME_PATH',
-            'ASCEND_TOOLKIT_HOME', 'ASCEND_OPP_PATH']:
-    args += ['--env', key]
+        '--mount', f'type=bind,src={source},dst=/input,readonly']
+if not config.get('toolchain_in_image', False):
+    cann = os.environ['ASCEND_HOME_PATH']
+    if (not Path(cann).is_absolute() or len(Path(cann).parts) < 4
+            or not cann.startswith(('/opt/', '/usr/local/Ascend/'))):
+        raise ValueError('Invalid registered CANN root')
+    args += ['--mount', f'type=bind,src={cann},dst={cann},readonly']
+    for key in ['PATH', 'LD_LIBRARY_PATH', 'ASCEND_HOME_PATH',
+                'ASCEND_TOOLKIT_HOME', 'ASCEND_OPP_PATH']:
+        args += ['--env', key]
 if config['toolchain_read_group'] is not None:
     args += ['--group-add', str(config['toolchain_read_group'])]
 held = None

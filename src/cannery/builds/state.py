@@ -23,6 +23,7 @@ from cannery.artifacts import ArtifactRef
 from cannery.builds.ascendc import BuildError
 from cannery.builds.catlass_compile import adapter_for
 from cannery.database import Base
+from cannery.devices import Device
 from cannery.registry.registrations import aware
 from cannery.submissions.manifest import SubmissionManifest
 from cannery.submissions.models import Candidate
@@ -109,11 +110,17 @@ def _terminal(session: Session, state: BuildState, code: str, now: datetime) -> 
     state.lease, state.lease_until = None, None
 
 
-def claim_build(engine: Engine, key: UUID) -> BuildClaim | None:
+def claim_build(engine: Engine, key: UUID, *, device: Device = "a5") -> BuildClaim | None:
     now = datetime.now(UTC)
     with Session(engine) as session, session.begin():
         state = session.scalar(
-            select(BuildState).where(BuildState.id == key).with_for_update(skip_locked=True)
+            select(BuildState)
+            .join(Candidate, Candidate.id == BuildState.id)
+            .where(
+                BuildState.id == key,
+                Candidate.manifest["implementation"]["device"].as_string() == device,
+            )
+            .with_for_update(of=BuildState, skip_locked=True)
         )
         if state is None or state.status not in ("queued", "building"):
             return None
@@ -208,14 +215,16 @@ def finish_build(
         return True
 
 
-def due_builds(engine: Engine) -> list[str]:
+def due_builds(engine: Engine, *, device: Device = "a5") -> list[str]:
     now = datetime.now(UTC)
     with Session(engine) as session:
         return [
             str(key)
             for key in session.scalars(
                 select(BuildState.id)
+                .join(Candidate, Candidate.id == BuildState.id)
                 .where(
+                    Candidate.manifest["implementation"]["device"].as_string() == device,
                     BuildState.status.in_(("queued", "building")),
                     or_(
                         BuildState.deadline <= now,

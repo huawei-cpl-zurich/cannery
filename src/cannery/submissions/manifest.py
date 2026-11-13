@@ -111,8 +111,8 @@ class Implementation(StrictModel):
     def supported_contract(self) -> Self:
         if self.build.adapter != self.language:
             raise ValueError("Build adapter must match language")
-        if self.build.abi == "unary-f32-v1" and (self.language != "ascendc" or self.device != "a5"):
-            raise ValueError("unary-f32-v1 requires Ascend C on A5")
+        if self.build.abi == "unary-f32-v1" and self.language != "ascendc":
+            raise ValueError("unary-f32-v1 requires Ascend C")
         if self.build.abi == "catlass-unary-f32-v1":
             if (self.language, self.device) != ("catlass", "a5"):
                 raise ValueError("catlass-unary-f32-v1 requires CATLASS on A5")

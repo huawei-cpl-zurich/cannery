@@ -28,6 +28,8 @@ class ExecutionFailure(BuildError):
 def binary_package(
     binary: bytes, source: str, profile: WorkerProfile, manifest: SubmissionManifest | None = None
 ) -> bytes:
+    if manifest is not None and manifest.implementation.device != profile.device:
+        raise ExecutionFailure("worker_device_mismatch")
     if (
         not 64 <= len(binary) <= 63 * 1024 * 1024
         or binary[:6] != b"\x7fELF\x02\x01"
@@ -39,7 +41,7 @@ def binary_package(
     metadata = {
         "schema_version": 1,
         "abi": "unary-f32-v1",
-        "device": "a5",
+        "device": profile.device,
         "source_sha256": source,
         "library_sha256": digest(binary),
         "runtime": profile.fingerprint,
@@ -151,6 +153,8 @@ class BuildExecutor:
         binding = SnapshotBinding.model_validate(candidate.snapshot)
         files = self.snapshots.read(binding).files
         validated = validate_submission(files, binding.source.path)
+        if validated.manifest.implementation.device != self.profile.device:
+            raise ExecutionFailure("worker_device_mismatch")
         if (
             validated.content_sha256 != candidate.content_sha256
             or validated.file_sha256 != candidate.file_sha256
