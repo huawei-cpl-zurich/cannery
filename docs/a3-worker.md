@@ -2,7 +2,9 @@
 
 The A3 track targets the registered `gz-a3` machine, which currently reports
 Ascend910B4-1, CANN 9.1 and Python 3.11 / PyTorch 2.10. CATLASS DSL is A5-only.
-Native Ascend C uses the existing unary float32 ABI. Compatible C++ headers may
+Native Ascend C uses the existing unary float32 ABI and the verified ASC
+compiler target `dav-2201`. Kernel declarations must carry an explicit kernel
+kind, as in the example's `__vector__` declaration. Compatible C++ headers may
 use that adapter; there is no dedicated CATLASS C++ build/launch contract.
 
 Worker profiles pin device, compiler, image and exact runtime fingerprint. A5 is
