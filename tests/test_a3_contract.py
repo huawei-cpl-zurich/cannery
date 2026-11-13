@@ -15,6 +15,8 @@ from cannery.builds.coordinator import discover
 from cannery.builds.executor import ExecutionFailure, binary_package
 from cannery.builds.sandbox import WorkerProfile
 from cannery.builds.state import BuildState, claim_build, due_builds
+from cannery.numerics.coordinator import discover as discover_numerics
+from cannery.numerics.state import NumericalState, claim_numerical, due_numericals
 from cannery.submissions.manifest import SubmissionManifest
 from cannery.submissions.models import Candidate
 
@@ -113,9 +115,6 @@ def test_old_supervisor_checkpoint_cannot_silently_resume_under_new_code(setup_e
 
 
 def test_numerical_discovery_and_claims_are_device_scoped(records):
-    from cannery.numerics.coordinator import discover as discover_numerics
-    from cannery.numerics.state import NumericalState, claim_numerical, due_numericals
-
     engine, _ = records
     a3, a5 = candidate(records), candidate(records)
     with Session(engine) as db, db.begin():
