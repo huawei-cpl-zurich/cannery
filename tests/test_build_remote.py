@@ -113,7 +113,7 @@ def test_unavailable_preflight_does_not_create_ambiguous_dispatch_marker(tmp_pat
     assert not (tmp_path / "compile.dispatch").exists()
 
 
-def test_async_transfer_backend_is_rejected_before_any_dispatch(tmp_path):
+def test_async_transfer_backend_without_registry_is_rejected_before_dispatch(tmp_path):
     remote = FakeCpl(
         tmp_path,
         [
@@ -127,7 +127,7 @@ def test_async_transfer_backend_is_rejected_before_any_dispatch(tmp_path):
         ],
     )
     remote._available = False
-    with pytest.raises(ValueError, match="SSH"):
+    with pytest.raises(ValueError, match="registry"):
         remote.transfer("upload", "local", "/remote")
     assert [call[0] for call in remote.calls] == ["capabilities"]
 

@@ -25,6 +25,7 @@ from cannery.builds.remote import (
     RemotePending,
     durable_write,
     operation_receipts,
+    settle_operation,
 )
 from cannery.builds.sandbox import WorkerProfile
 from cannery.builds.state import (
@@ -250,11 +251,9 @@ def cleanup_finished(
                 executor.profile = saved
                 executor.remote.target = saved.target
             for receipt in operation_receipts(journal):
-                data = json.loads(receipt.read_bytes())
-                if "handle" in data:
-                    state = executor.remote.call("observe", data["handle"]).get("state")
-                    if state not in {"completed", "failed", "cancelled"}:
-                        executor.remote.call("cancel", data["handle"])
+                saved = json.loads(receipt.read_bytes())
+                if "handle" in saved:
+                    settle_operation(executor.remote, saved["handle"], cancel_jobs=True)
             if list(journal.glob("*.dispatch")):
                 executor.cleanup(identifier)
             evidence(executor)
@@ -303,7 +302,7 @@ def main() -> None:
     def cleanup_loop() -> None:
         while not stopped.is_set():
             try:
-                cleanup_finished(engine, settings.build_control_root, factory)
+                cleanup_finished(engine, settings.build_control_root, factory, owner=profile)
             except (SQLAlchemyError, OSError):
                 logging.warning("Build cleanup unavailable; retaining journals")
             stopped.wait(10)
@@ -322,7 +321,7 @@ def main() -> None:
             except (SQLAlchemyError, OSError, ValueError):
                 logging.warning("Binary admission coordinator unavailable; retrying")
             if args.once:
-                cleanup_finished(engine, settings.build_control_root, factory)
+                cleanup_finished(engine, settings.build_control_root, factory, owner=profile)
                 return
             stopped.wait(5)
     finally:
