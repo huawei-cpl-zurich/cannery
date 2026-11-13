@@ -272,6 +272,39 @@ def test_auth_browser_cli_and_outage_recovery(deployment, tmp_path):
     )
     assert not list((Path(cli_env["HOME"]) / ".config/cannery/tokens").glob("*.json"))
 
+    with httpx.Client(base_url=base, timeout=5) as connection:
+        login = connection.post(
+            "/api/v1/auth/login",
+            headers={"X-Cannery-Login": "1"},
+            json={"username": "alice", "password": password.read_text()},
+        )
+        csrf = {"X-CSRF-Token": login.json()["csrf_token"]}
+        issued = connection.post("/api/v1/auth/tokens", headers=csrf, json={"namespace": "team"})
+        token = issued.json()["token"]
+        changed = connection.post(
+            "/api/v1/auth/password",
+            headers=csrf,
+            json={
+                "current_password": password.read_text(),
+                "new_password": "new test-only account password",
+            },
+        )
+        assert changed.status_code == 204
+        assert connection.get("/api/v1/auth/me").status_code == 401
+        assert_revoked(base, token)
+        new_login = connection.post(
+            "/api/v1/auth/login",
+            headers={"X-Cannery-Login": "1"},
+            json={"username": "alice", "password": "new test-only account password"},
+        )
+        assert new_login.status_code == 200
+        assert (
+            connection.post(
+                "/api/v1/auth/logout", headers={"X-CSRF-Token": new_login.json()["csrf_token"]}
+            ).status_code
+            == 204
+        )
+
 
 def assert_revoked(base, token):
     assert (
@@ -280,3 +313,50 @@ def assert_revoked(base, token):
         ).status_code
         == 401
     )
+
+
+def test_postgres_revocation_between_credential_lookup_and_account_lock(deployment, monkeypatch):
+    import threading
+    from concurrent.futures import ThreadPoolExecutor
+
+    from fastapi import HTTPException
+    from sqlalchemy.orm import Session
+
+    from cannery.accounts import auth, operator
+    from cannery.accounts.models import Account
+    from cannery.database import make_engine
+    from cannery.settings import Settings
+
+    base, environment, _, _, password = deployment
+    with httpx.Client(base_url=base) as connection:
+        reply = connection.post(
+            "/api/v1/auth/login",
+            headers={"X-Cannery-Login": "1"},
+            json={"username": "alice", "password": password.read_text()},
+        )
+        assert reply.status_code == 200
+        raw = connection.cookies["cannery_session"]
+    engine = make_engine(Settings(database_url=environment["CANNERY_DATABASE_URL"]))
+    reached, resume = threading.Event(), threading.Event()
+    original = Session.get
+
+    def get(db, entity, *args, **kwargs):
+        if entity is Account:
+            reached.set()
+            assert resume.wait(5)
+        return original(db, entity, *args, **kwargs)
+
+    monkeypatch.setattr(Session, "get", get)
+    try:
+        with ThreadPoolExecutor(max_workers=1) as executor:
+            future = executor.submit(auth.authenticate, engine, raw, "session")
+            try:
+                assert reached.wait(5)
+                operator.configure(engine, "alice", password="a changed test-only password")
+            finally:
+                resume.set()
+            with pytest.raises(HTTPException) as error:
+                future.result(timeout=5)
+            assert error.value.status_code == 401
+    finally:
+        engine.dispose()
