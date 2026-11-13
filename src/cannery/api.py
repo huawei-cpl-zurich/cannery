@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from redis.asyncio import Redis
 from redis.exceptions import RedisError
 
+from cannery.accounts.api import install_auth
 from cannery.artifacts.factory import make_store
 from cannery.database import make_engine
 from cannery.health import postgres_ready
@@ -23,6 +24,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     config = settings if settings is not None else Settings()
     if config.release_enabled and config.artifact_backend != "private":
         raise ValueError("Releases require private artifact storage")
+    if config.auth_enabled and config.dev_identity_enabled:
+        raise ValueError("Account authentication and development identity cannot be combined")
     engine = make_engine(config)
     redis = Redis.from_url(
         config.redis_url.get_secret_value(),
@@ -59,6 +62,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         )
 
     app.state.artifacts = make_store(config)
+    install_auth(app, config, engine)
     install_registry(app, config, engine)
     install_submissions(app, config, engine)
     install_publications(app, config, engine)

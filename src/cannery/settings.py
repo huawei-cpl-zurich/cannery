@@ -19,6 +19,10 @@ class Settings(BaseSettings):
     )
     redis_url: SecretStr = SecretStr("redis://localhost:6379/0")
 
+    auth_enabled: bool = False
+    auth_origin: str = "http://127.0.0.1:8095"
+    auth_cookie_secure: bool = True
+
     dev_identity_enabled: bool = False
     dev_role: Literal["user", "admin"] = "user"
 
