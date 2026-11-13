@@ -4,13 +4,16 @@ permissions:
   contents: read
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     strategy:
       matrix:
         python: ["3.12", "3.13"]
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-compose-action@v2
+        with:
+          version: v2.38.2
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ matrix.python }}
@@ -27,20 +30,26 @@ jobs:
           /tmp/cannery-wheel/bin/cannery --help
 
   compose:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-compose-action@v2
+        with:
+          version: v2.38.2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: python scripts/compose_acceptance.py
 
   reference:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-compose-action@v2
+        with:
+          version: v2.38.2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -48,50 +57,65 @@ jobs:
       - run: python scripts/reference_acceptance.py
 
   registration:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-compose-action@v2
+        with:
+          version: v2.38.2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: python scripts/registration_acceptance.py
 
   submission:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-compose-action@v2
+        with:
+          version: v2.38.2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: python scripts/submission_acceptance.py
 
   numerical-ingress:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-compose-action@v2
+        with:
+          version: v2.38.2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: python scripts/numerical_ingress_acceptance.py
 
   benchmark-faults:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-compose-action@v2
+        with:
+          version: v2.38.2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - run: python scripts/benchmark_acceptance.py
 
   publication-faults:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-compose-action@v2
+        with:
+          version: v2.38.2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -99,10 +123,13 @@ jobs:
       - run: CANNERY_RELEASE_DOCKER=1 pytest -q tests/test_publication_docker.py
 
   backup-restore:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-compose-action@v2
+        with:
+          version: v2.38.2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -110,10 +137,13 @@ jobs:
       - run: CANNERY_BACKUP_DOCKER=1 pytest -q tests/test_backup_docker.py tests/test_shutdown_docker.py
 
   device-workers:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-compose-action@v2
+        with:
+          version: v2.38.2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
@@ -121,10 +151,13 @@ jobs:
       - run: CANNERY_DEVICE_DOCKER=1 CANNERY_COMPOSE_REQUIRED=1 pytest -q tests/test_a3_compose.py tests/test_device_workers_docker.py
 
   authentication:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
+      - uses: docker/setup-compose-action@v2
+        with:
+          version: v2.38.2
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
