@@ -43,6 +43,14 @@ class Password(StrictModel):
     new_password: str = Field(min_length=12, max_length=1024)
 
 
+def route_path(request: Request) -> str:
+    path = str(request.scope["path"])
+    prefix = request.scope.get("root_path", "").rstrip("/")
+    if prefix and (path == prefix or path.startswith(prefix + "/")):
+        return path[len(prefix) :] or "/"
+    return path
+
+
 def credential(request: Request) -> tuple[str, str]:
     authorization = request.headers.get("authorization")
     if authorization is not None:
@@ -108,7 +116,7 @@ def install_auth(app: FastAPI, settings: Settings, engine: Engine) -> None:
 
     @app.exception_handler(RequestValidationError)
     async def invalid_auth_request(request: Request, error: RequestValidationError) -> JSONResponse:
-        if request.url.path.startswith("/api/v1/auth/"):
+        if route_path(request).startswith("/api/v1/auth/"):
             return JSONResponse({"detail": "Invalid authentication request"}, status_code=422)
         return await request_validation_exception_handler(request, error)
 
