@@ -130,37 +130,59 @@ def remove_containers():
                 raise RuntimeError('Container cleanup uncertain; preserve device ownership')
 
 def check_device():
-    for kind in ['health', 'usages', 'proc-mem', 'current-fault-event']:
+    a3 = config.get('device', 'a5') == 'a3'
+    for kind in ['health', 'usages', 'proc-mem', 'ecc' if a3 else 'current-fault-event']:
         try:
-            result = subprocess.run(['npu-smi', 'info', '-t', kind, '-i', str(config['npu'])],
+            result = subprocess.run(['npu-smi', 'info', '-t', kind, '-i', str(config['npu'])]
+                                    + (['-c', '0'] if a3 else []),
                                     capture_output=True, text=True, timeout=12)
         except (OSError, subprocess.TimeoutExpired):
             raise SystemExit(75)
         text = result.stdout
         if result.returncode or not text.strip():
             raise SystemExit(75)
-        if kind == 'health' and not re.search(r'Health Status\s*:\s*OK', text):
-            raise SystemExit(75)
+        if kind == 'health':
+            values = re.findall(r'^\s*Health Status\s*:\s*(\S+)\s*$', text, re.M)
+            if values != ['OK']:
+                raise SystemExit(75)
+            if a3 and not re.search(r'^\s*Error Code\s*:\s*NA\s*$', text, re.M):
+                raise SystemExit(75)
         if kind == 'usages':
-            memory = re.search(r'HBM Usage Rate\(%\)\s*:\s*(\d+)', text)
+            memory = re.search(r'^\s*HBM Usage Rate\(%\)\s*:\s*(\d+)\s*$', text, re.M)
             if not memory or int(memory.group(1)) >= 50:
                 raise SystemExit(75)
-            if not re.search(r'NPU Utilization\(%\)\s*:\s*0\b', text):
-                raise SystemExit(75)
+            metrics = ['Aicore Usage Rate', 'Aivector Usage Rate'] if a3 else ['NPU Utilization']
+            for metric in metrics:
+                if not re.search(r'^\s*' + metric + r'\(%\)\s*:\s*0\s*$', text, re.M):
+                    raise SystemExit(75)
         if kind == 'proc-mem' and 'No process in device' not in text:
             raise SystemExit(75)
         if kind == 'current-fault-event' and not re.search(r'Fault Event Count\s*:\s*0\b', text):
             raise SystemExit(75)
+        if kind == 'ecc':
+            for metric in ['HBM Double Bit Error Count', 'HBM Double Bit Aggregate Total Err Cnt']:
+                if not re.search(r'^\s*' + metric + r'\s*:\s*0\s*$', text, re.M):
+                    raise SystemExit(75)
 
 def device_identity():
     reply=subprocess.run(['npu-smi','info','-t','board','-i',str(config['npu'])],
                          capture_output=True,text=True,timeout=12,check=True).stdout
     values={}
-    for name in ['Serial Number','DDie ID']:
-        found=re.search(r'^\s*'+name+r'\s*:\s*(\S[^\r\n]*)$',reply,re.M)
+    a3 = config.get('device', 'a5') == 'a3'
+    chip = (subprocess.run(['npu-smi','info','-t','board','-i',str(config['npu']),'-c','0'],
+                           capture_output=True,text=True,timeout=12,check=True).stdout
+            if a3 else reply)
+    for name in ['Serial Number', 'VDie ID' if a3 else 'DDie ID']:
+        found=re.search(r'^\s*'+name+r'\s*:\s*(\S[^\r\n]*)$',
+                        reply if name=='Serial Number' else chip,re.M)
         if not found or found.group(1).strip() in {'NA','N/A','Unknown'}:
             raise ValueError('Stable physical device identity unavailable')
         values[name]=found.group(1).strip()
+        if a3 and name=='VDie ID' and not re.fullmatch(
+                r'[a-fA-F0-9]{8}(?:\s+[a-fA-F0-9]{8}){4}',values[name]):
+            raise ValueError('Invalid physical die identity')
+        if name.endswith('Die ID') and not re.search(r'[1-9a-fA-F]',values[name]):
+            raise ValueError('Empty physical die identity')
     version=Path('/usr/local/Ascend/driver/version.info').read_bytes()
     if not 0<len(version)<=16384:raise ValueError('Invalid driver identity')
     return {'hardware_id':hashlib.sha256(json.dumps(values,sort_keys=True).encode()).hexdigest(),
@@ -250,13 +272,15 @@ else:
         marker.write(token)
         marker.flush()
         os.fsync(marker.fileno())
+    a3 = config.get('device', 'a5') == 'a3'
+    mask = str(config['npu']) if a3 else '0'
     args += ['--group-add', str(config['device_group']), '--ulimit', 'memlock=-1:-1',
-             '--env', 'ASCEND_RT_VISIBLE_DEVICES=0',
+             '--env', 'ASCEND_RT_VISIBLE_DEVICES=' + mask,
              '--env', 'CANNERY_PHYSICAL_DEVICE=' + str(config['npu']),
              '--tmpfs', '/ascend:rw,noexec,nosuid,nodev,size=32m,mode=1777',
              '--env', 'ASCEND_VISIBLE_DEVICES=' + str(config['npu'])]
     for path in [f"/dev/davinci{config['npu']}", '/dev/davinci_manager',
-                 '/dev/hisi_hdc', '/dev/ummu/tid']:
+                 '/dev/hisi_hdc', '/dev/devmm_svm' if a3 else '/dev/ummu/tid']:
         args += ['--device', path]
     for path in config['transport_devices']:
         args += ['--device', path]
