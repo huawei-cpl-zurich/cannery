@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import re
+from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from typing import Any
 
@@ -308,7 +309,7 @@ class CplRemote:
             raise RemotePending("Transfer receipt unavailable") from None
         result = self.call("observe", handle)
         if result.get("state") == "missing":
-            result = self.call("cancel", handle)
+            raise RemotePending("Transfer missing; quarantine without resubmission or cancellation")
         if result.get("state") in {"failed", "cancelled"}:
             # Only confirmed terminal failures may start another transfer. Polling supplies backoff.
             durable_write(counter, str(index + 1).encode())
@@ -323,3 +324,24 @@ class CplRemote:
             )
             if fetched.get("state") != "completed":
                 raise RemotePending("Retained download not yet materialized")
+
+
+def settle_operation(
+    remote: CplRemote,
+    handle: str,
+    *,
+    cancel_jobs: bool = False,
+    fence: Callable[[], None] = lambda: None,
+) -> None:
+    """Fence cleanup; transfers support observation, never cancellation."""
+    result = remote.call("observe", handle)
+    if result.get("state") in {"completed", "failed", "cancelled"}:
+        return
+    if ":transfer:" in handle:
+        raise RemotePending("Transfer unresolved; quarantine until retained handle reconciles")
+    if result.get("state") == "missing" or cancel_jobs:
+        fence()
+        result = remote.call("cancel", handle)
+        if result.get("state") in {"completed", "failed", "cancelled"}:
+            return
+    raise RemotePending("Retained operation has not terminated")

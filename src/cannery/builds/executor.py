@@ -13,7 +13,13 @@ from uuid import UUID
 from cannery.artifacts import ArtifactRef, ArtifactStore, digest, verified
 from cannery.builds.ascendc import BuildError
 from cannery.builds.catlass_compile import adapter_for
-from cannery.builds.remote import CplRemote, RemoteFailure, RemotePending, durable_write
+from cannery.builds.remote import (
+    CplRemote,
+    RemoteFailure,
+    RemotePending,
+    durable_write,
+    settle_operation,
+)
 from cannery.builds.sandbox import WorkerProfile, job_script
 from cannery.git_intake import SnapshotBinding
 from cannery.git_intake.snapshots import SnapshotStore
@@ -313,12 +319,7 @@ class BuildExecutor:
             if not receipt.exists():
                 raise RemotePending("Ambiguous operation requires reconciliation")
             handle = json.loads(receipt.read_text())["handle"]
-            result = self.remote.call("observe", handle)
-            if result.get("state") == "missing":
-                self.fence()
-                result = self.remote.call("cancel", handle)
-            if result.get("state") not in {"completed", "failed", "cancelled"}:
-                raise RemotePending("Retained operation has not terminated")
+            settle_operation(self.remote, handle, fence=self.fence)
         index_path = self.remote.journal / "cleanup-index"
         index = int(index_path.read_text()) if index_path.exists() else 0
         try:

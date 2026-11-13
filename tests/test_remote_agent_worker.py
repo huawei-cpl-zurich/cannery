@@ -8,7 +8,7 @@ from test_build_executor import setup_executor as setup_executor
 from test_build_remote import FakeCpl
 
 from cannery.builds.executor import ExecutionFailure
-from cannery.builds.remote import RemoteFailure, RemotePending
+from cannery.builds.remote import RemoteFailure, RemotePending, settle_operation
 
 
 class Agent(FakeCpl):
@@ -188,3 +188,20 @@ def test_agent_preflight_requires_matching_registered_route(tmp_path, backend, w
         with pytest.raises(ValueError):
             CplRemote.preflight(remote)
         assert not remote._available
+
+
+def test_missing_transfer_is_quarantined_without_unsupported_cancel_or_resubmission(tmp_path):
+    remote = Agent(tmp_path, [{"state": "queued"}, {"state": "missing"}, {"state": "missing"}])
+    for _ in range(2):
+        with pytest.raises(RemotePending, match="quarantine"):
+            remote.transfer("upload", "source", "/destination")
+    assert [call[0] for call in remote.calls] == ["upload", "observe", "observe"]
+    assert not list(tmp_path.glob("*.index"))
+
+
+@pytest.mark.parametrize("state", ["running", "missing", "observation-unavailable"])
+def test_cleanup_never_cancels_transfers_or_releases_unresolved_ownership(tmp_path, state):
+    remote = Agent(tmp_path, [{"state": state}])
+    with pytest.raises(RemotePending, match="quarantine"):
+        settle_operation(remote, "remote:test-a5:transfer:fixture", cancel_jobs=True)
+    assert remote.calls == [("observe", "remote:test-a5:transfer:fixture")]
