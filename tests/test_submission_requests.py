@@ -109,3 +109,49 @@ def test_immutable_requests_and_candidates(records, model, operation):
             row.target = {}
         else:
             row.binding = {"changed": True}
+
+
+def test_identical_requests_and_revisions_reuse_original_identifier(records):
+    engine, _ = records
+    first = initial(records)
+    assert initial(records) == first
+    with Session(engine) as session, session.begin():
+        session.add(
+            Candidate(
+                id=first,
+                binding_id=first,
+                binding={},
+                manifest={},
+                snapshot={},
+                content_sha256="b" * 64,
+                file_sha256={},
+            )
+        )
+    assert revise_submission(engine, "team", first, "a" * 40) == first
+    second = revise_submission(engine, "team", first, "b" * 40)
+    assert revise_submission(engine, "team", first, "b" * 40) == second
+    with Session(engine) as session:
+        from sqlalchemy import select
+
+        assert len(list(session.scalars(select(Submission)))) == 2
+
+
+@pytest.mark.parametrize("field", ["url", "commit", "path", "dependencies", "target"])
+def test_request_identity_does_not_cross_source_or_target_boundaries(records, field):
+    engine, spec_id = records
+    first = initial(records)
+    with Session(engine) as session:
+        source = dict(session.get(Submission, first).source)
+    target = RequestedTarget(device="a5", language="catlass")
+    if field == "target":
+        target = RequestedTarget(device="a3", language="catlass")
+    else:
+        source[field] = dict(
+            url="https://example.com/other.git",
+            commit="c" * 40,
+            path="other",
+            dependencies=["other"],
+        )[field]
+    assert (
+        new_submission(engine, "team", spec_id, GitSource.model_validate(source), target) != first
+    )

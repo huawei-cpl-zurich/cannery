@@ -3,6 +3,7 @@
 import json
 import re
 import time
+from concurrent.futures import ThreadPoolExecutor
 from urllib.parse import urlencode, urlsplit
 from urllib.request import Request, urlopen
 from uuid import uuid4
@@ -264,9 +265,19 @@ for _ in range(8): publish_submission(Settings().redis_url.get_secret_value(),{f
             )[0]
             == 422
         )
+        concurrent_sha = revision(5)
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            identical = list(pool.map(lambda _: submit(concurrent_sha), range(4)))
+        assert len(set(identical)) == 1, identical
+        retained(identical[0])
+        assert submit(sha1) == first and submit(sha2, first) == second
+        outage_sha, queued_sha, stale_sha = revision(6), revision(7), revision(8)
+        print(
+            "PASS: concurrent duplicate requests share one PostgreSQL-owned submission", flush=True
+        )
         # A disconnected Git node causes a retry; the same request recovers after restart.
         harness.compose("stop", "git-fixture")
-        recovering = submit(sha1)
+        recovering = submit(outage_sha)
         for _ in range(40):
             if harness.request(f"/api/v1/submissions/{recovering}")[1]["error"]:
                 break
@@ -276,7 +287,7 @@ for _ in range(8): publish_submission(Settings().redis_url.get_secret_value(),{f
         harness.compose("start", "git-fixture")
         retained(recovering)
         harness.compose("stop", "redis")
-        queued = submit(sha1)
+        queued = submit(queued_sha)
         assert harness.request(f"/api/v1/submissions/{queued}")[1]["status"] == "queued"
         harness.compose("start", "redis")
         harness.wait_ready()
@@ -287,7 +298,7 @@ for _ in range(8): publish_submission(Settings().redis_url.get_secret_value(),{f
         harness.wait_ready()
         print("PASS: invalid sources, Git/Redis/PostgreSQL outage recovery", flush=True)
         harness.compose("stop", "registrar", "reconciler")
-        stale = submit(sha1)
+        stale = submit(stale_sha)
         abandon(stale)
         harness.compose("start", "registrar", "reconciler")
         retained(stale)
