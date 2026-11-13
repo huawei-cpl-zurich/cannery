@@ -35,11 +35,11 @@ def records(tmp_path):
     engine.dispose()
 
 
-def initial(records):
+def initial(records, *, commit="a" * 40):
     engine, key = records
     source = GitSource(
         url="https://example.com/repo.git",
-        commit="a" * 40,
+        commit=commit,
         path="candidate",
         dependencies=("shared",),
     )
@@ -109,3 +109,126 @@ def test_immutable_requests_and_candidates(records, model, operation):
             row.target = {}
         else:
             row.binding = {"changed": True}
+
+
+def test_identical_requests_and_revisions_reuse_original_identifier(records):
+    engine, _ = records
+    first = initial(records)
+    assert initial(records) == first
+    with Session(engine) as session, session.begin():
+        session.add(
+            Candidate(
+                id=first,
+                binding_id=first,
+                binding={},
+                manifest={},
+                snapshot={},
+                content_sha256="b" * 64,
+                file_sha256={},
+            )
+        )
+    assert revise_submission(engine, "team", first, "a" * 40) == first
+    second = revise_submission(engine, "team", first, "b" * 40)
+    assert revise_submission(engine, "team", first, "b" * 40) == second
+    with Session(engine) as session:
+        from sqlalchemy import select
+
+        assert len(list(session.scalars(select(Submission)))) == 2
+
+
+@pytest.mark.parametrize("field", ["url", "commit", "path", "dependencies", "target"])
+def test_request_identity_does_not_cross_source_or_target_boundaries(records, field):
+    engine, spec_id = records
+    first = initial(records)
+    with Session(engine) as session:
+        source = dict(session.get(Submission, first).source)
+    target = RequestedTarget(device="a5", language="catlass")
+    if field == "target":
+        target = RequestedTarget(device="a3", language="catlass")
+    else:
+        source[field] = dict(
+            url="https://example.com/other.git",
+            commit="c" * 40,
+            path="other",
+            dependencies=["other"],
+        )[field]
+    assert (
+        new_submission(engine, "team", spec_id, GitSource.model_validate(source), target) != first
+    )
+
+
+def test_revision_and_standalone_requests_keep_separate_binding_contexts(records):
+    engine, spec_id = records
+    parent = initial(records)
+    with Session(engine) as session, session.begin():
+        source = dict(session.get(Submission, parent).source)
+        session.add(
+            Candidate(
+                id=parent,
+                binding_id=parent,
+                binding={"entrypoint": "first"},
+                manifest={},
+                snapshot={},
+                content_sha256="b" * 64,
+                file_sha256={},
+            )
+        )
+    source["commit"] = "b" * 40
+    standalone = new_submission(
+        engine,
+        "team",
+        spec_id,
+        GitSource.model_validate(source),
+        RequestedTarget(device="a5", language="catlass"),
+    )
+    revision = revise_submission(engine, "team", parent, "b" * 40)
+    assert revision != standalone
+    assert revise_submission(engine, "team", parent, "b" * 40) == revision
+    assert (
+        new_submission(
+            engine,
+            "team",
+            spec_id,
+            GitSource.model_validate(source),
+            RequestedTarget(device="a5", language="catlass"),
+        )
+        == standalone
+    )
+
+
+@pytest.mark.parametrize("revision", [False, True])
+def test_failed_pre_admission_intake_can_recover_without_rerunning_accepted_work(records, revision):
+    from cannery.submissions.state import IntakeState
+
+    engine, _ = records
+    parent = initial(records)
+    if revision:
+        with Session(engine) as session, session.begin():
+            session.add(
+                Candidate(
+                    id=parent,
+                    binding_id=parent,
+                    binding={},
+                    manifest={},
+                    snapshot={},
+                    content_sha256="b" * 64,
+                    file_sha256={},
+                )
+            )
+
+        def submit():
+            return revise_submission(engine, "team", parent, "b" * 40)
+    else:
+
+        def submit():
+            return initial(records)
+
+    failed = submit()
+    with Session(engine) as session, session.begin():
+        state = session.get(IntakeState, failed)
+        state.status, state.error = "failed", "repository_denied"
+    recovered = submit()
+    assert recovered != failed and submit() == recovered
+    with Session(engine) as session:
+        assert session.get(IntakeState, failed).status == "failed"
+        assert session.get(IntakeState, recovered).status == "queued"
