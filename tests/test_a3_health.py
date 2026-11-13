@@ -92,3 +92,26 @@ def test_a3_physical_identity_requires_card_serial_and_valid_vdie(
     else:
         with pytest.raises(ValueError):
             supervise(config, uuid4(), "identify")
+
+
+def test_a3_runtime_bootstrap_is_isolated_and_precedes_submitted_runtime(tmp_path):
+    import ast
+    from uuid import uuid4
+
+    from cannery.builds.sandbox import A3_BOOTSTRAP, job_script
+
+    config = a3_profile(tmp_path)
+    code = job_script(config, uuid4(), "runtime", runtime_program="AUTHOR_RUNTIME()")
+    tree = ast.parse(code)
+    assignment = next(
+        node
+        for node in tree.body
+        if isinstance(node, ast.Assign)
+        and any(isinstance(target, ast.Name) and target.id == "RUNTIME" for target in node.targets)
+    )
+    program = ast.literal_eval(assignment.value)
+    assert (
+        program
+        == A3_BOOTSTRAP.replace("CANNERY_DEVICE_GROUP", str(config.device_group))
+        + "AUTHOR_RUNTIME()"
+    )

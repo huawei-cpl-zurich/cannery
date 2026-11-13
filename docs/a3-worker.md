@@ -13,6 +13,20 @@ environment instead of host mounts; a host with no registered SDK runtime uses
 an explicit null runtime. Device health/routing and validated deployment setup
 must be installed before activating A3 services.
 
+## A3 driver initialization
+
+The observed A3 driver rejects an initially unprivileged runtime with HAL error
+87, including inside the user-owned registered container. The trusted pinned
+image initializes its framework context first, with only the selected physical
+NPU exposed. An isolated Python interpreter verifies the physical mapping before
+initialization. Before reading the submission package or importing its loader,
+the bootstrap sets no-new-privileges, drops the capability bounding set, switches
+to UID/GID 10001, and verifies zero effective/permitted capabilities and the new
+identity on every framework thread. Any failed guard aborts the runtime.
+Submitted code runs after that irreversible drop. Device-less compilation stays
+unprivileged, network isolation and read-only mounts remain enabled, and A5 uses
+its existing path. SDK bootstrap logs go to stderr, outside the result wire.
+
 ## Mandatory drain before changing supervisor code or toolchain pins
 
 Attempt contexts pin the complete supervisor program as well as source, profile

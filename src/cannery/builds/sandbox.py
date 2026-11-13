@@ -287,7 +287,13 @@ else:
     for path in config['readonly_mounts']:
         args += ['--mount', f'type=bind,src={path},dst={path},readonly']
     command = RUNTIME
-args += [config['image'], 'python', '-c', command]
+    if a3:
+        # Only trusted image code initializes the driver with privileges. The
+        # bootstrap irreversibly drops them before any submitted code is loaded.
+        args[args.index('--user') + 1] = '0:0'
+        args += ['--cap-add', 'ALL']
+isolated = ['-I'] if phase == 'runtime' and config.get('device') == 'a3' else []
+args += [config['image'], 'python', *isolated, '-c', command]
 resource.setrlimit(resource.RLIMIT_FSIZE, ((128 if benchmark else 64) * 1024 * 1024,) * 2)
 capturing = phase == 'compile' or (phase == 'runtime' and config.get('capture_runtime', False))
 result_path = output / ('kernel.so' if phase == 'compile' else 'results.json')
@@ -338,6 +344,52 @@ binary = work / 'kernel.so'
 assert binary.is_file() and not binary.is_symlink() and binary.stat().st_size <= 63*1024*1024
 sys.stdout.buffer.write(binary.read_bytes())
 """
+
+A3_BOOTSTRAP = r"""
+import ctypes, os, pathlib, sys
+_bootstrap_wire = os.dup(sys.stdout.fileno())
+os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
+import torch, torch_npu
+assert torch.npu.device_count() == 1, 'runtime device mask failed'
+# This must run before importing the loader or reading any submitted package.
+acl = ctypes.CDLL(os.environ['ASCEND_HOME_PATH'] + '/lib64/libascendcl.so')
+physical = ctypes.c_int32(-1)
+get_physical = getattr(acl, 'aclrtGetPhyDevIdByUserDevId', acl.aclrtGetPhyDevIdByLogicDevId)
+get_physical.argtypes = [ctypes.c_int32, ctypes.POINTER(ctypes.c_int32)]
+get_physical.restype = ctypes.c_int
+assert get_physical(0, ctypes.byref(physical)) == 0
+assert physical.value == int(os.environ['CANNERY_PHYSICAL_DEVICE']), 'physical device mismatch'
+torch.npu.set_device(0)
+torch.empty(0, device='npu')
+torch.npu.synchronize()
+for root in ['/tmp/ascend', '/ascend']:
+    if pathlib.Path(root).exists():
+        for directory, _, files in os.walk(root, followlinks=False):
+            os.chown(directory, 10001, 10001, follow_symlinks=False)
+            for name in files:
+                os.chown(os.path.join(directory, name), 10001, 10001, follow_symlinks=False)
+libc = ctypes.CDLL(None, use_errno=True)
+assert libc.prctl(38, 1, 0, 0, 0) == 0, 'no-new-privileges failed'
+last = int(pathlib.Path('/proc/sys/kernel/cap_last_cap').read_text())
+assert 0 <= last <= 63
+for cap in range(last + 1):
+    assert libc.prctl(24, cap, 0, 0, 0) == 0, 'capability bounding drop failed'
+os.setgroups([CANNERY_DEVICE_GROUP])
+os.setgid(10001)
+os.setuid(10001)
+assert os.getuid() == os.geteuid() == 10001
+for status in pathlib.Path('/proc/self/task').glob('*/status'):
+    fields = dict(line.split(':', 1) for line in status.read_text().splitlines() if ':' in line)
+    assert set(fields['Uid'].split()) == {'10001'}, 'thread identity drop failed'
+    assert int(fields['CapEff'].strip(), 16) == int(fields['CapPrm'].strip(), 16) == 0
+    assert fields['NoNewPrivs'].strip() == '1', 'thread privilege guard failed'
+assert libc.prctl(23, 0, 0, 0, 0) == 0, 'bounding capabilities remain'
+sys.stdout.flush()
+libc.fflush(None)
+os.dup2(_bootstrap_wire, sys.stdout.fileno())
+os.close(_bootstrap_wire)
+"""
+
 
 RUNTIME = r"""
 import ctypes, hashlib, json, os, pathlib, subprocess, sys
@@ -395,6 +447,8 @@ def job_script(
     if capture_runtime:
         config["capture_runtime"] = True
     program = RUNTIME if runtime_program is None else runtime_program
+    if profile.device == "a3" and phase == "runtime":
+        program = A3_BOOTSTRAP.replace("CANNERY_DEVICE_GROUP", str(profile.device_group)) + program
     if profile.catlass is None:
         config.pop("catlass")
     serialized = json.dumps(config, sort_keys=True)
