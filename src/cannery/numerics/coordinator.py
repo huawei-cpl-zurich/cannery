@@ -18,6 +18,7 @@ from cannery.builds.executor import BuildExecutor, ExecutionFailure
 from cannery.builds.remote import RemoteFailure, RemotePending, durable_write, operation_receipts
 from cannery.builds.sandbox import WorkerProfile
 from cannery.builds.state import BuildResult, BuildState
+from cannery.devices import Device
 from cannery.git_intake import SnapshotBinding
 from cannery.numerics.baseline_format import unpack_baseline
 from cannery.numerics.baseline_state import BaselineState
@@ -40,7 +41,7 @@ from cannery.registry.models import SpecVersion
 from cannery.submissions.models import Candidate, Submission
 
 
-def discover(engine: Engine) -> None:
+def discover(engine: Engine, *, device: Device = "a5") -> None:
     with Session(engine) as session, session.begin():
         rows = session.execute(
             select(Candidate.id, SpecVersion.smoke)
@@ -49,6 +50,7 @@ def discover(engine: Engine) -> None:
             .join(BuildState, BuildState.id == Candidate.id)
             .where(
                 BuildState.status == "awaiting_validation",
+                Candidate.manifest["implementation"]["device"].as_string() == device,
                 ~select(NumericalState.id).where(NumericalState.id == Candidate.id).exists(),
             )
             .order_by(Candidate.id)
@@ -163,9 +165,13 @@ def prune(journal: Path) -> None:
 
 
 def process(
-    engine: Engine, key: UUID, factory: Callable[[NumericalClaim], NumericalExecutor]
+    engine: Engine,
+    key: UUID,
+    factory: Callable[[NumericalClaim], NumericalExecutor],
+    *,
+    device: Device = "a5",
 ) -> None:
-    claim = claim_numerical(engine, key)
+    claim = claim_numerical(engine, key, device=device)
     if claim is None:
         return
     with LeaseKeeper(engine, claim) as keeper:

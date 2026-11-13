@@ -66,11 +66,11 @@ def main() -> None:
     try:
         while not stopped.is_set():
             try:
-                discover(engine)
-                for key in due_numericals(engine):
+                discover(engine, device=profile.device)
+                for key in due_numericals(engine, device=profile.device):
                     if stopped.is_set():
                         break
-                    process(engine, UUID(key), factory)
+                    process(engine, UUID(key), factory, device=profile.device)
             except (SQLAlchemyError, OSError, ValueError):
                 logging.warning("Numerical worker unavailable; retrying")
             if args.once:
