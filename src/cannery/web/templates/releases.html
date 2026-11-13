@@ -22,6 +22,7 @@
 <form method="get" action="/global-best">
 <label>Kernel <select name="kernel">{% for item in kernels %}<option value="{{ item.kernel }}"{% if kernel == item.kernel %} selected{% endif %}>{{ item.kernel }}</option>{% endfor %}</select></label>
 <label>Spec version (blank = latest frozen) <input name="spec_version" type="number" min="1" value="{{ spec_version or '' }}"></label>
+<label>Device <select name="device">{% for item in ["a5", "a3"] %}<option{% if device == item %} selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
 <label>Cohort <input name="cohort" value="{{ cohort or '' }}" size="66" list="cohorts"></label>
 <datalist id="cohorts">{% for item in cohorts %}<option value="{{ item }}">{% endfor %}</datalist>
 <label>rtol <input name="rtol" value="{{ rtol if rtol is not none else '' }}"></label>

@@ -12,6 +12,7 @@ from uuid import UUID
 import httpx
 import typer
 
+from cannery.devices import matches_soc
 from cannery.git_intake.process import run
 from cannery.releases.client import ReleaseClient
 from cannery.releases.resolution import ResolveRequest
@@ -114,6 +115,7 @@ def install_release_cli(app: typer.Typer) -> None:
     def info(
         kernel: str,
         url: str = URL,
+        device: str = "a5",
         spec_version: int | None = None,
         cohort: str | None = None,
         rtol: float | None = None,
@@ -124,6 +126,7 @@ def install_release_cli(app: typer.Typer) -> None:
         """List published releases, saved tolerances, case latencies and immutable pins."""
         params = dict(
             kernel=kernel,
+            device=device,
             spec_version=spec_version,
             cohort=cohort,
             rtol=rtol,
@@ -142,6 +145,7 @@ def install_release_cli(app: typer.Typer) -> None:
     def get(
         kernel: str,
         url: str = URL,
+        device: str | None = None,
         release_id: UUID | None = None,
         language: str | None = None,
         spec_version: int | None = None,
@@ -166,6 +170,8 @@ def install_release_cli(app: typer.Typer) -> None:
             selection = ResolveRequest.model_validate(
                 {
                     "kernel": kernel,
+                    "device": device
+                    or ("a3" if matches_soc("a3", runtime.get("soc", "")) else "a5"),
                     "runtime": runtime,
                     "release_id": release_id,
                     "language": language,

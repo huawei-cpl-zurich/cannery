@@ -10,6 +10,7 @@ from pydantic import Field, model_validator
 
 from cannery.artifacts import ArtifactRef, digest
 from cannery.benchmark.contract import Cohort
+from cannery.devices import Device
 from cannery.git_intake import GitSource
 from cannery.registry.manifest import StrictModel, unique_pairs
 from cannery.submissions.manifest import KernelPath, Language, Specialization
@@ -100,7 +101,7 @@ class ReleaseManifest(StrictModel):
     generator: Literal["sha256-f32-v1"]
     source: GitSource
     source_sha256: str = Field(pattern=SHA)
-    device: Literal["a5"] = "a5"
+    device: Device = "a5"
     language: Language
     abi: Literal["unary-f32-v1", "catlass-unary-f32-v1"]
     specializations: tuple[Specialization, ...] | None = Field(
@@ -122,6 +123,10 @@ class ReleaseManifest(StrictModel):
         for ref in (self.package, self.timing_artifact, self.reference_artifact):
             if ref.repository != "private" or ref.revision != ref.sha256:
                 raise ValueError("Release artifacts must be pinned private blobs")
+        if self.device != self.cohort.device:
+            raise ValueError("Release device/cohort mismatch")
+        if self.language == "catlass" and self.device != "a5":
+            raise ValueError("CATLASS DSL releases require A5")
         if self.language == "ascendc":
             if self.abi != "unary-f32-v1" or self.specializations is not None:
                 raise ValueError("Invalid Ascend C release ABI")

@@ -59,7 +59,7 @@ def verify_package(raw: bytes, manifest: ReleaseManifest) -> None:
             set(metadata) != expected
             or type(metadata["schema_version"]) is not int
             or metadata["schema_version"] != (2 if static else 1)
-            or metadata["device"] != "a5"
+            or metadata["device"] != manifest.device
             or metadata["abi"] != manifest.abi
             or metadata["runtime"] != manifest.cohort.runtime
             or metadata["source_sha256"] != manifest.source_sha256
