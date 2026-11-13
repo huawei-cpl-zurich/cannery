@@ -95,3 +95,18 @@ def test_image_pinned_toolchain_needs_no_host_sdk_or_inherited_environment(tmp_p
     assert "--device" not in args and "PATH" not in args and "ASCEND_HOME_PATH" not in args
     mounts = [args[i + 1] for i, arg in enumerate(args) if arg == "--mount"]
     assert len(mounts) == 1 and "dst=/input,readonly" in mounts[0]
+
+
+def test_old_supervisor_checkpoint_cannot_silently_resume_under_new_code(setup_executor):
+    from uuid import uuid4
+
+    executor, frozen, remote, memory = setup_executor
+    attempt = uuid4()
+    executor.execute(frozen, attempt, lambda: None)
+    context = remote.journal / "context.json"
+    old = json.loads(context.read_bytes()) | {"job_contract": "b" * 64}
+    context.write_text(json.dumps(old, sort_keys=True))
+    before, uploads, puts = context.read_bytes(), list(remote.uploads), memory.puts
+    with pytest.raises(ExecutionFailure, match="worker_profile_changed"):
+        executor.execute(frozen, attempt, lambda: None)
+    assert context.read_bytes() == before and remote.uploads == uploads and memory.puts == puts
