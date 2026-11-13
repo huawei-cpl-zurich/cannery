@@ -112,3 +112,33 @@ def test_ownership_loss_interrupts_before_further_blob_reads(admission):
 
     with pytest.raises(RuntimeError, match="ownership"):
         verify_assets(memory, manifest, lost)
+
+
+def test_a3_package_is_verified_against_release_device_without_execution(admission):
+    from cannery.releases.assets import verify_package
+    from cannery.releases.contract import ReleaseManifest
+
+    engine, key, memory, _ = admission
+    old = publication_manifest(engine, key)
+    data = old.model_dump(mode="json")
+    data["device"] = data["cohort"]["device"] = "a3"
+    data["cohort"]["runtime"]["soc"] = "Ascend910B4-1"
+    changed = ReleaseManifest.model_validate_json(json.dumps(data))
+    with pytest.raises(InvalidReleaseArtifact):
+        verify_package(memory.get(old.package), changed)
+    with tarfile.open(fileobj=io.BytesIO(memory.get(old.package))) as archive:
+        metadata = json.load(archive.extractfile("metadata.json"))
+        library = archive.extractfile("kernel.so").read()
+    metadata.update(device="a3", runtime=changed.cohort.runtime)
+    output = io.BytesIO()
+    with tarfile.open(fileobj=output, mode="w") as archive:
+        for name, value in [
+            ("metadata.json", json.dumps(metadata).encode()),
+            ("kernel.so", library),
+        ]:
+            info = tarfile.TarInfo(name)
+            info.size = len(value)
+            archive.addfile(info, io.BytesIO(value))
+    package = output.getvalue()
+    changed = changed.model_copy(update={"package": memory.put("a3.tar", package)})
+    verify_package(package, changed)

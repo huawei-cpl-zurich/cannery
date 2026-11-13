@@ -170,8 +170,7 @@ def retained(db: Session, identifier: UUID) -> ReleaseManifest:
         and sub.namespace == spec.kernel.namespace
         and declaration.kernel == f"{spec.kernel.namespace}/{spec.kernel.name}"
         and declaration.spec_version == frozen.version
-        and implementation.device == "a5"
-        and sub.target == {"device": "a5", "language": implementation.language}
+        and sub.target == {"device": implementation.device, "language": implementation.language}
         and SnapshotBinding.model_validate(candidate.snapshot).source.model_dump(mode="json")
         == sub.source
     )
@@ -185,7 +184,8 @@ def retained(db: Session, identifier: UUID) -> ReleaseManifest:
     key = reference_key(frozen.content_sha256, evidence.suite_sha256, evidence.generator, cohort)
     package = ArtifactRef.model_validate(admitted.artifact)
     require(
-        job.key == candidate_key(identifier)
+        cohort.device == implementation.device
+        and job.key == candidate_key(identifier)
         and job.reference_key == reference.key == key
         and job.identity["spec_id"] == reference.identity["spec_id"] == str(frozen.id)
         and job.identity["numerical_attempt"] == str(numeric.attempt_id)
@@ -238,6 +238,7 @@ def retained(db: Session, identifier: UUID) -> ReleaseManifest:
         generator=evidence.generator,
         source=SnapshotBinding.model_validate(candidate.snapshot).source,
         source_sha256=candidate.content_sha256,
+        device=implementation.device,
         language=implementation.language,
         abi=implementation.build.abi,
         specializations=implementation.build.specializations,

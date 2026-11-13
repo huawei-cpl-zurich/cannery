@@ -28,7 +28,9 @@ def releases(admission, records):
     template = publication_manifest(engine, key)
     serial = [0]
 
-    def add(ratio, language="ascendc", driver=None, empty=False, extra_tolerance=False):
+    def add(
+        ratio, language="ascendc", driver=None, empty=False, extra_tolerance=False, device="a5"
+    ):
         identifier = candidate(records)
         data = template.model_dump(mode="json")
         data.update(
@@ -43,6 +45,9 @@ def releases(admission, records):
             case["candidate"] = {"median_us": 20.0 / ratio, "p95_us": 22.0 / ratio, "samples": 100}
             case["speedup"] = ratio
         data["score"]["geomean_speedup"] = ratio
+        data["device"] = data["cohort"]["device"] = device
+        if device == "a3":
+            data["cohort"]["runtime"]["soc"] = "Ascend910B4-1"
         if driver:
             data["cohort"]["driver"] = driver
         if empty:
@@ -198,3 +203,21 @@ def test_ties_are_stable_and_never_create_an_extra_record_point(releases):
     assert len(points) == 1 and points[0]["release_id"] == rows[0]["id"]
     page = client.get("/api/v1/leaderboard", params=params | {"limit": 1, "offset": 1}).json()
     assert page["total"] == 2 and page["rows"] == rows[1:]
+
+
+def test_a3_a5_rankings_histories_and_cohorts_are_disjoint(releases):
+    _, add, client, template = releases
+    a5 = add(0.7)
+    a3 = add(1.5, device="a3")
+    for device, item in [("a5", a5), ("a3", a3)]:
+        params = {"kernel": template.kernel, "device": device}
+        ranking = client.get("/api/v1/leaderboard", params=params)
+        assert ranking.status_code == 200
+        assert [r["id"] for r in ranking.json()["rows"]] == [str(item[0])]
+        assert ranking.json()["cohorts"] == [item[2]]
+        points = client.get("/api/v1/leaderboard/history", params=params).json()["points"]
+        assert len(points) == 1 and points[0]["geomean_speedup"] == (0.7 if device == "a5" else 1.5)
+        wrong = client.get(
+            "/api/v1/leaderboard", params=params | {"cohort": a3[2] if device == "a5" else a5[2]}
+        )
+        assert wrong.status_code == 404

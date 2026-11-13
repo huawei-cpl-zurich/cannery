@@ -1,6 +1,6 @@
 """Published metadata is installation-wide; private submissions remain separate."""
 
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any
 from uuid import UUID
 
 from fastapi import Depends, FastAPI, HTTPException, Query, Request
@@ -8,6 +8,7 @@ from pydantic import ValidationError
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
+from cannery.devices import Device
 from cannery.releases import catalog
 from cannery.releases.contract import SHA
 from cannery.releases.details import detail
@@ -19,7 +20,7 @@ def selected(
     request: Request,
     kernel: KernelPath,
     spec_version: Annotated[int | None, Query(ge=1)] = None,
-    device: Literal["a5"] = "a5",
+    device: Device = "a5",
     cohort: Annotated[str | None, Query(pattern=SHA)] = None,
     rtol: Annotated[float | None, Query(ge=0, allow_inf_nan=False)] = None,
     atol: Annotated[float | None, Query(ge=0, allow_inf_nan=False)] = None,

@@ -198,3 +198,49 @@ def test_ambiguous_cohort_choices_are_visible_in_info_and_get(releases, monkeypa
         result = CliRunner().invoke(app, command)
         assert result.exit_code == 1 and "cohort_required" in result.output
         assert f"--cohort {first[2]}" in result.output and f"--cohort {second[2]}" in result.output
+
+
+@pytest.mark.parametrize("runtime", [[], None, 7, "fingerprint", {"soc": None}, {"soc": 123}])
+def test_malformed_runtime_json_has_bounded_useful_cli_error(tmp_path, runtime):
+    path = tmp_path / "runtime.json"
+    path.write_text(json.dumps(runtime))
+    result = CliRunner().invoke(
+        app,
+        [
+            "get",
+            "team/relu",
+            "--no-detect",
+            "--runtime-json",
+            str(path),
+            "--cache",
+            str(tmp_path / "cache"),
+        ],
+    )
+    assert result.exit_code == 1 and "Download unavailable or incompatible" in result.output
+    assert not isinstance(result.exception, AttributeError)
+    assert not (tmp_path / "cache").exists()
+
+
+def test_automatic_a3_selection_uses_validated_runtime(tmp_path, monkeypatch):
+    runtime = dict(
+        machine="aarch64",
+        python="3.11",
+        torch="2.10.0",
+        torch_npu="2.10.0",
+        cann="9.1.0",
+        soc="Ascend910B4-1",
+    )
+    path = tmp_path / "runtime.json"
+    path.write_text(json.dumps(runtime))
+    selections = []
+
+    def unavailable(self, selection, cache):
+        selections.append(selection)
+        raise ValueError("offline")
+
+    monkeypatch.setattr(ReleaseClient, "get", unavailable)
+    result = CliRunner().invoke(
+        app, ["get", "team/relu", "--no-detect", "--runtime-json", str(path)]
+    )
+    assert result.exit_code == 1 and len(selections) == 1
+    assert selections[0].device == "a3" and selections[0].runtime == runtime

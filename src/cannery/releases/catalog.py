@@ -1,7 +1,7 @@
 """Published-only discovery and rankings; never compare different cohorts."""
 
 import json
-from typing import Any, Literal, Self
+from typing import Any, Self
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -9,6 +9,7 @@ from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
 from cannery.database import aware
+from cannery.devices import Device
 from cannery.registry.manifest import Manifest, StrictModel
 from cannery.registry.models import Kernel, SpecVersion
 from cannery.releases.contract import SHA, ReleaseManifest, Tolerance
@@ -19,7 +20,7 @@ from cannery.submissions.manifest import KernelPath
 class Selection(StrictModel):
     kernel: KernelPath
     spec_version: int | None = Field(default=None, ge=1)
-    device: Literal["a5"] = "a5"
+    device: Device = "a5"
     cohort: str | None = Field(default=None, pattern=SHA)
     rtol: float | None = Field(default=None, ge=0, allow_inf_nan=False)
     atol: float | None = Field(default=None, ge=0, allow_inf_nan=False)

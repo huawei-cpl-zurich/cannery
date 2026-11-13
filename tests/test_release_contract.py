@@ -129,3 +129,20 @@ def test_runtime_and_static_specialization_coverage(release_data):
     d["specializations"].pop()
     with pytest.raises(ValueError):
         parse(d)
+
+
+def test_a3_native_release_requires_matching_cohort_and_disallows_dsl(release_data):
+    release_data["device"] = "a3"
+    with pytest.raises(ValueError, match="device/cohort"):
+        parse(release_data)
+    release_data["cohort"]["device"] = "a3"
+    release_data["cohort"]["runtime"]["soc"] = "Ascend910B4-1"
+    a3 = parse(release_data)
+    assert read_manifest(a3.encoded(), digest(a3.encoded())) == a3
+    release_data.update(
+        language="catlass",
+        abi="catlass-unary-f32-v1",
+        specializations=[{"shape": [2, 3], "dtype": "float32"}],
+    )
+    with pytest.raises(ValueError, match="require A5"):
+        parse(release_data)

@@ -10,6 +10,7 @@ from fastapi.templating import Jinja2Templates
 from sqlalchemy import Engine
 from sqlalchemy.orm import Session
 
+from cannery.devices import Device
 from cannery.releases import catalog
 from cannery.releases.details import detail
 from cannery.releases.discovery_api import selected, selection_error
@@ -53,12 +54,14 @@ def install_release_web(
         request: Request,
         kernel: str | None = None,
         spec_version: str | None = None,
+        device: Device = "a5",
         cohort: str | None = None,
         rtol: str | None = None,
         atol: str | None = None,
     ) -> HTMLResponse:
         values: dict[str, Any] = {
             "kernel": kernel,
+            "device": device,
             "spec_version": spec_version,
             "cohort": cohort,
             "rtol": rtol,
@@ -72,7 +75,7 @@ def install_release_web(
                         request,
                         kernel,
                         int(spec_version) if spec_version else None,
-                        "a5",
+                        device,
                         cohort or None,
                         float(rtol) if rtol else None,
                         float(atol) if atol else None,
