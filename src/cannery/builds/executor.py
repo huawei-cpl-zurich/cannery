@@ -2,8 +2,10 @@
 
 import io
 import json
+import os
 import re
 import tarfile
+import tempfile
 from collections.abc import Callable
 from pathlib import Path
 from uuid import UUID
@@ -132,12 +134,34 @@ class BuildExecutor:
 
     def upload(self, attempt: UUID, label: str, files: dict[str, bytes]) -> None:
         bundle = self.remote.journal / f"{label}.tar.gz"
+        checksum = self.remote.journal / f"{label}.bundle-sha256"
         if not (self.remote.journal / f"unpack-{label}.dispatch").exists():
-            with tarfile.open(bundle, "w:gz") as archive:
-                for name, value in sorted(files.items()):
-                    item = tarfile.TarInfo(name)
-                    item.size, item.mode = len(value), 0o444
-                    archive.addfile(item, io.BytesIO(value))
+            if not bundle.exists():
+                with tempfile.NamedTemporaryFile(dir=self.remote.journal) as temporary:
+                    with tarfile.open(fileobj=temporary, mode="w:gz") as archive:
+                        for name, value in sorted(files.items()):
+                            item = tarfile.TarInfo(name)
+                            item.size, item.mode = len(value), 0o444
+                            archive.addfile(item, io.BytesIO(value))
+                    temporary.flush()
+                    os.fsync(temporary.fileno())
+                    temporary.seek(0)
+                    expected = digest(temporary.read())
+                    self.fence()
+                    try:
+                        os.link(temporary.name, bundle)
+                        durable_write(checksum, expected.encode())
+                    except FileExistsError:
+                        pass
+                    descriptor = os.open(self.remote.journal, os.O_RDONLY | os.O_DIRECTORY)
+                    try:
+                        os.fsync(descriptor)
+                    finally:
+                        os.close(descriptor)
+            if bundle.is_symlink() or not bundle.is_file():
+                raise ExecutionFailure("invalid_transfer_bundle")
+            if not checksum.exists() or digest(bundle.read_bytes()) != checksum.read_text():
+                raise ExecutionFailure("transfer_bundle_digest_mismatch", retryable=True)
             destination = str(Path(self.profile.workspace) / attempt.hex / bundle.name)
             self.fence()
             self.remote.transfer("upload", str(bundle), destination)
