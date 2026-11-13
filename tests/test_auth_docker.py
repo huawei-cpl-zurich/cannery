@@ -94,7 +94,7 @@ def deployment(tmp_path):
             f"postgresql+psycopg://cannery:fixture@127.0.0.1:{pgport}/cannery"
         )
         environment["CANNERY_REDIS_URL"] = f"redis://127.0.0.1:{redisport}/0"
-        until(lambda: docker("exec", pg, "pg_isready", "-U", "cannery"))
+        until(lambda: docker("exec", pg, "pg_isready", "-h", "127.0.0.1", "-U", "cannery"))
         subprocess.run(
             [sys.executable, "-m", "alembic", "upgrade", "head"],
             cwd=ROOT,
