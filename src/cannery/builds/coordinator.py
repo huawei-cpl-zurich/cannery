@@ -24,6 +24,7 @@ from cannery.builds.remote import (
     RemotePending,
     durable_write,
     operation_receipts,
+    settle_operation,
 )
 from cannery.builds.sandbox import WorkerProfile
 from cannery.builds.state import (
@@ -247,11 +248,9 @@ def cleanup_finished(
                 )
                 executor.remote.target = executor.profile.target
             for receipt in operation_receipts(journal):
-                data = json.loads(receipt.read_bytes())
-                if "handle" in data:
-                    state = executor.remote.call("observe", data["handle"]).get("state")
-                    if state not in {"completed", "failed", "cancelled"}:
-                        executor.remote.call("cancel", data["handle"])
+                saved = json.loads(receipt.read_bytes())
+                if "handle" in saved:
+                    settle_operation(executor.remote, saved["handle"], cancel_jobs=True)
             if list(journal.glob("*.dispatch")):
                 executor.cleanup(identifier)
             evidence(executor)
