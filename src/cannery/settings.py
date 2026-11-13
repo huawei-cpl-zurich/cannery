@@ -11,7 +11,9 @@ from cannery.registry.manifest import Name
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_prefix="CANNERY_", extra="ignore")
+    model_config = SettingsConfigDict(
+        env_prefix="CANNERY_", extra="ignore", hide_input_in_errors=True
+    )
 
     @model_validator(mode="after")
     def authentication_configuration(self) -> "Settings":
