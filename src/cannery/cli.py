@@ -2,10 +2,12 @@ from typing import Annotated
 
 import typer
 
+from cannery.maintenance.cli import app as maintenance
 from cannery.releases.cli import install_release_cli
 from cannery.submissions.cli import install_cli
 
 app = typer.Typer(no_args_is_help=True)
+app.add_typer(maintenance, name="maintenance")
 
 
 @app.callback()
