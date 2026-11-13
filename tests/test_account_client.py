@@ -78,3 +78,13 @@ def test_logout_preserves_credentials_on_network_failure(monkeypatch):
     response = CliRunner().invoke(app, ["logout", "--url", url])
     assert response.exit_code == 1 and client.location(url).exists()
     assert "sensitive" not in response.output
+
+
+def test_private_directory_is_required():
+    url = "https://example.com"
+    client.save(url, "a" * 43)
+    client.location(url).parent.chmod(0o777)
+    with pytest.raises(ValueError, match="directory"):
+        client.headers(url)
+    with pytest.raises(ValueError, match="directory"):
+        client.save(url, "b" * 43)
