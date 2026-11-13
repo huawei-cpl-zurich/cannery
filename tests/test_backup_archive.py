@@ -136,3 +136,43 @@ def test_manifest_rejects_ambiguous_identity_or_unsupported_database(backup, cha
     _, manifest = backup
     with pytest.raises(ValueError):
         BackupManifest.model_validate_json(json.dumps(manifest.model_dump(mode="json") | change))
+
+
+@pytest.mark.parametrize("kind", [tarfile.XHDTYPE, tarfile.GNUTYPE_LONGNAME])
+def test_extension_header_is_bounded_before_payload_read(backup, kind):
+    directory, manifest = backup
+    header = tarfile.TarInfo("metadata")
+    header.type, header.size = kind, 32768
+    data = header.tobuf() + bytes(32768 + 1024)
+    repin(directory, manifest, "snapshots", data)
+    with pytest.raises(ValueError, match="metadata exceeds budget"):
+        verify(directory)
+
+
+def test_recursive_and_sparse_extension_metadata_is_rejected(backup):
+    directory, manifest = backup
+    header = tarfile.TarInfo("metadata")
+    header.type, header.size = tarfile.XHDTYPE, 0
+    repin(directory, manifest, "snapshots", header.tobuf() * 17 + bytes(1024))
+    with pytest.raises(ValueError, match="metadata exceeds budget"):
+        verify(directory)
+    header.size = 512
+    repin(
+        directory,
+        manifest,
+        "snapshots",
+        header.tobuf() + b"GNU.sparse" + bytes(512 - len(b"GNU.sparse")) + bytes(1024),
+    )
+    with pytest.raises(ValueError, match="Sparse metadata"):
+        verify(directory)
+
+
+def test_tar_end_marker_and_padding_are_verified(backup):
+    directory, manifest = backup
+    data = tar([("file", tarfile.REGTYPE)])
+    repin(directory, manifest, "snapshots", data[:512])
+    with pytest.raises(ValueError):
+        verify(directory)
+    repin(directory, manifest, "snapshots", data + b"hidden")
+    with pytest.raises(ValueError, match="after tar end"):
+        verify(directory)

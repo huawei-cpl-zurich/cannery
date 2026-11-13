@@ -92,7 +92,44 @@ def checksum(path: Path) -> tuple[int, str]:
     return size, sha.hexdigest()
 
 
+def preflight(stream: BinaryIO) -> int:
+    size = stream.seek(0, os.SEEK_END)
+    stream.seek(0)
+    extensions = 0
+    for _ in range(1000000):
+        header = stream.read(512)
+        if len(header) != 512:
+            raise ValueError("Truncated tar header")
+        if header == bytes(512):
+            if stream.read(512) != bytes(512):
+                raise ValueError("Missing tar end marker")
+            while padding := stream.read(65536):
+                if any(padding):
+                    raise ValueError("Unexpected data after tar end marker")
+            stream.seek(0)
+            return size
+        item = tarfile.TarInfo.frombuf(header, "utf-8", "surrogateescape")
+        padded = (item.size + 511) // 512 * 512
+        if item.size < 0 or padded > size - stream.tell():
+            raise ValueError("Truncated tar member")
+        if item.type in (tarfile.XHDTYPE, tarfile.GNUTYPE_LONGNAME):
+            extensions += 1
+            if item.size > 16384 or extensions > 16:
+                raise ValueError("Tar extension metadata exceeds budget")
+            data = stream.read(item.size)
+            if b"GNU.sparse" in data:
+                raise ValueError("Sparse metadata is unsupported")
+            stream.seek(padded - item.size, os.SEEK_CUR)
+        elif item.type in (tarfile.REGTYPE, tarfile.AREGTYPE, tarfile.DIRTYPE):
+            extensions = 0
+            stream.seek(padded, os.SEEK_CUR)
+        else:
+            raise ValueError("Unsafe backup archive member")
+    raise ValueError("Tar header count exceeds budget")
+
+
 def members(stream: BinaryIO) -> Iterator[tarfile.TarInfo]:
+    archive_size = preflight(stream)
     seen: set[str] = set()
     total = 0
     with tarfile.open(fileobj=stream, mode="r|", errorlevel=2) as archive:
@@ -112,6 +149,7 @@ def members(stream: BinaryIO) -> Iterator[tarfile.TarInfo]:
                 or len(seen) >= 1000000
                 or len(name.encode()) > 4096
                 or item.sparse is not None
+                or item.offset_data + item.size > archive_size
             ):
                 raise ValueError("Unsafe backup archive member")
             seen.add(name)
