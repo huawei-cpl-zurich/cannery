@@ -111,3 +111,60 @@ def test_foreign_terminal_journals_never_dispatch_cleanup(records, tmp_path, sta
     )
     factory.assert_not_called()
     assert (journal / "runtime.dispatch").exists() and not (journal / "cleanup-complete").exists()
+
+
+def test_build_worker_enables_owned_cleanup_in_once_and_background_modes(tmp_path, monkeypatch):
+    import sys
+    from unittest.mock import MagicMock
+
+    from cannery.builds import coordinator
+    from cannery.settings import Settings
+
+    config = profile(tmp_path / "worker")
+    path = tmp_path / "profile.json"
+    path.write_text(config.model_dump_json())
+    settings = Settings(
+        artifact_backend="private",
+        build_profile=path,
+        build_loader_wheel=tmp_path / "loader.whl",
+        build_loader_sha256="c" * 64,
+        build_control_root=tmp_path / "control",
+    )
+    monkeypatch.setattr(coordinator, "Settings", lambda: settings)
+    monkeypatch.setattr(coordinator, "make_engine", lambda _: MagicMock())
+    monkeypatch.setattr(coordinator, "make_store", lambda _: MagicMock())
+    monkeypatch.setattr(coordinator, "discover", lambda *args, **kwargs: None)
+    monkeypatch.setattr(coordinator, "due_builds", lambda *args, **kwargs: [])
+    cleaned = MagicMock()
+    monkeypatch.setattr(coordinator, "cleanup_finished", cleaned)
+    monkeypatch.setattr(sys, "argv", ["builder", "--once"])
+    coordinator.main()
+    assert cleaned.call_count == 1 and cleaned.call_args.kwargs["owner"] == config
+
+    def clean_and_stop(*args, **kwargs):
+        assert kwargs["owner"] == config
+        stopped.set()
+
+    stopped = None
+
+    def record_stop(event):
+        nonlocal stopped
+        stopped = event
+        return lambda: None
+
+    class Cleaner:
+        def __init__(self, *, target, daemon):
+            self.target = target
+
+        def start(self):
+            self.target()
+
+        def is_alive(self):
+            return False
+
+    monkeypatch.setattr(coordinator, "stop_on_term", record_stop)
+    monkeypatch.setattr(coordinator.threading, "Thread", Cleaner)
+    monkeypatch.setattr(coordinator, "cleanup_finished", clean_and_stop)
+    monkeypatch.setattr(sys, "argv", ["builder"])
+    coordinator.main()
+    assert stopped.is_set()
