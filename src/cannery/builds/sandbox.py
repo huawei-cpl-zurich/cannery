@@ -40,7 +40,7 @@ class WorkerProfile(StrictModel):
     device: Device = "a5"
     toolchain_in_image: bool = False
     target: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
-    runtime: str = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
+    runtime: str | None = Field(pattern=r"^[A-Za-z0-9][A-Za-z0-9_-]*$")
     workspace: str
     image: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
     npu: int = Field(ge=0, le=63)
