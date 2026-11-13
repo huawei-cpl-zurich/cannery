@@ -26,7 +26,15 @@ def setup(monkeypatch):
     operator.create(engine, "operator", "a long password!", "admin")
     operator.membership(engine, "operator", "team", grant=True)
     monkeypatch.setattr("cannery.api.make_engine", lambda settings: engine)
-    app = create_app(Settings(auth_enabled=True, auth_cookie_secure=False))
+    app = create_app(
+        Settings(
+            auth_enabled=True,
+            auth_cookie_secure=False,
+            release_enabled=True,
+            artifact_backend="private",
+            artifact_read_token="r" * 32,
+        )
+    )
     source = GitSource(url="https://github.com/example/kernel", commit="a" * 40, path="kernel")
     identifier = create_registration(engine, source, "team", "toy", False)
     with TestClient(app) as client:
@@ -64,14 +72,15 @@ def test_shared_namespace_and_context_reset(setup):
     [
         "/api/v1/kernels",
         "/api/v1/kernels/team/toy/submissions",
-        "/api/v1/submissions/{id}/revise",
+        "/api/v1/submissions/{id}/revisions",
         "/api/v1/submissions/{id}/publish",
         "/api/v1/submissions/{id}/withdraw",
         "/api/v1/artifacts/resolve",
         "/register-kernel",
         "/submit-implementation",
-        "/submissions/{id}/revise",
+        "/submissions/{id}/revisions",
         "/submissions/{id}/publish",
+        "/submissions/{id}/withdraw",
     ],
 )
 def test_all_mutations_require_authentication_and_cookie_csrf(setup, path):
@@ -95,3 +104,16 @@ def test_permission_revocation_takes_effect_on_next_request(setup):
 def test_development_and_account_modes_are_exclusive():
     with pytest.raises(ValueError, match="cannot be combined"):
         create_app(Settings(auth_enabled=True, dev_identity_enabled=True))
+
+
+def test_public_metadata_and_protected_downloads(setup):
+    engine, client, _ = setup
+    identifier = str(uuid4())
+    assert client.get("/api/v1/releases/kernels").status_code == 200
+    assert client.get("/api/v1/releases/" + identifier).status_code == 404
+    for suffix in ["manifest", "package"]:
+        path = "/api/v1/releases/" + identifier + "/" + suffix
+        assert client.get(path).status_code == 401
+        signed(client, engine, "alice")
+        assert client.get(path).status_code == 404
+        client.cookies.clear()
