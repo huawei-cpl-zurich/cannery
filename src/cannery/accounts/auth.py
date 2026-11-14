@@ -82,7 +82,7 @@ def login(engine: Engine, username: str, password: str, namespace: str | None) -
         if user is None or not user.enabled:
             raise HTTPException(401, "Invalid credentials")
         choices = namespaces(db, user.id)
-        selected = namespace or (choices[0] if choices else "")
+        selected = namespace or (choices[0] if choices else "team" if user.role == "admin" else "")
         return issue(db, user, "session", selected)
 
 
