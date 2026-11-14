@@ -3,7 +3,10 @@
 M7c adds operator-managed local accounts. Published rankings, release metadata
 and history remain public. Private submissions, changes and binary downloads
 require sign-in. Members share their assigned namespace; administrators may
-select any namespace and access the read-only administration page.
+select any namespace and access the read-only administration page. Usernames are
+globally unique across all teams. Sign in with just your username and password;
+your first assigned namespace is selected automatically. Switch teams after
+signing in through Account.
 
 ## Operator provisioning
 

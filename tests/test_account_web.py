@@ -25,6 +25,7 @@ def test_account_navigation_and_private_pages(setup):
     login = client.get("/login")
     password_forms_never_use_get(login.text)
     assert login.status_code == 200 and 'autocomplete="current-password"' in login.text
+    assert 'name="namespace"' not in login.text
     assert "/static/accounts.js" in login.text and 'href="/login"' in login.text
     assert client.get("/account").status_code == 401
     navigation = client.get("/account", headers={"Accept": "text/html"}, follow_redirects=False)

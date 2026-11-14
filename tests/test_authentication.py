@@ -5,6 +5,7 @@ from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
 from redis.exceptions import ConnectionError
 from sqlalchemy import create_engine, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
@@ -245,3 +246,22 @@ def test_prefixed_auth_validation_never_echoes_passwords(setup):
             "/cannery/api/v1/auth/login", json={"username": "alice", "password": secret * 100}
         )
         assert reply.status_code == 422 and secret not in reply.text
+
+
+def test_username_is_global_and_login_selects_team_without_namespace(setup):
+    engine, client = setup
+    operator.membership(engine, "alice", "another-team", grant=True)
+    with pytest.raises(IntegrityError):
+        operator.create(engine, "alice", "a different password!")
+    headers = login(client)
+    me = client.get("/api/v1/auth/me").json()
+    assert me["username"] == "alice"
+    assert me["namespace"] == "another-team"
+    assert me["namespaces"] == ["another-team", "team"]
+    assert (
+        client.post(
+            "/api/v1/auth/namespace", headers=headers, json={"namespace": "team"}
+        ).status_code
+        == 204
+    )
+    assert client.get("/api/v1/auth/me").json()["namespace"] == "team"

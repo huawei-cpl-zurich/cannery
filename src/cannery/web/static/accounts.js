@@ -60,7 +60,6 @@
       const data = Object.fromEntries(new FormData(form));
       if (isAccount) {
         const operation = form.id.slice(8);
-        if (operation === 'login' && !data.namespace) delete data.namespace;
         const value = await request(`/api/v1/auth/${operation === 'token' ? 'tokens' : operation}`, 'POST', data);
         if (operation === 'login') { csrf = value.csrf_token; location.assign('/my-submissions'); }
         else if (operation === 'password') location.assign('/login');
