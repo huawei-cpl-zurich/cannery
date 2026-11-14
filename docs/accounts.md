@@ -6,7 +6,8 @@ require sign-in. Members share their assigned namespace; administrators may
 select any namespace and access the read-only administration page. Usernames are
 globally unique across all teams. Sign in with just your username and password;
 your first assigned namespace is selected automatically. Switch teams after
-signing in through Account.
+signing in through Account. Administrators without explicit memberships start
+in `team`; their existing access to any namespace is unchanged.
 
 ## Operator provisioning
 

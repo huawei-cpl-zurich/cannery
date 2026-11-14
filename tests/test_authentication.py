@@ -250,14 +250,14 @@ def test_prefixed_auth_validation_never_echoes_passwords(setup):
 
 def test_username_is_global_and_login_selects_team_without_namespace(setup):
     engine, client = setup
-    operator.membership(engine, "alice", "another-team", grant=True)
+    operator.membership(engine, "alice", "another_team", grant=True)
     with pytest.raises(IntegrityError):
         operator.create(engine, "alice", "a different password!")
     headers = login(client)
     me = client.get("/api/v1/auth/me").json()
     assert me["username"] == "alice"
-    assert me["namespace"] == "another-team"
-    assert me["namespaces"] == ["another-team", "team"]
+    assert me["namespace"] == "another_team"
+    assert me["namespaces"] == ["another_team", "team"]
     assert (
         client.post(
             "/api/v1/auth/namespace", headers=headers, json={"namespace": "team"}
@@ -265,3 +265,17 @@ def test_username_is_global_and_login_selects_team_without_namespace(setup):
         == 204
     )
     assert client.get("/api/v1/auth/me").json()["namespace"] == "team"
+
+
+def test_admin_without_memberships_can_login_without_namespace(setup):
+    engine, client = setup
+    operator.create(engine, "admin", "an admin password!", "admin")
+    reply = client.post(
+        "/api/v1/auth/login",
+        headers={"X-Cannery-Login": "1"},
+        json={"username": "admin", "password": "an admin password!"},
+    )
+    assert reply.status_code == 200
+    me = client.get("/api/v1/auth/me").json()
+    assert me["role"] == "admin" and me["namespace"] == "team"
+    assert me["namespaces"] == []
