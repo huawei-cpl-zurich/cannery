@@ -12,7 +12,9 @@ from cannery.git_intake.process import IntakeError
 from cannery.git_intake.snapshots import SnapshotStore
 from cannery.numerics.baseline_format import baseline_key
 from cannery.numerics.baseline_state import BaselineState
-from cannery.numerics.recipes import parse_recipes
+from cannery.numerics.baseline_v2 import baseline_key_v2
+from cannery.numerics.recipes import RecipeSuite, parse_recipes
+from cannery.numerics.recipes_v2 import RecipeSuiteV2
 from cannery.registry.manifest import (
     RecipeEntrypoint,
     SpecError,
@@ -21,6 +23,7 @@ from cannery.registry.manifest import (
     validate_spec,
 )
 from cannery.registry.models import Kernel, SpecConflict, SpecVersion
+from cannery.registry.tensor_manifest import validate_tensor_spec
 
 
 class SmokeEvidence(StrictModel):
@@ -45,7 +48,7 @@ class BaselineEvidence(StrictModel):
     cases: int = Field(ge=1, le=32)
     baseline_key: str = Field(pattern=r"^[a-f0-9]{64}$")
     suite_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
-    generator: Literal["sha256-f32-v1"]
+    generator: Literal["sha256-f32-v1", "sha256-tensor-v2"]
     artifact: ArtifactRef
 
     @model_validator(mode="after")
@@ -71,7 +74,10 @@ def freeze_in_session(
 ) -> SpecVersion:
     try:
         files = store.read(binding).files
-        retained = validate_spec(files, binding.source.path)
+        if spec.manifest.schema_version == 2:
+            retained = validate_tensor_spec(files, binding.source.path).spec
+        else:
+            retained = validate_spec(files, binding.source.path)
     except (IntakeError, SpecError):
         raise SpecConflict("Retained snapshot verification failed") from None
     if retained != spec or evidence.spec_sha256 != retained.content_sha256:
@@ -82,13 +88,22 @@ def freeze_in_session(
     if evidence.python != spec.environment.python or evidence.torch != spec.environment.torch:
         raise SpecConflict("Smoke runtime differs from locked environment")
     if isinstance(manifest.spec.cases, RecipeEntrypoint):
-        prefix = "" if binding.source.path == "." else binding.source.path + "/"
-        suite = parse_recipes(files[prefix + manifest.spec.cases.recipe_file])
+        suite: RecipeSuite | RecipeSuiteV2
+        if manifest.schema_version == 2:
+            tensor = validate_tensor_spec(files, binding.source.path)
+            suite = tensor.suite
+            expected_key = baseline_key_v2(
+                spec.content_sha256, suite, spec.environment, tensor.contract.output_contract()
+            )
+        else:
+            prefix = "" if binding.source.path == "." else binding.source.path + "/"
+            suite = parse_recipes(files[prefix + manifest.spec.cases.recipe_file])
+            expected_key = baseline_key(spec.content_sha256, suite, spec.environment)
         if not isinstance(evidence, BaselineEvidence):
             raise SpecConflict("Recipe-based specs require a completed CPU baseline")
         row = session.get(BaselineState, evidence.baseline_key)
         if (
-            evidence.baseline_key != baseline_key(spec.content_sha256, suite, spec.environment)
+            evidence.baseline_key != expected_key
             or evidence.suite_sha256 != suite.sha256
             or evidence.generator != suite.generator
             or evidence.cases != len(suite.cases)
