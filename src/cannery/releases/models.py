@@ -176,3 +176,7 @@ class HubSnapshot(Base):
     release_id: Mapped[UUID] = mapped_column(ForeignKey("releases.id"), primary_key=True)
     revision: Mapped[str] = mapped_column(String(40), unique=True)
     descriptor: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+event.listen(HubSnapshot, "before_update", immutable)
+event.listen(HubSnapshot, "before_delete", immutable)
