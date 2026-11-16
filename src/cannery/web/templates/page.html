@@ -9,20 +9,24 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <header><strong>CANNery</strong>
+  <a class="skip-link" href="#content">Skip to content</a>
+  <header class="site-header"><div class="header-inner">
+    <a class="brand" href="/global-best" aria-label="CANNery home"><span class="brand-mark" aria-hidden="true">C</span>CANNery</a>
+    <p class="product-label">Ascend kernel registry</p>
     <nav aria-label="Main navigation">
       {% for path, item in pages.items() %}
       <a href="/{{ path }}"{% if item[0] == title %} aria-current="page"{% endif %}>{{ item[0] }}</a>
       {% endfor %}
-      {% if auth_enabled %}{% if signed_in %}<a href="/account">Account</a>{% else %}<a href="/login">Sign in</a>{% endif %}{% endif %}
-      {% if admin %}<a href="/admin">Administration</a>{% endif %}
+      {% if auth_enabled %}{% if signed_in %}<a class="account-link" href="/account"{% if request.url.path == "/account" %} aria-current="page"{% endif %}>Account</a>{% else %}<a class="account-link" href="/login"{% if request.url.path == "/login" %} aria-current="page"{% endif %}>Sign in</a>{% endif %}{% endif %}
+      {% if admin %}<a href="/admin"{% if request.url.path == "/admin" %} aria-current="page"{% endif %}>Administration</a>{% endif %}
     </nav>
-  </header>
-  <main id="content">
+  </div></header>
+  <main id="content" tabindex="-1">
     {% if development %}<p class="notice">Development identity enabled</p>{% endif %}
     {% block content %}<h1>{{ title }}</h1><p>{{ message }}</p>
     {% endblock %}
-    <button hx-get="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" hx-target="#content" hx-select="#content" hx-swap="outerHTML">Refresh</button>
+    <div class="page-tools"><button hx-get="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" hx-target="#content" hx-select="#content" hx-swap="outerHTML">Refresh page</button></div>
   </main>
+  <footer class="site-footer">CANNery · Ascend kernel registry and benchmarks</footer>
 </body>
 </html>

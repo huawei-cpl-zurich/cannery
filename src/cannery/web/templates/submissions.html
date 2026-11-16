@@ -66,20 +66,20 @@ to try its toy submission.</p>{% endif %}
     {% if job.numerical %}
     <p>Numerical validation: {{ job.numerical.status }} · attempts: {{ job.numerical.attempts }}.</p>
     {% if job.numerical.report %}
-    <table><thead><tr><th>Case</th><th>Input unchanged</th><th>Spec default (rtol, atol)</th><th>Requested (rtol, atol)</th><th>Max absolute error</th><th>Max relative error</th><th>RMS error</th><th>Nonfinite mismatches</th></tr></thead><tbody>
+    <div class="table-scroll" role="region" aria-label="Submission results" tabindex="0"><table><thead><tr><th>Case</th><th>Input unchanged</th><th>Spec default (rtol, atol)</th><th>Requested (rtol, atol)</th><th>Max absolute error</th><th>Max relative error</th><th>RMS error</th><th>Nonfinite mismatches</th></tr></thead><tbody>
     {% for case in job.numerical.report.cases %}<tr><td>{{ case.id }}</td><td>{{ case.input_unchanged }}</td><td>{{ case.spec_default.passed }} ({{ case.spec_default.rtol }}, {{ case.spec_default.atol }})</td><td>{{ case.submission_requested.passed }} ({{ case.submission_requested.rtol }}, {{ case.submission_requested.atol }})</td><td>{{ case.spec_default.max_absolute_error }}</td><td>{{ case.spec_default.max_relative_error if case.spec_default.max_relative_error is not none else "undefined" }}</td><td>{{ case.spec_default.rms_error }}</td><td>{{ case.spec_default.nonfinite_mismatches }}</td></tr>{% endfor %}
-    </tbody></table>
+    </tbody></table></div>
     {% endif %}
     {% endif %}
     {% if job.benchmark %}
     <p>Benchmark: {{ job.benchmark.status }} · attempts: {{ job.benchmark.attempts }}.</p>
     {% if job.benchmark.report %}
     <p>Synchronized call latency in µs ({{ job.benchmark.report.protocol }}). {% if job.publication and job.publication.status == "published" %}Published result.{% else %}Results are private.{% endif %}</p>
-    <table><thead><tr><th>Case</th><th>Median µs</th><th>p95 µs</th><th>Samples</th><th>Reference median µs</th><th>Speedup</th></tr></thead><tbody>
+    <div class="table-scroll" role="region" aria-label="Submission results" tabindex="0"><table><thead><tr><th>Case</th><th>Median µs</th><th>p95 µs</th><th>Samples</th><th>Reference median µs</th><th>Speedup</th></tr></thead><tbody>
     {% for case in job.benchmark.report.cases %}<tr><td>{{ case.id }}</td>
     {% if case.excluded %}<td colspan="5">Empty case: correctness only; excluded from performance score.</td>
     {% else %}<td>{{ case.candidate.median_us }}</td><td>{{ case.candidate.p95_us }}</td><td>{{ case.candidate.samples }}</td><td>{{ case.reference.median_us }}</td><td>{{ case.speedup }}×</td>{% endif %}</tr>{% endfor %}
-    </tbody></table>
+    </tbody></table></div>
     <p>Geometric mean speedup: {% if job.benchmark.report.geomean_speedup is not none %}{{ job.benchmark.report.geomean_speedup }}×{% else %}No nonempty performance cases.{% endif %}</p>
     {% endif %}
     {% endif %}
@@ -95,11 +95,11 @@ to try its toy submission.</p>{% endif %}
 {% else %}
 <section id="submissions"{% if pending %} hx-get="/my-submissions" hx-trigger="every 3s" hx-select="#submissions" hx-swap="outerHTML"{% endif %}>
 {% if jobs %}
-<table><thead><tr><th>Submission</th><th>Kernel</th><th>Target</th><th>Status</th>{% if release_enabled %}<th>Visibility</th>{% endif %}<th>ETA</th></tr></thead><tbody>
+<div class="table-scroll" role="region" aria-label="Submission results" tabindex="0"><table><thead><tr><th>Submission</th><th>Kernel</th><th>Target</th><th>Status</th>{% if release_enabled %}<th>Visibility</th>{% endif %}<th>ETA</th></tr></thead><tbody>
 {% for item in jobs %}<tr><td><a href="/submissions/{{ item.id }}">{{ item.id }}</a></td>
 <td>{{ item.kernel.namespace }}/{{ item.kernel.name }}@spec-v{{ item.spec_version }}</td>
 <td>{{ item.target.device }} · {{ item.target.language }}</td><td>{{ item.status }}</td>{% if release_enabled %}<td>{{ item.publication.status }}</td>{% endif %}<td>Unknown</td></tr>{% endfor %}
-</tbody></table>
+</tbody></table></div>
 {% else %}<p>No submissions yet.</p>{% endif %}
 </section>
 <a href="/submit-implementation">Submit implementation</a>

@@ -3,12 +3,12 @@
 <h1>Administration</h1>
 <p>Read-only service summary. {{ summary.note }}</p>
 <h2>Worker queues</h2>
-<table><thead><tr><th>Stage</th><th>Status</th><th>Jobs</th></tr></thead><tbody>
+<div class="table-scroll" role="region" aria-label="Worker queues" tabindex="0"><table><thead><tr><th>Stage</th><th>Status</th><th>Jobs</th></tr></thead><tbody>
 {% for stage, states in summary.queues.items() %}
 {% for state, count in states.items() %}<tr><td>{{ stage }}</td><td>{{ state }}</td><td>{{ count }}</td></tr>
 {% else %}<tr><td>{{ stage }}</td><td>No jobs</td><td>0</td></tr>{% endfor %}
 {% endfor %}
-</tbody></table>
+</tbody></table></div>
 <h2>Storage and Git snapshots</h2>
 <p>Artifact backend: {{ summary.artifact_backend }}. Frozen specifications: {{ summary.frozen_specifications }}.</p>
 {% if summary.snapshot_filesystem %}
