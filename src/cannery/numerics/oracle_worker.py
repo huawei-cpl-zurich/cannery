@@ -1,6 +1,7 @@
 """Trusted CPU supervisor source; author reference runs under a separate UID."""
 
 import inspect
+from string import Template
 
 from cannery.numerics.recipes import _generate
 
@@ -56,7 +57,7 @@ for line in sys.stdin:
     print(json.dumps({'nonce':request['nonce'],'shape':shape,'dtype':'float32','data':value}),flush=True)
 """
 
-SUPERVISOR = r"""
+SUPERVISOR_PREFIX = r"""
 
 def publish(result):
     encoded=json.dumps(result).encode()
@@ -126,7 +127,7 @@ def main(plan):
             nonce=secrets.token_hex(16)
             worker.stdin.write(json.dumps(dict(nonce=nonce,**request))+'\n')
             worker.stdin.flush()
-            result=json.loads(worker.stdout.readline(6*1024*1024))
+            result=json.loads(worker.stdout.readline($reply_limit))
             assert isinstance(result,dict) and result.get('nonce')==nonce
             return result
         definition=plan['spec']
@@ -134,7 +135,9 @@ def main(plan):
         assert ready.get('ready') is True
         print('oracle reference initialized',file=sys.stderr,flush=True)
         outputs={}
-        for case in plan['suite']['cases']:
+"""
+
+UNARY_CASES = r"""        for case in plan['suite']['cases']:
             name,values=next(iter(case['inputs'].items()))
             recipe=SimpleNamespace(**values)
             data=_generate(recipe,case['id'],name)
@@ -146,7 +149,9 @@ def main(plan):
             if not definition['validation']['equal_nan']:
                 assert not any(math.isnan(v) for (v,) in struct.iter_unpack('<f',value))
             outputs[case['id']]=base64.b64encode(value).decode('ascii')
-    finally:
+"""
+
+SUPERVISOR_SUFFIX = r"""    finally:
         worker.kill()
         worker.wait(timeout=2)
     publish({'outputs':outputs})
@@ -158,6 +163,12 @@ except Exception:
     if RESULT_FILE is not None:publish({'error':'reference_failed'})
     raise
 """
+
+SUPERVISOR = (
+    Template(SUPERVISOR_PREFIX).substitute(reply_limit="6*1024*1024")
+    + UNARY_CASES
+    + SUPERVISOR_SUFFIX
+)
 
 
 def worker_source(*, checkpoint: bool = False) -> str:

@@ -130,6 +130,11 @@ def generate_v2(recipe: TensorRecipeV2, case_id: str, input_name: str) -> bytes:
     must reconstruct that view. The returned bytes are in logical order.
     """
     RecipeCaseV2.model_validate({"id": case_id, "inputs": {input_name: recipe}})
+    return _generate_v2(recipe, case_id, input_name)
+
+
+def _generate_v2(recipe: TensorRecipeV2, case_id: str, input_name: str) -> bytes:
+    """Pure stdlib generation for isolated trusted supervisors after validation."""
     count = math.prod(recipe.shape)
     width = ITEM_BYTES[recipe.dtype]
     if recipe.distribution == "zeros":
