@@ -221,3 +221,29 @@ def test_a3_a5_rankings_histories_and_cohorts_are_disjoint(releases):
             "/api/v1/leaderboard", params=params | {"cohort": a3[2] if device == "a5" else a5[2]}
         )
         assert wrong.status_code == 404
+
+
+def test_public_name_and_owner_are_independent_of_publishing_actor(releases):
+    from sqlalchemy import update
+
+    from cannery.submissions.models import Submission
+
+    engine, add, client, template = releases
+    identifier, candidate_id, _ = add(1.23456789)
+    with engine.begin() as connection:
+        # Seed the immutable request metadata of this synthetic release fixture.
+        connection.execute(
+            update(Submission)
+            .where(Submission.id == candidate_id)
+            .values(implementation_name="Tiled add-one")
+        )
+    with Session(engine) as db, db.begin():
+        pub = db.get(Publication, candidate_id)
+        pub.actor = {"namespace": "publisher", "role": "admin"}
+        document = db.get(Release, identifier).document
+    row = client.get("/api/v1/leaderboard", params={"kernel": template.kernel}).json()["rows"][0]
+    assert row["implementation_name"] == "Tiled add-one"
+    assert row["team"] == "team" and row["publisher"] == "publisher"
+    assert row["score"]["geomean_speedup"] == 1.23456789
+    with Session(engine) as db:
+        assert db.get(Release, identifier).document == document

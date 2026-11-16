@@ -143,3 +143,10 @@ def test_wait_build_finishes_if_numerical_work_has_already_advanced(monkeypatch,
     )
     assert result.exit_code == 0 and "Binary admitted." in result.output
     assert f"Current status: {status}" in result.output and len(requests) == 2
+
+
+@pytest.mark.parametrize("args", [arguments(), ["revise", KEY, "--commit", "b" * 40]])
+def test_name_option_is_sent_as_metadata(monkeypatch, args):
+    result, requests = invoke(monkeypatch, [(202, {"id": KEY})], args + ["--name", "Tiled add-one"])
+    assert result.exit_code == 0
+    assert json.loads(requests[0].content)["implementation_name"] == "Tiled add-one"

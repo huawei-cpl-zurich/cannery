@@ -98,6 +98,7 @@ def install_cli(app: typer.Typer) -> None:
         spec_version: Annotated[int, typer.Option(min=1)],
         device: Annotated[Device, typer.Option()],
         lang: Annotated[Language, typer.Option()],
+        implementation_name: Annotated[str | None, typer.Option("--name")] = None,
         dependency: Annotated[list[str] | None, typer.Option("--dependency")] = None,
         url: str = "http://127.0.0.1:8000",
         wait: bool = False,
@@ -118,6 +119,7 @@ def install_cli(app: typer.Typer) -> None:
             url,
             f"/api/v1/kernels/{namespace}/{name}/submissions",
             {
+                "implementation_name": implementation_name,
                 "spec_version": spec_version,
                 "device": device,
                 "language": lang,
@@ -132,6 +134,7 @@ def install_cli(app: typer.Typer) -> None:
     def revise(
         identifier: UUID,
         commit: Annotated[str, typer.Option()],
+        implementation_name: Annotated[str | None, typer.Option("--name")] = None,
         url: str = "http://127.0.0.1:8000",
         wait: bool = False,
         wait_build: bool = False,
@@ -141,7 +144,12 @@ def install_cli(app: typer.Typer) -> None:
         send(
             url,
             f"/api/v1/submissions/{identifier}/revisions",
-            {"commit": commit},
+            {"commit": commit}
+            | (
+                {"implementation_name": implementation_name}
+                if implementation_name is not None
+                else {}
+            ),
             wait or wait_build,
             timeout,
             wait_build=wait_build,

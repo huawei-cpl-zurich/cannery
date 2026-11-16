@@ -180,3 +180,18 @@ Use `implementation.build.abi: catlass-unary-f32-v1` with explicit supported
 float32 specializations and language/adapter `catlass`. See the
 [CATLASS admission contract and operator setup](catlass-admission.md). The same
 `--wait-build` and private artifact/status/recovery behavior applies.
+
+## Implementation names
+
+Supply `implementation_name` in a submission/revision API request, `--name` with
+`cannery submit` or `cannery revise`, or the optional name in the web form. Names
+are trimmed, 1–80 printable characters, need not be unique and are immutable.
+Revisions inherit the stored parent name unless an explicit new name is supplied.
+Omitted names on older or unnamed records display as `Implementation <short ID>`.
+
+Names never affect source identity or execution reuse. Retrying an identical
+request returns the existing submission; a different explicit name returns HTTP409
+without creating work. Omit the name or use the original name when retrying.
+Public release metadata exposes `implementation_name` and the owning `team`;
+`publisher` continues to describe the publication actor. Retained manifests and
+Hub identities are unchanged.
