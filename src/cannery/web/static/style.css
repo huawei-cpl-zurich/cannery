@@ -131,3 +131,6 @@ figcaption { display: flex; flex-wrap: wrap; gap: .6rem 1.5rem; padding: 1rem 1.
 .download-panel p { font-size: .85rem; color: var(--muted); }
 .download-panel section + section { border-top: 1px solid var(--line); margin-top: 1.25rem; padding-top: .75rem; }
 .copy-status { font-size: .85rem; color: var(--muted); }
+
+[data-copy] { display: none; }
+.copy-enabled [data-copy] { display: inline-block; }

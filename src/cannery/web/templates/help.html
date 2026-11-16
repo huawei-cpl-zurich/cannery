@@ -22,7 +22,7 @@ python -m pip install 'git+https://github.com/huawei-cpl-zurich/cannery.git'</co
 <p>Choose <strong>CLI · download only</strong> to cache the package and manifest without loading native code. Its runtime JSON describes the release’s target, so the CLI can download on a CPU machine. Keep the manifest with the package.</p>
 </section>
 {% if hub_enabled %}<section aria-labelledby="python-client"><h2 id="python-client">4. Install the Python / Hugging Face client</h2>
-<p>In the Ascend environment that will run the kernel, use Python 3.11 or newer and the release’s exact PyTorch, torch-npu and CANN versions. Keep those installed runtime versions. These source installs require Git and Rust/Cargo; operator-provided wheels can be used instead.</p>
+<p>In the Ascend environment that will run the kernel, use Python 3.11 or newer and the release’s exact PyTorch, torch-npu and CANN versions. Keep those installed runtime versions. These source installs require Git and current stable Rust/Cargo; operator-provided wheels can be used instead.</p>
 <pre id="help-python"><code>python -m pip install \
   'git+https://github.com/huawei-cpl-zurich/cannery-kernels.git#subdirectory=kernels' \
   'git+https://github.com/huawei-cpl-zurich/cannery-kernels.git#subdirectory=cannery-runtime' \

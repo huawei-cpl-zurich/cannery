@@ -7,6 +7,7 @@ from release_fixtures import benchmark as benchmark
 from release_fixtures import records as records
 from release_fixtures import setup_executor as setup_executor
 from test_release_catalog import releases as releases
+from test_release_resolution import published as published
 
 from cannery.releases import state
 from cannery.releases.worker import process
@@ -111,3 +112,16 @@ def test_global_best_shows_names_teams_rounded_scores_and_compact_dates(releases
     assert ">01 Jan 2026</time>" in page.text
     assert 'datetime="2026-01-01T00:00:01+00:00"' in page.text
     assert f"/releases/{release_id}" in page.text and "Repository</a>" in page.text
+
+
+def test_release_download_menu_pins_commands_and_gates_python_on_hub(published):
+    engine, _, _, _, identifier, _ = published
+    app = FastAPI()
+    install_web(app, Settings(release_enabled=True, hub_enabled=True, auth_enabled=True), engine)
+    page = TestClient(app).get(f"/releases/{identifier}")
+    assert page.status_code == 200
+    assert "Sign in to download" in page.text and "Download options" in page.text
+    assert "Python · Hugging Face" in page.text and f"release-{identifier}" in page.text
+    assert f"--release-id {identifier}" in page.text and "--no-detect" in page.text
+    disabled = web(engine).get(f"/releases/{identifier}")
+    assert "Python · Hugging Face" not in disabled.text and "CLI · download only" in disabled.text

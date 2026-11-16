@@ -1,4 +1,5 @@
 /* Delegated so copied commands and disclosure controls survive HTMX refreshes. */
+document.documentElement.classList.add('copy-enabled');
 document.addEventListener('click', async event => {
   document.querySelectorAll('.download-menu[open]').forEach(menu => {
     if (!menu.contains(event.target)) menu.open = false;
@@ -10,6 +11,8 @@ document.addEventListener('click', async event => {
   try {
     await navigator.clipboard.writeText(source.textContent);
     status.textContent = 'Copied to clipboard.';
+    const label = button.textContent; button.textContent = 'Copied';
+    window.setTimeout(() => { button.textContent = label; }, 1500);
   } catch {
     const selection = window.getSelection();
     const range = document.createRange();
