@@ -190,7 +190,7 @@ Revisions inherit the stored parent name unless an explicit new name is supplied
 Omitted names on older or unnamed records display as `Implementation <short ID>`.
 
 Names never affect source identity or execution reuse. Retrying an identical
-request returns the existing submission; a different explicit name returns HTTP409
+request returns the existing submission; a different explicit name returns HTTP 409
 without creating work. Omit the name or use the original name when retrying.
 Public release metadata exposes `implementation_name` and the owning `team`;
 `publisher` continues to describe the publication actor. Retained manifests and
@@ -203,7 +203,7 @@ executions keep the original release's name, source and measurements; naming a
 new request does not rename an existing published execution.
 
 Web measurements use at most three decimal places with trailing zeros removed;
-nonzero magnitudes below0.001 use scientific notation. Integer counts use grouping.
+nonzero magnitudes below 0.001 use scientific notation. Integer counts use grouping.
 Raw API values, stored evidence, chart coordinates and form inputs retain full
 precision. Publication dates display in UTC with exact timestamps in tooltips.
 

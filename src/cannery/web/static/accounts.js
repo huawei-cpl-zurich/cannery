@@ -75,6 +75,9 @@
           const content = parsed.getElementById('content');
           if (content) { document.getElementById('content').replaceWith(content); if (window.htmx) htmx.process(content); }
           else error('Unexpected response. Reload and try again.');
+        } else if (reply.status === 409) {
+          const conflict = await reply.json();
+          error(typeof conflict.detail === 'string' ? conflict.detail : 'This request conflicts with an existing submission.');
         } else error('Request failed. Reload and check your permissions.');
       }
     } catch (e) { error(e.message); }
