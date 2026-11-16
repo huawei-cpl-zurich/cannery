@@ -164,3 +164,21 @@ jobs:
       - run: python -m pip install -e '.[dev,browser]'
       - run: python -m playwright install --with-deps chromium
       - run: CANNERY_AUTH_DOCKER=1 pytest -q tests/test_auth_docker.py
+
+  hub-client:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: 1.100.0
+      - name: Install reviewed client and server dependencies
+        run: >-
+          pip install '.[dev]' 'huggingface-hub==1.33.0'
+          'git+https://github.com/huawei-cpl-zurich/cannery-kernels@ee29b27e65bb6cd5d0540bd092252c58d8a47848#subdirectory=kernels'
+          'git+https://github.com/huawei-cpl-zurich/cannery-kernels@ee29b27e65bb6cd5d0540bd092252c58d8a47848#subdirectory=cannery-runtime'
+      - run: CANNERY_HUB_DOCKER=1 CANNERY_HUB_CLIENT_PYTHON="$(command -v python)" pytest -q tests/test_hub_docker.py
