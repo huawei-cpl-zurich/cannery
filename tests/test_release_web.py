@@ -81,3 +81,20 @@ def test_chart_uses_publication_times_and_includes_reference_line():
     assert value["line"].count(" H ") == 2 and value["line"].count(" V ") == 2
     assert 0 < value["reference_y"] < 220
     assert chart([])["points"] == []
+
+
+def test_single_publication_is_centered_with_one_utc_date_and_readable_scale():
+    result = chart(
+        [
+            {
+                "published_at": "2026-01-01T02:00:00+02:00",
+                "geomean_speedup": 0.5,
+                "language": "ascendc",
+            }
+        ]
+    )
+    assert result["points"][0]["x"] == 400
+    assert result["dates"] == [{"x": 400, "date": "01 Jan 2026", "time": "00:00:00"}]
+    assert result["ticks"][0] == {"y": 220, "label": "0"}
+    assert len(result["ticks"]) == 5
+    assert result["best"] == "0.5"
