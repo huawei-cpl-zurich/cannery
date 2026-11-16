@@ -12,10 +12,33 @@ from cannery.accounts.context import identity
 from cannery.artifacts import ArtifactError, ArtifactRef, ArtifactStore
 from cannery.releases import catalog
 from cannery.releases.assets import verify_package
-from cannery.releases.contract import read_manifest
+from cannery.releases.contract import ReleaseManifest, read_manifest
 from cannery.releases.discovery_api import selection_error
 from cannery.releases.resolution import ResolveRequest, resolve
 from cannery.settings import Settings
+
+
+def release_bytes(
+    app: FastAPI, engine: Engine, identifier: UUID, package: bool
+) -> tuple[bytes, ReleaseManifest, ArtifactRef]:
+    try:
+        with Session(engine) as db:
+            release, _ = catalog.release_info(db, identifier)
+            manifest = catalog.manifest_of(release)
+            ref = manifest.package if package else ArtifactRef.model_validate(release.manifest)
+        store = cast(ArtifactStore, app.state.artifacts)
+        raw = store.get(ref)
+        if package:
+            verify_package(raw, manifest)
+        elif read_manifest(raw, ref.sha256) != manifest:
+            raise ValueError("Manifest differs")
+        with Session(engine) as db:
+            catalog.release_info(db, identifier)
+        return raw, manifest, ref
+    except catalog.SelectionError as error:
+        raise selection_error(error) from None
+    except (ArtifactError, ValueError):
+        raise HTTPException(503, "release_artifact_unavailable") from None
 
 
 def install_downloads(app: FastAPI, settings: Settings, engine: Engine) -> None:
@@ -36,29 +59,12 @@ def install_downloads(app: FastAPI, settings: Settings, engine: Engine) -> None:
             raise selection_error(error) from None
 
     def download(identifier: UUID, package: bool) -> Response:
-        try:
-            with Session(engine) as db:
-                release, _ = catalog.release_info(db, identifier)
-                manifest = catalog.manifest_of(release)
-                ref = manifest.package if package else ArtifactRef.model_validate(release.manifest)
-            store = cast(ArtifactStore, app.state.artifacts)
-            raw = store.get(ref)
-            if package:
-                verify_package(raw, manifest)
-            elif read_manifest(raw, ref.sha256) != manifest:
-                raise ValueError("Manifest differs")
-            # Withdrawal during a slow backend read takes effect before any response bytes.
-            with Session(engine) as db:
-                catalog.release_info(db, identifier)
-            return Response(
-                raw,
-                media_type="application/octet-stream" if package else "application/json",
-                headers={"Cache-Control": "private, no-store", "ETag": '"' + ref.sha256 + '"'},
-            )
-        except catalog.SelectionError as error:
-            raise selection_error(error) from None
-        except (ArtifactError, ValueError):
-            raise HTTPException(503, "release_artifact_unavailable") from None
+        raw, _, ref = release_bytes(app, engine, identifier, package)
+        return Response(
+            raw,
+            media_type="application/octet-stream" if package else "application/json",
+            headers={"Cache-Control": "private, no-store", "ETag": '"' + ref.sha256 + '"'},
+        )
 
     @app.get("/api/v1/releases/{identifier}/manifest")
     def manifest(identifier: UUID, user: Annotated[str, Depends(principal)]) -> Response:

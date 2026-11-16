@@ -3,6 +3,7 @@ services:
   api:
     environment:
       CANNERY_RELEASE_ENABLED: "true"
+      CANNERY_HUB_ENABLED: ${CANNERY_HUB_ENABLED:-false}
       CANNERY_ARTIFACT_BACKEND: private
       CANNERY_ARTIFACT_URL: http://artifacts:8000
       CANNERY_ARTIFACT_READ_TOKEN: ${CANNERY_ARTIFACT_READ_TOKEN:?Set a private read token}
