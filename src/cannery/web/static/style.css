@@ -120,3 +120,14 @@ figcaption { display: flex; flex-wrap: wrap; gap: .6rem 1.5rem; padding: 1rem 1.
 .score-summary { display: inline-block; padding: 1rem 1.25rem; background: #edf4ff; border-left: 3px solid var(--blue); font-size: 1.15rem; font-weight: 650; }
 @media (max-width: 64rem) { .pipeline { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
 @media (max-width: 30rem) { .pipeline { grid-template-columns: 1fr; } }
+.download-actions { position: relative; display: flex; width: max-content; max-width: 100%; margin: 1rem 0; }
+.download-primary, .download-menu > summary { display: block; padding: .6rem 1rem; min-height: 2.75rem; background: var(--blue); color: white; border: 1px solid var(--blue); font-size: .9rem; font-weight: 650; text-decoration: none; }
+.download-primary { border-radius: .35rem 0 0 .35rem; }
+.download-menu > summary { list-style: none; cursor: pointer; border-left-color: #86ace2; border-radius: 0 .35rem .35rem 0; }
+.download-menu > summary::-webkit-details-marker { display: none; }
+.download-primary:hover, .download-menu > summary:hover { background: #104b9e; }
+.download-panel { position: absolute; z-index: 5; top: calc(100% + .5rem); left: 0; width: min(46rem, calc(100vw - 5rem)); max-height: 70vh; overflow: auto; padding: 1.25rem; background: white; border: 1px solid var(--line); border-radius: .6rem; box-shadow: 0 12px 30px #14263d26; }
+.download-panel h3 { margin: .5rem 0; }
+.download-panel p { font-size: .85rem; color: var(--muted); }
+.download-panel section + section { border-top: 1px solid var(--line); margin-top: 1.25rem; padding-top: .75rem; }
+.copy-status { font-size: .85rem; color: var(--muted); }

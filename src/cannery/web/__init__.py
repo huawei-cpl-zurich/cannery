@@ -1,3 +1,4 @@
+import shlex
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -10,6 +11,7 @@ from cannery.accounts.admin import install_admin
 from cannery.accounts.context import identity, template_context
 from cannery.settings import Settings
 from cannery.web.accounts import install_account_web
+from cannery.web.downloads import origin
 from cannery.web.registration import install_registration
 from cannery.web.releases import install_release_web
 from cannery.web.submissions import install_submission_web
@@ -82,6 +84,30 @@ def install_web(app: FastAPI, settings: Settings, engine: Engine) -> None:
             "settings": settings,
         },
     )
+
+    @app.get("/help", response_class=HTMLResponse, include_in_schema=False)
+    def help_page(request: Request) -> HTMLResponse:
+        return templates.TemplateResponse(
+            request=request,
+            name="help.html",
+            context={
+                "title": "Help",
+                "pages": PAGES,
+                "endpoint": origin(request, settings),
+                "hub_enabled": settings.hub_enabled,
+                "login_command": shlex.join(
+                    [
+                        "cannery",
+                        "login",
+                        "--url",
+                        origin(request, settings),
+                        "--username",
+                        "YOUR_USERNAME",
+                    ]
+                ),
+                **template_context(settings),
+            },
+        )
 
     @app.get("/{page}", response_class=HTMLResponse, include_in_schema=False)
     async def page_view(request: Request, page: str) -> HTMLResponse:

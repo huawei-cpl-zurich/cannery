@@ -1,0 +1,23 @@
+<div class="download-actions">
+  {% if auth_enabled and not signed_in %}<a class="download-primary" href="/login">Sign in to download</a>
+  {% else %}<a class="download-primary" href="/api/v1/releases/{{ release.id }}/package" download="kernel-{{ release.id }}.tar">Download</a>{% endif %}
+  <details class="download-menu">
+    <summary aria-label="Download options" title="Download options">▾</summary>
+    <div class="download-panel">
+      <h3>Use this release</h3>
+      <p><a href="/help">Install clients and sign in</a> first. These commands pin this exact release.</p>
+      {% if download_snippets.python %}
+      <section aria-label="Python Hugging Face snippet"><h3>Python · Hugging Face</h3>
+        <p>Downloads and loads native code in a matching Ascend runtime.</p>
+        <pre id="download-python"><code>{{ download_snippets.python }}</code></pre>
+        <button type="button" data-copy="download-python">Copy Python</button>
+      </section>{% endif %}
+      <section aria-label="CLI download snippet"><h3>CLI · download only</h3>
+        <p>The runtime file describes this release’s target. Downloading requires no NPU and does not execute the kernel.</p>
+        <pre id="download-cli"><code>{{ download_snippets.cli }}</code></pre>
+        <button type="button" data-copy="download-cli">Copy CLI</button>
+      </section>
+      <p class="copy-status" role="status" aria-live="polite"></p>
+    </div>
+  </details>
+</div>

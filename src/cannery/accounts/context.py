@@ -56,6 +56,7 @@ def public(request: Request) -> bool:
             "/",
             "/global-best",
             "/login",
+            "/help",
             "/health/live",
             "/health/ready",
             "/api/v1/releases",

@@ -3,6 +3,7 @@
 <h1>{% if release %}Published release{% else %}Global Best{% endif %}</h1>
 {% if release %}
 <h2>{{ release.implementation_name }}</h2>
+{% include "download_menu.html" %}
 <p>Team: {{ release.team }}</p>
 <p>{{ release.kernel }}@spec-v{{ release.spec_version }} · {{ release.device }} · {{ release.language }} · published <time datetime="{{ release.published_at }}" title="{{ release.published_at }}">{{ release.published_at|publication_date }}</time> by {{ release.publisher }}</p>
 <p>Release <code>{{ release.id }}</code>. Geometric mean speedup: {% if release.score.geomean_speedup is not none %}{{ release.score.geomean_speedup|number }}×{% else %}unscored{% endif %}.</p>
@@ -11,7 +12,7 @@
 {% set links=release.source|source_links %}
 <p>Source: {% if links %}<a href="{{ links.code or links.repository }}" rel="noreferrer">{{ release.source.url }}</a>{% else %}{{ release.source.url }}{% endif %} · <code>{{ release.source.commit }}</code> · {{ release.source.path }}.</p>
 <p>Manifest SHA256: <code>{{ release.manifest_sha256 }}</code>. Package SHA256: <code>{{ release.package_sha256 }}</code>.</p>
-<p><a href="/api/v1/releases/{{ release.id }}/manifest">Manifest</a> · <a href="/api/v1/releases/{{ release.id }}/package">Binary package</a>. Downloading does not execute code; loading requires explicit trust in an isolated matching runtime.</p>
+<p><a href="/api/v1/releases/{{ release.id }}/manifest">Manifest</a> · <a href="/api/v1/releases/{{ release.id }}/package" download="kernel-{{ release.id }}.tar">Binary package</a>. Downloading does not execute code; loading requires explicit trust in an isolated matching runtime.</p>
 <div class="table-scroll" role="region" aria-label="Published results" tabindex="0"><table><thead><tr><th>Case</th><th>Candidate median / p95 µs</th><th>Reference median / p95 µs</th><th>Speedup</th></tr></thead><tbody>
 {% for case in release.score.cases %}<tr><td>{{ case.id }} {{ case.shape }}</td>{% if case.excluded %}<td colspan="3">Empty: correctness only</td>{% else %}<td>{{ case.candidate.median_us|number }} / {{ case.candidate.p95_us|number }}</td><td>{{ case.reference.median_us|number }} / {{ case.reference.p95_us|number }}</td><td>{{ case.speedup|number }}×</td>{% endif %}</tr>{% endfor %}
 </tbody></table></div>
