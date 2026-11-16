@@ -3,6 +3,20 @@ on: [push, pull_request]
 permissions:
   contents: read
 jobs:
+  tensor-oracle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -e '.[dev]'
+      - run: docker build -f Dockerfile.smoke -t cannery-tensor-oracle-test .
+      - run: >-
+          CANNERY_ORACLE_TEST_IMAGE=cannery-tensor-oracle-test
+          pytest -q tests/test_tensor_oracle_worker.py tests/test_oracle_worker.py
+
   quality:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
