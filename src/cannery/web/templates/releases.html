@@ -9,13 +9,13 @@
 <p>Source: {{ release.source.url }} · <code>{{ release.source.commit }}</code> · {{ release.source.path }}.</p>
 <p>Manifest SHA256: <code>{{ release.manifest_sha256 }}</code>. Package SHA256: <code>{{ release.package_sha256 }}</code>.</p>
 <p><a href="/api/v1/releases/{{ release.id }}/manifest">Manifest</a> · <a href="/api/v1/releases/{{ release.id }}/package">Binary package</a>. Downloading does not execute code; loading requires explicit trust in an isolated matching runtime.</p>
-<table><thead><tr><th>Case</th><th>Candidate median / p95 µs</th><th>Reference median / p95 µs</th><th>Speedup</th></tr></thead><tbody>
+<div class="table-scroll" role="region" aria-label="Published results" tabindex="0"><table><thead><tr><th>Case</th><th>Candidate median / p95 µs</th><th>Reference median / p95 µs</th><th>Speedup</th></tr></thead><tbody>
 {% for case in release.score.cases %}<tr><td>{{ case.id }} {{ case.shape }}</td>{% if case.excluded %}<td colspan="3">Empty: correctness only</td>{% else %}<td>{{ case.candidate.median_us }} / {{ case.candidate.p95_us }}</td><td>{{ case.reference.median_us }} / {{ case.reference.p95_us }}</td><td>{{ case.speedup }}×</td>{% endif %}</tr>{% endfor %}
-</tbody></table>
+</tbody></table></div>
 <h2>Saved numerical validation</h2>
-<table><thead><tr><th>Case</th><th>Input unchanged</th><th>Tolerance pair</th><th>Maximum absolute / relative error</th><th>RMS error</th><th>Nonfinite mismatches</th></tr></thead><tbody>
+<div class="table-scroll" role="region" aria-label="Published results" tabindex="0"><table><thead><tr><th>Case</th><th>Input unchanged</th><th>Tolerance pair</th><th>Maximum absolute / relative error</th><th>RMS error</th><th>Nonfinite mismatches</th></tr></thead><tbody>
 {% for case in release.numerical_cases %}{% for name in ['spec_default', 'submission_requested'] %}{% set result=case[name] %}<tr><td>{{ case.id }} · {{ name }}</td><td>{{ case.input_unchanged }}</td><td>{{ result.rtol }}, {{ result.atol }}</td><td>{{ result.max_absolute_error }} / {{ result.max_relative_error if result.max_relative_error is not none else 'undefined' }}</td><td>{{ result.rms_error }}</td><td>{{ result.nonfinite_mismatches }}</td></tr>{% endfor %}{% endfor %}
-</tbody></table>
+</tbody></table></div>
 {% else %}
 <p>Only explicitly published releases appear. Scores compare synchronized call latency with PyTorch within one exact measurement cohort. Slower valid releases remain eligible.</p>
 {% if kernels %}
@@ -40,9 +40,9 @@
 <text x="50" y="245">{{ curve.start }}</text><text x="750" y="265" text-anchor="end">{{ curve.end }}</text>
 </svg><p>Publication time (UTC). Blue: Ascend C; orange: CATLASS. One strict best-so-far curve among currently published releases.</p>
 {% endif %}
-<table><thead><tr><th>Release</th><th>Language</th><th>Speedup</th><th>Published</th></tr></thead><tbody>
+<div class="table-scroll" role="region" aria-label="Published results" tabindex="0"><table><thead><tr><th>Release</th><th>Language</th><th>Speedup</th><th>Published</th></tr></thead><tbody>
 {% for row in ranking.rows %}<tr><td><a href="/releases/{{ row.id }}">{{ row.id }}</a></td><td>{{ row.language }}</td><td>{{ row.score.geomean_speedup }}×</td><td>{{ row.published_at }}</td></tr>{% else %}<tr><td colspan="4">No nonempty performance cases.</td></tr>{% endfor %}
-</tbody></table><p>{{ ranking.total }} scored releases. Showing up to 50; the API supports pagination.</p>
+</tbody></table></div><p>{{ ranking.total }} scored releases. Showing up to 50; the API supports pagination.</p>
 {% endif %}
 {% else %}<p>No published results yet.</p>{% endif %}
 {% endif %}
