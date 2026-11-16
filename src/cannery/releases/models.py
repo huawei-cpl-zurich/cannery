@@ -17,12 +17,12 @@ from sqlalchemy import (
     select,
 )
 from sqlalchemy.engine import Connection
-from sqlalchemy.orm import Mapped, Mapper, mapped_column
+from sqlalchemy.orm import Mapped, Mapper, mapped_column, relationship
 
-import cannery.submissions.models  # noqa: F401
 from cannery.artifacts import ArtifactRef, digest
 from cannery.database import Base
 from cannery.releases.contract import ReleaseManifest, canonical
+from cannery.submissions.models import Submission
 
 
 def now() -> datetime:
@@ -34,6 +34,9 @@ class Release(Base):
     __table_args__ = (UniqueConstraint("candidate_id", "id"),)
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     candidate_id: Mapped[UUID] = mapped_column(ForeignKey("candidates.id"), unique=True)
+    submission: Mapped[Submission] = relationship(
+        primaryjoin="foreign(Release.candidate_id) == Submission.id", viewonly=True, lazy="joined"
+    )
     spec_id: Mapped[UUID] = mapped_column(ForeignKey("spec_versions.id"), index=True)
     device: Mapped[str]
     language: Mapped[str]

@@ -15,6 +15,7 @@ from cannery.registry.models import Kernel, SpecVersion
 from cannery.releases.contract import SHA, ReleaseManifest, Tolerance
 from cannery.releases.models import Publication, Release, ReleaseTolerance
 from cannery.submissions.manifest import KernelPath
+from cannery.submissions.names import label
 
 
 class Selection(StrictModel):
@@ -57,6 +58,8 @@ def describe(release: Release, pub: Publication) -> dict[str, Any]:
     return {
         "id": str(release.id),
         "submission_id": str(release.candidate_id),
+        "implementation_name": label(release.submission.implementation_name, release.candidate_id),
+        "team": release.submission.namespace,
         "kernel": m.kernel,
         "spec_version": m.spec_version,
         "spec_sha256": m.spec_sha256,

@@ -30,6 +30,7 @@ from cannery.submissions.models import (
     SubmissionConflict,
     SubmissionReuse,
 )
+from cannery.submissions.names import ImplementationName, ImplementationNameConflict, label
 from cannery.submissions.requests import new_submission, revise_submission
 from cannery.submissions.state import IntakeState
 
@@ -40,9 +41,11 @@ class SubmitRequest(BaseModel):
     device: Device
     language: Language
     source: GitSource
+    implementation_name: ImplementationName | None = None
 
 
 class RevisionRequest(BaseModel):
+    implementation_name: ImplementationName | None = None
     model_config = ConfigDict(extra="forbid")
     commit: str = Field(pattern=r"^(?:[a-f0-9]{40}|[a-f0-9]{64})$")
 
@@ -70,20 +73,32 @@ def submit(
         if spec is None:
             raise HTTPException(404, "Frozen specification not found")
         spec_id = spec.id
-    key = new_submission(
-        engine,
-        namespace,
-        spec_id,
-        body.source,
-        RequestedTarget(device=body.device, language=body.language),
-    )
+    try:
+        key = new_submission(
+            engine,
+            namespace,
+            spec_id,
+            body.source,
+            RequestedTarget(device=body.device, language=body.language),
+            body.implementation_name,
+        )
+    except ImplementationNameConflict as error:
+        raise HTTPException(409, str(error)) from None
     return dispatch(settings, key)
 
 
-def revise(settings: Settings, engine: Engine, identifier: UUID, commit: str) -> UUID:
+def revise(
+    settings: Settings,
+    engine: Engine,
+    identifier: UUID,
+    commit: str,
+    implementation_name: str | None = None,
+) -> UUID:
     namespace = identity(settings)
     try:
-        key = revise_submission(engine, namespace, identifier, commit)
+        key = revise_submission(engine, namespace, identifier, commit, implementation_name)
+    except ImplementationNameConflict as error:
+        raise HTTPException(409, str(error)) from None
     except SubmissionConflict:
         raise HTTPException(404, "Retained parent submission not found") from None
     return dispatch(settings, key)
@@ -186,6 +201,8 @@ def describe(
         failed = failed or performance.status == "failed"
     return {
         "id": str(request.id),
+        "implementation_name": label(request.implementation_name, request.id),
+        "team": request.namespace,
         "reused_from": str(reused_from) if reused_from else None,
         "parent_id": str(request.parent_id) if request.parent_id else None,
         "binding_id": str(candidate.binding_id) if candidate else None,
@@ -294,7 +311,7 @@ def install_submissions(app: FastAPI, settings: Settings, engine: Engine) -> Non
     def revision(
         identifier: UUID, body: RevisionRequest, user: Annotated[str, Depends(principal)]
     ) -> dict[str, str]:
-        return accepted(revise(settings, engine, identifier, body.commit))
+        return accepted(revise(settings, engine, identifier, body.commit, body.implementation_name))
 
     @app.get("/api/v1/submissions/mine")
     def mine(user: Annotated[str, Depends(principal)]) -> list[dict[str, Any]]:

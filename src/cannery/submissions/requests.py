@@ -9,6 +9,7 @@ from cannery.benchmark.state import PerformanceJob
 from cannery.git_intake import GitSource
 from cannery.registry.models import SpecVersion
 from cannery.submissions.models import Candidate, RequestedTarget, Submission, SubmissionConflict
+from cannery.submissions.names import NAME, check_name
 from cannery.submissions.state import IntakeState
 
 
@@ -51,17 +52,27 @@ def existing_request(
 
 
 def new_submission(
-    engine: Engine, namespace: str, spec_id: UUID, source: GitSource, target: RequestedTarget
+    engine: Engine,
+    namespace: str,
+    spec_id: UUID,
+    source: GitSource,
+    target: RequestedTarget,
+    implementation_name: str | None = None,
 ) -> UUID:
+    implementation_name = NAME.validate_python(implementation_name)
     with Session(engine, expire_on_commit=False) as session, session.begin():
         spec = session.get(SpecVersion, spec_id, with_for_update=True)
         if spec is None or spec.manifest["kernel"]["namespace"] != namespace:
             raise SubmissionConflict("Frozen specification not found")
         existing = existing_request(session, namespace, spec_id, source, target)
         if existing is not None:
+            check_name(
+                session.get_one(Submission, existing).implementation_name, implementation_name
+            )
             return existing
         request = Submission(
             namespace=namespace,
+            implementation_name=implementation_name,
             spec_id=spec_id,
             source=source.model_dump(mode="json"),
             target=target.model_dump(mode="json"),
@@ -72,7 +83,14 @@ def new_submission(
         return request.id
 
 
-def revise_submission(engine: Engine, namespace: str, parent_id: UUID, commit: str) -> UUID:
+def revise_submission(
+    engine: Engine,
+    namespace: str,
+    parent_id: UUID,
+    commit: str,
+    implementation_name: str | None = None,
+) -> UUID:
+    implementation_name = NAME.validate_python(implementation_name)
     with Session(engine, expire_on_commit=False) as session, session.begin():
         parent = session.get(Submission, parent_id)
         accepted = session.get(Candidate, parent_id)
@@ -80,6 +98,7 @@ def revise_submission(engine: Engine, namespace: str, parent_id: UUID, commit: s
             raise SubmissionConflict("Retained parent submission not found")
         source = GitSource.model_validate(parent.source | {"commit": commit})
         if source == GitSource.model_validate(parent.source):
+            check_name(parent.implementation_name, implementation_name)
             return parent.id
         session.get(SpecVersion, parent.spec_id, with_for_update=True)
         existing = existing_request(
@@ -91,11 +110,17 @@ def revise_submission(engine: Engine, namespace: str, parent_id: UUID, commit: s
             parent_id=parent.id,
         )
         if existing is not None:
+            check_name(
+                session.get_one(Submission, existing).implementation_name, implementation_name
+            )
             return existing
         request = Submission(
             namespace=namespace,
             spec_id=parent.spec_id,
             parent_id=parent.id,
+            implementation_name=implementation_name
+            if implementation_name is not None
+            else parent.implementation_name,
             source=source.model_dump(mode="json"),
             target=parent.target,
         )

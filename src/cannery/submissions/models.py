@@ -4,7 +4,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Index, event
+from sqlalchemy import JSON, CheckConstraint, DateTime, ForeignKey, Index, String, event
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Mapped, Mapper, mapped_column
 
@@ -30,6 +30,7 @@ class Submission(Base):
     )
     id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
     namespace: Mapped[str]
+    implementation_name: Mapped[str | None] = mapped_column(String(80))
     spec_id: Mapped[UUID] = mapped_column(ForeignKey("spec_versions.id"))
     parent_id: Mapped[UUID | None] = mapped_column(ForeignKey("submissions.id"))
     source: Mapped[dict[str, Any]] = mapped_column(JSON)
