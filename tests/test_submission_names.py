@@ -15,7 +15,9 @@ def dispatch(monkeypatch):
     monkeypatch.setattr("cannery.submissions.api.publish_submission", MagicMock())
 
 
-@pytest.mark.parametrize("name", ["", "   ", "x" * 81, "x\ny", "x\ty", "x\u200ey", 123])
+@pytest.mark.parametrize(
+    "name", ["", "   ", "x" * 81, "x\ny", "x\ty", "x\u200ey", "x\u2028y", "x\u2029y", 123]
+)
 def test_name_validation(name):
     with pytest.raises(ValueError):
         SubmitRequest.model_validate(payload() | {"implementation_name": name})

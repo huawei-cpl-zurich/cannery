@@ -1,6 +1,5 @@
 """Human labels are metadata, never execution or deduplication identity."""
 
-import unicodedata
 from typing import Annotated
 from uuid import UUID
 
@@ -14,8 +13,8 @@ class ImplementationNameConflict(SubmissionConflict):
 
 
 def printable(value: object) -> object:
-    if isinstance(value, str) and any(unicodedata.category(char).startswith("C") for char in value):
-        raise ValueError("Implementation names cannot contain control characters")
+    if isinstance(value, str) and any(not char.isprintable() for char in value):
+        raise ValueError("Implementation names must contain only printable characters")
     return value
 
 
