@@ -3,20 +3,32 @@ import os
 import struct
 import subprocess
 import time
+from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
 import pytest
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
 from test_build_executor import Memory
 from test_tensor_spec_reader import tensor_files
 
 from cannery.artifacts import ArtifactError
+from cannery.database import Base
+from cannery.git_intake import GitSource
+from cannery.git_intake.snapshots import SelectedTree, SnapshotStore
+from cannery.numerics.baseline_state import BaselineState, ensure_baseline
 from cannery.numerics.baseline_v2 import baseline_key_v2, unpack_baseline_v2
+from cannery.numerics.baselines import BaselinePending, advance_baseline
 from cannery.numerics.oracle_job import OracleJob, OraclePending
 from cannery.numerics.recipes_v2 import generate_v2
+from cannery.registry.freeze import freeze_spec, kernel_key
 from cannery.registry.tensor_manifest import validate_tensor_spec
 
 
-def test_real_tensor_oracle_resumes_after_transport_and_upload_loss(tmp_path, monkeypatch):
+@pytest.mark.parametrize("coordinated", [False, True])
+def test_real_tensor_oracle_resumes_after_transport_and_upload_loss(
+    tmp_path, monkeypatch, coordinated
+):
     image = os.environ.get("CANNERY_ORACLE_TEST_IMAGE")
     if not image:
         pytest.skip("Set CANNERY_ORACLE_TEST_IMAGE for retained tensor oracle Docker proof")
@@ -32,6 +44,17 @@ def reference(x,cache,offset):
     spec, suite, contract = frozen.spec, frozen.suite, frozen.contract.output_contract()
     key = baseline_key_v2(spec.content_sha256, suite, spec.environment, contract)
     attempt = uuid4()
+    engine = create_engine("sqlite:///" + str(tmp_path / "db")) if coordinated else None
+    snapshots = SnapshotStore(tmp_path / "snapshots")
+    binding = None
+    if engine is not None:
+        Base.metadata.create_all(engine)
+        binding = snapshots.commit(
+            kernel_key("team", "identity"),
+            GitSource(url="https://example.invalid/spec.git", commit="a" * 40, path="spec"),
+            SelectedTree(files, dict.fromkeys(files, "100644"), "b" * 40),
+        )
+        ensure_baseline(engine, key, spec.content_sha256, binding)
     volume = "cannery-llm-catalog-oracle-" + attempt.hex
     image_id = subprocess.check_output(
         ["docker", "image", "inspect", image, "--format", "{{.Id}}"], text=True, timeout=20
@@ -81,20 +104,71 @@ def reference(x,cache,offset):
     memory.put = disconnect
 
     def job():
-        return OracleJob(tmp_path, volume, key, attempt, image_id, memory, lambda: None)
+        current = attempt
+        if engine is not None:
+            with Session(engine) as db:
+                current = db.get(BaselineState, key).attempt or current
+        return OracleJob(tmp_path, volume, key, current, image_id, memory, lambda: None)
+
+    def progress():
+        if engine is None:
+            return job().progress(spec, suite, files, "spec")
+        return advance_baseline(
+            engine,
+            key,
+            spec,
+            suite,
+            contract=frozen.contract,
+            snapshots=snapshots,
+            artifacts=memory,
+            root=tmp_path,
+            volume=volume,
+            image=image_id,
+            fence=lambda: None,
+        ).artifact
 
     try:
         deadline = time.monotonic() + 90
         while True:
             try:
-                reference = job().progress(spec, suite, files, "spec")
+                reference = progress()
                 break
-            except (OraclePending, ArtifactError):
+            except (OraclePending, ArtifactError, BaselinePending):
                 assert time.monotonic() < deadline, calls
+                if engine is not None:
+                    with Session(engine) as db, db.begin():
+                        row = db.get(BaselineState, key)
+                        row.due_at = row.lease_until = datetime.now(UTC) - timedelta(seconds=1)
                 time.sleep(0.2)
         assert lost == {"create", "start", "upload"}
         assert calls.count("create") == calls.count("start") == 1
-        assert job().progress(spec, suite, files, "spec") == reference
+        assert progress() == reference
+        if engine is not None:
+            evidence = advance_baseline(
+                engine,
+                key,
+                spec,
+                suite,
+                contract=frozen.contract,
+                snapshots=snapshots,
+                artifacts=memory,
+                root=tmp_path,
+                volume=volume,
+                image=image_id,
+                fence=lambda: None,
+            )
+            version = freeze_spec(
+                engine,
+                spec,
+                binding,
+                evidence,
+                store=snapshots,
+                namespace="team",
+                allow_new_version=False,
+            )
+            assert version.manifest["schema_version"] == 2
+            with Session(engine) as db:
+                assert db.get(BaselineState, key).attempts == 1
         bundle = unpack_baseline_v2(
             memory.get(reference),
             reference.sha256,
@@ -117,6 +191,8 @@ def reference(x,cache,offset):
         )
     finally:
         job().cleanup()
+        if engine is not None:
+            engine.dispose()
         subprocess.run(
             ["docker", "volume", "rm", volume], check=True, capture_output=True, timeout=20
         )

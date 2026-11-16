@@ -227,6 +227,8 @@ def retained(db: Session, identifier: UUID) -> ReleaseManifest:
         require(row == expected)
     require(implementation.build.abi is not None)
     assert implementation.build.abi is not None and numeric.attempt_id is not None
+    if evidence.generator != "sha256-f32-v1":
+        raise PublicationUnavailable("tensor_publication_not_enabled")
     pairs = sorted({(default.rtol, default.atol), (requested.rtol, requested.atol)})
     return ReleaseManifest(
         submission_id=identifier,

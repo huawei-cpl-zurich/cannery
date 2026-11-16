@@ -3,6 +3,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from test_build_executor import Memory
 from test_recipe_spec import recipe_spec
+from test_tensor_spec_reader import tensor_files
 
 from cannery.artifacts import ArtifactError
 from cannery.database import Base
@@ -10,18 +11,48 @@ from cannery.git_intake import GitSource
 from cannery.git_intake.snapshots import SelectedTree, SnapshotStore
 from cannery.numerics.baseline_format import baseline_key, pack_baseline
 from cannery.numerics.baseline_state import BaselineState, claim_baseline, ensure_baseline
+from cannery.numerics.baseline_v2 import baseline_key_v2, pack_baseline_v2
 from cannery.numerics.baselines import BaselinePending, BaselineUnavailable, advance_baseline
 from cannery.numerics.oracle_job import OracleFailure, OraclePending
 from cannery.numerics.recipes import generate, parse_recipes
 from cannery.registry.freeze import kernel_key
 from cannery.registry.manifest import validate_spec
+from cannery.registry.tensor_manifest import validate_tensor_spec
 
 
-@pytest.fixture
-def ingress(tmp_path, monkeypatch):
-    files, _, _ = recipe_spec()
-    spec = validate_spec(files, "spec")
-    suite = parse_recipes(files["spec/recipes.yaml"])
+@pytest.fixture(params=["unary", "tensor"])
+def ingress(tmp_path, monkeypatch, request):
+    contract = None
+    if request.param == "unary":
+        files, _, _ = recipe_spec()
+        spec = validate_spec(files, "spec")
+        suite = parse_recipes(files["spec/recipes.yaml"])
+        key = baseline_key(spec.content_sha256, suite, spec.environment)
+        package = pack_baseline(
+            spec.content_sha256,
+            suite,
+            spec.environment,
+            "sha256:" + "a" * 64,
+            {c.id: generate(c.inputs["x"], c.id, "x") for c in suite.cases},
+        )
+    else:
+        files = tensor_files()
+        frozen = validate_tensor_spec(files, "spec")
+        spec, suite, contract = frozen.spec, frozen.suite, frozen.contract
+        output_contract = contract.output_contract()
+        key = baseline_key_v2(spec.content_sha256, suite, spec.environment, output_contract)
+        outputs = {
+            case: {name: bytes(desc.nbytes) for name, desc in values.items()}
+            for case, values in output_contract.cases.items()
+        }
+        package = pack_baseline_v2(
+            spec.content_sha256,
+            suite,
+            spec.environment,
+            "sha256:" + "a" * 64,
+            output_contract,
+            outputs,
+        )
     engine = create_engine("sqlite:///" + str(tmp_path / "db"))
     Base.metadata.create_all(engine)
     snapshots = SnapshotStore(tmp_path / "snapshots")
@@ -30,17 +61,17 @@ def ingress(tmp_path, monkeypatch):
         GitSource(url="https://example.invalid/spec.git", commit="a" * 40, path="spec"),
         SelectedTree(files, dict.fromkeys(files, "100644"), "b" * 40),
     )
-    key = baseline_key(spec.content_sha256, suite, spec.environment)
     ensure_baseline(engine, key, spec.content_sha256, binding)
     memory = Memory()
-    control = {"calls": 0, "mode": None, "images": 0, "cleanups": 0}
-    package = pack_baseline(
-        spec.content_sha256,
-        suite,
-        spec.environment,
-        "sha256:" + "a" * 64,
-        {c.id: generate(c.inputs["x"], c.id, "x") for c in suite.cases},
-    )
+    control = {
+        "calls": 0,
+        "mode": None,
+        "images": 0,
+        "cleanups": 0,
+        "cases": len(suite.cases),
+        "generator": suite.generator,
+        "contract": contract,
+    }
     reference = memory.put("outputs.tar", package)
 
     def image(*args):
@@ -74,6 +105,7 @@ def ingress(tmp_path, monkeypatch):
             key,
             spec,
             suite,
+            contract=control["contract"],
             snapshots=snapshots,
             artifacts=memory,
             root=tmp_path / "control",
@@ -91,7 +123,20 @@ def test_ingress_reference_runs_once_and_future_registrations_reuse_ready_cache(
     first = advance()
     second = advance()
     assert first == second and control["calls"] == control["images"] == 1
-    assert first.assurance == "cached_cpu_reference" and first.cases == 3
+    assert first.assurance == "cached_cpu_reference" and first.cases == control["cases"]
+    assert first.generator == control["generator"]
+
+
+def test_wrong_recipe_contract_pair_fails_before_reference_work(ingress):
+    advance, _, _, control, _, _ = ingress
+    control["contract"] = (
+        validate_tensor_spec(tensor_files(), "spec").contract
+        if control["contract"] is None
+        else None
+    )
+    with pytest.raises(BaselineUnavailable):
+        advance()
+    assert control["calls"] == control["images"] == 0
 
 
 def test_other_ingress_does_not_run_a_claimed_reference(ingress):

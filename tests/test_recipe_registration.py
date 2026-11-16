@@ -13,6 +13,9 @@ from cannery.registry import recipe_registration as recipes
 from cannery.registry.registrations import Registration, create_registration
 from cannery.settings import Settings
 
+# Public registration remains unary until the complete tensor pipeline is enabled.
+pytestmark = pytest.mark.parametrize("ingress", ["unary"], indirect=True)
+
 
 @pytest.fixture
 def registration(ingress, monkeypatch, tmp_path):
