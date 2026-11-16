@@ -75,3 +75,26 @@ svg { display: block; width: 100%; max-width: 100%; height: auto; }
   form > p, form > label { flex-basis: 100%; }
   th, td { padding: .7rem .8rem; }
 }
+.chart-panel { margin: 1.5rem 0; border: 1px solid var(--line); border-radius: .6rem; }
+.chart-heading { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: .5rem; padding: 1rem 1.25rem 0; }
+.chart-heading h2, .chart-heading p { margin: 0; }
+.chart-heading p { color: var(--muted); font-size: .9rem; }
+.chart-heading strong { color: var(--ink); font-size: 1.5rem; }
+.chart-scroll { overflow-x: auto; padding: .75rem; }
+.chart-scroll svg { min-width: 640px; }
+.chart-grid { stroke: #e1e7ef; stroke-width: 1; }
+.chart-reference { stroke: #687b91; stroke-width: 1.5; stroke-dasharray: 5 5; }
+.chart-line { fill: none; stroke: var(--ink); stroke-width: 2.5; }
+.chart-label { fill: var(--muted); font-size: 11px; }
+.chart-tooltip { visibility: hidden; pointer-events: none; }
+.chart-tooltip rect { fill: #14263d; }
+.chart-tooltip text { fill: white; font-size: 11px; }
+.chart-point:hover .chart-tooltip, .chart-point:focus .chart-tooltip { visibility: visible; }
+.chart-point:focus { outline: none; }
+.chart-point:hover circle, .chart-point:focus circle { stroke: #c36500; stroke-width: 3; }
+figcaption { display: flex; flex-wrap: wrap; gap: .6rem 1.5rem; padding: 1rem 1.25rem; border-top: 1px solid var(--line); color: var(--muted); font-size: .8rem; }
+.legend-item { display: inline-flex; align-items: center; gap: .5rem; }
+.legend-dot { width: .65rem; height: .65rem; border-radius: 50%; }
+.legend-dot.ascendc { background: #155dc0; }
+.legend-dot.catlass { background: #ae4700; }
+.legend-reference { width: 1.4rem; border-top: 2px dashed #687b91; }

@@ -33,12 +33,26 @@
 {% if ranking %}
 <p>Spec v{{ ranking.spec_version }} · {{ ranking.device }} · tolerance {{ ranking.tolerance }} · cohort <code>{{ ranking.cohort }}</code>.</p>
 {% if curve.points %}
-<svg viewBox="0 0 800 280" role="img" aria-label="Best published speedup over publication time">
-<line x1="50" y1="{{ curve.reference_y }}" x2="750" y2="{{ curve.reference_y }}" stroke="gray" stroke-dasharray="4"/><text x="2" y="{{ curve.reference_y }}">1×</text>
-<path d="{{ curve.line }}" fill="none" stroke="#182636" stroke-width="2"/>
-{% for point in curve.points %}<circle cx="{{ point.x }}" cy="{{ point.y }}" r="5" fill="{{ '#124c81' if point.language == 'ascendc' else '#b54b00' }}"><title>{{ point.published_at }} · {{ point.language }} · {{ point.geomean_speedup }}×</title></circle>{% endfor %}
-<text x="50" y="245">{{ curve.start }}</text><text x="750" y="265" text-anchor="end">{{ curve.end }}</text>
-</svg><p>Publication time (UTC). Blue: Ascend C; orange: CATLASS. One strict best-so-far curve among currently published releases.</p>
+<figure class="chart-panel">
+<div class="chart-heading"><h2>Best published speedup</h2><p><strong>{{ curve.best }}×</strong> vs PyTorch</p></div>
+<div class="chart-scroll" role="region" aria-label="Speedup chart, scroll horizontally on small screens" tabindex="0">
+<svg viewBox="0 0 800 300" role="group" aria-labelledby="chart-title chart-desc">
+<title id="chart-title">Best published speedup over publication time</title>
+<desc id="chart-desc">One strict best-so-far curve among currently published releases. The dashed line is the PyTorch baseline at 1×. Focus or hover a point for details; activate it to open the release.</desc>
+{% for tick in curve.ticks %}<line class="chart-grid" x1="50" y1="{{ tick.y }}" x2="750" y2="{{ tick.y }}"/><text class="chart-label" x="40" y="{{ tick.y + 4 }}" text-anchor="end">{{ tick.label }}×</text>{% endfor %}
+<line class="chart-reference" x1="50" y1="{{ curve.reference_y }}" x2="750" y2="{{ curve.reference_y }}"/>
+<path class="chart-line" d="{{ curve.line }}"/>
+{% for point in curve.points %}
+<a class="chart-point" href="/releases/{{ point.release_id }}" aria-label="{{ point.language }} · {{ point.geomean_speedup }} times PyTorch speed · {{ point.published_at }} · open release">
+<circle cx="{{ point.x }}" cy="{{ point.y }}" r="6" fill="{{ '#155dc0' if point.language == 'ascendc' else '#ae4700' }}"/>
+<g class="chart-tooltip" aria-hidden="true"><rect x="240" y="2" width="320" height="34" rx="4"/><text x="400" y="16" text-anchor="middle">{{ 'Ascend C' if point.language == 'ascendc' else 'CATLASS' }} · {{ '%.4g'|format(point.geomean_speedup) }}×</text><text x="400" y="29" text-anchor="middle">{{ point.published_at }}</text></g>
+</a>
+{% endfor %}
+{% for tick in curve.dates %}<text class="chart-label" x="{{ tick.x }}" y="246" text-anchor="{{ 'start' if tick.x == 50 else ('end' if tick.x == 750 else 'middle') }}"><tspan x="{{ tick.x }}">{{ tick.date }}</tspan><tspan x="{{ tick.x }}" dy="16">{{ tick.time }}</tspan></text>{% endfor %}
+<text class="chart-label" x="400" y="290" text-anchor="middle">Publication time (UTC)</text>
+</svg></div>
+<figcaption><span class="legend-item"><i class="legend-dot ascendc"></i>Ascend C</span><span class="legend-item"><i class="legend-dot catlass"></i>CATLASS</span><span class="legend-item"><i class="legend-reference"></i>PyTorch · 1×</span><span>One strict best-so-far curve among currently published releases.</span></figcaption>
+</figure>
 {% endif %}
 <div class="table-scroll" role="region" aria-label="Published results" tabindex="0"><table><thead><tr><th>Release</th><th>Language</th><th>Speedup</th><th>Published</th></tr></thead><tbody>
 {% for row in ranking.rows %}<tr><td><a href="/releases/{{ row.id }}">{{ row.id }}</a></td><td>{{ row.language }}</td><td>{{ row.score.geomean_speedup }}×</td><td>{{ row.published_at }}</td></tr>{% else %}<tr><td colspan="4">No nonempty performance cases.</td></tr>{% endfor %}

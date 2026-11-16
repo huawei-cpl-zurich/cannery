@@ -1,6 +1,6 @@
 """Published Global Best partitions, one record curve and immutable release details."""
 
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
@@ -25,13 +25,32 @@ def chart(points: list[dict[str, Any]]) -> dict[str, Any]:
     span = max(times[-1] - times[0], 1.0)
     ceiling = max(1.0, max(p["geomean_speedup"] for p in points)) * 1.1
     dots = [
-        p | {"x": 50 + (t - times[0]) / span * 700, "y": 220 - p["geomean_speedup"] / ceiling * 180}
+        p
+        | {
+            "x": 50 + (t - times[0]) / span * 700 if times[-1] > times[0] else 400,
+            "y": 220 - p["geomean_speedup"] / ceiling * 180,
+        }
         for p, t in zip(points, times, strict=True)
     ]
     line = f"M {dots[0]['x']} {dots[0]['y']}"
     for dot in dots[1:]:
         line += f" H {dot['x']} V {dot['y']}"
+    ticks = [{"y": 220 - i * 45, "label": f"{ceiling * i / 4:.3g}"} for i in range(5)]
+    axis_times = [(50, times[0]), (400, (times[0] + times[-1]) / 2), (750, times[-1])]
+    if times[0] == times[-1]:
+        axis_times = [(400, times[0])]
+    dates = [
+        {
+            "x": x,
+            "date": datetime.fromtimestamp(t, UTC).strftime("%d %b %Y"),
+            "time": datetime.fromtimestamp(t, UTC).strftime("%H:%M:%S"),
+        }
+        for x, t in axis_times
+    ]
     return {
+        "ticks": ticks,
+        "dates": dates,
+        "best": f"{points[-1]['geomean_speedup']:.3g}",
         "points": dots,
         "line": line,
         "reference_y": 220 - 180 / ceiling,
