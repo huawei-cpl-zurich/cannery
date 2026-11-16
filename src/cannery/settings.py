@@ -38,6 +38,7 @@ class Settings(BaseSettings):
 
     service_name: str = "cannery"
     release_enabled: bool = False
+    hub_enabled: bool = False
 
     database_url: SecretStr = SecretStr(
         "postgresql+psycopg://cannery:cannery@localhost:5432/cannery"

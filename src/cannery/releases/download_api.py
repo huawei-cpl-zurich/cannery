@@ -18,6 +18,29 @@ from cannery.releases.resolution import ResolveRequest, resolve
 from cannery.settings import Settings
 
 
+def release_bytes(
+    app: FastAPI, engine: Engine, identifier: UUID, package: bool
+) -> tuple[bytes, Any, ArtifactRef]:
+    try:
+        with Session(engine) as db:
+            release, _ = catalog.release_info(db, identifier)
+            manifest = catalog.manifest_of(release)
+            ref = manifest.package if package else ArtifactRef.model_validate(release.manifest)
+        store = cast(ArtifactStore, app.state.artifacts)
+        raw = store.get(ref)
+        if package:
+            verify_package(raw, manifest)
+        elif read_manifest(raw, ref.sha256) != manifest:
+            raise ValueError("Manifest differs")
+        with Session(engine) as db:
+            catalog.release_info(db, identifier)
+        return raw, manifest, ref
+    except catalog.SelectionError as error:
+        raise selection_error(error) from None
+    except (ArtifactError, ValueError):
+        raise HTTPException(503, "release_artifact_unavailable") from None
+
+
 def install_downloads(app: FastAPI, settings: Settings, engine: Engine) -> None:
     if not settings.release_enabled:
         return
@@ -36,29 +59,12 @@ def install_downloads(app: FastAPI, settings: Settings, engine: Engine) -> None:
             raise selection_error(error) from None
 
     def download(identifier: UUID, package: bool) -> Response:
-        try:
-            with Session(engine) as db:
-                release, _ = catalog.release_info(db, identifier)
-                manifest = catalog.manifest_of(release)
-                ref = manifest.package if package else ArtifactRef.model_validate(release.manifest)
-            store = cast(ArtifactStore, app.state.artifacts)
-            raw = store.get(ref)
-            if package:
-                verify_package(raw, manifest)
-            elif read_manifest(raw, ref.sha256) != manifest:
-                raise ValueError("Manifest differs")
-            # Withdrawal during a slow backend read takes effect before any response bytes.
-            with Session(engine) as db:
-                catalog.release_info(db, identifier)
-            return Response(
-                raw,
-                media_type="application/octet-stream" if package else "application/json",
-                headers={"Cache-Control": "private, no-store", "ETag": '"' + ref.sha256 + '"'},
-            )
-        except catalog.SelectionError as error:
-            raise selection_error(error) from None
-        except (ArtifactError, ValueError):
-            raise HTTPException(503, "release_artifact_unavailable") from None
+        raw, _, ref = release_bytes(app, engine, identifier, package)
+        return Response(
+            raw,
+            media_type="application/octet-stream" if package else "application/json",
+            headers={"Cache-Control": "private, no-store", "ETag": '"' + ref.sha256 + '"'},
+        )
 
     @app.get("/api/v1/releases/{identifier}/manifest")
     def manifest(identifier: UUID, user: Annotated[str, Depends(principal)]) -> Response:
