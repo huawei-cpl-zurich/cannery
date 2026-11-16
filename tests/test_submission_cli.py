@@ -150,3 +150,13 @@ def test_name_option_is_sent_as_metadata(monkeypatch, args):
     result, requests = invoke(monkeypatch, [(202, {"id": KEY})], args + ["--name", "Tiled add-one"])
     assert result.exit_code == 0
     assert json.loads(requests[0].content)["implementation_name"] == "Tiled add-one"
+
+
+def test_conflicting_name_explains_retry_without_sending_another_request(monkeypatch):
+    result, requests = invoke(
+        monkeypatch,
+        [(409, {"detail": "fixed implementation name"})],
+        arguments() + ["--name", "Different"],
+    )
+    assert result.exit_code == 1 and "Omit --name or use the original name" in result.output
+    assert len(requests) == 1
