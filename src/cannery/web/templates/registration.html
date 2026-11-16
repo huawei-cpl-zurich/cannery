@@ -10,7 +10,7 @@
   <p>Registered {{ job.spec.kernel.namespace }}/{{ job.spec.kernel.name }}@spec-v{{ job.spec.version }}</p>
   <p>Content SHA256: <code>{{ job.spec.content_sha256 }}</code></p>
   {% if job.spec.baseline %}
-  <p>CPU baseline cached for {{ job.spec.baseline.cases }} mandatory cases. Submissions regenerate seeded inputs and compare against these stored outputs.</p>
+  <p>CPU baseline cached for {{ job.spec.baseline.cases|number }} mandatory cases. Submissions regenerate seeded inputs and compare against these stored outputs.</p>
   <p>Baseline output SHA256: <code>{{ job.spec.baseline.output_sha256 }}</code></p>
   {% else %}<p>CPU reference diagnostic completed. This does not establish numerical correctness or performance.</p>{% endif %}
   {% endif %}

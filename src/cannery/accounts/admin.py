@@ -57,6 +57,10 @@ def install_admin(
     templates: Jinja2Templates,
     context: dict[str, object],
 ) -> None:
+    from cannery.web.presentation import configure
+
+    configure(templates)
+
     @app.get("/api/v1/admin/summary")
     def status() -> dict[str, Any]:
         return summary(settings, engine)

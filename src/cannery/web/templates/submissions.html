@@ -40,7 +40,8 @@ to try its toy submission.</p>{% endif %}
     {% endfor %}
   </ol>
   <p>{{ job.kernel.namespace }}/{{ job.kernel.name }}@spec-v{{ job.spec_version }} · {{ job.target.device }} · {{ job.target.language }}</p>
-  <p>Source: {{ job.source.url }} · <code>{{ job.source.commit }}</code> · {{ job.source.path }}</p>
+  {% set links=job.source|source_links %}
+  <p>Source: {% if links %}<a href="{{ links.code or links.repository }}" rel="noreferrer">{{ job.source.url }}</a>{% else %}{{ job.source.url }}{% endif %} · <code>{{ job.source.commit }}</code> · {{ job.source.path }}</p>
   {% if job.reused_from %}<p>Selected source and dependencies are unchanged.
   Reusing the completed build, validation and measurements from
   <a href="/submissions/{{ job.reused_from }}">{{ job.reused_from }}</a> in their original environment.
@@ -73,24 +74,24 @@ to try its toy submission.</p>{% endif %}
     {% else %}<p>Source retained. Build, correctness and benchmark are pending.</p>{% endif %}
     {% if job.numerical %}
     <h2>Numerical validation</h2>
-    <p>Numerical validation: {{ job.numerical.status }} · attempts: {{ job.numerical.attempts }}.</p>
+    <p>Numerical validation: {{ job.numerical.status }} · attempts: {{ job.numerical.attempts|number }}.</p>
     {% if job.numerical.report %}
     <div class="table-scroll" role="region" aria-label="Numerical validation results" tabindex="0"><table><thead><tr><th>Case</th><th>Input unchanged</th><th>Spec default (rtol, atol)</th><th>Requested (rtol, atol)</th><th>Max absolute error</th><th>Max relative error</th><th>RMS error</th><th>Nonfinite mismatches</th></tr></thead><tbody>
-    {% for case in job.numerical.report.cases %}<tr><td>{{ case.id }}</td><td>{{ case.input_unchanged }}</td><td>{{ case.spec_default.passed }} ({{ case.spec_default.rtol }}, {{ case.spec_default.atol }})</td><td>{{ case.submission_requested.passed }} ({{ case.submission_requested.rtol }}, {{ case.submission_requested.atol }})</td><td>{{ case.spec_default.max_absolute_error }}</td><td>{{ case.spec_default.max_relative_error if case.spec_default.max_relative_error is not none else "undefined" }}</td><td>{{ case.spec_default.rms_error }}</td><td>{{ case.spec_default.nonfinite_mismatches }}</td></tr>{% endfor %}
+    {% for case in job.numerical.report.cases %}<tr><td>{{ case.id }}</td><td>{{ case.input_unchanged }}</td><td>{{ case.spec_default.passed }} ({{ case.spec_default.rtol|number }}, {{ case.spec_default.atol|number }})</td><td>{{ case.submission_requested.passed }} ({{ case.submission_requested.rtol|number }}, {{ case.submission_requested.atol|number }})</td><td>{{ case.spec_default.max_absolute_error|number }}</td><td>{{ case.spec_default.max_relative_error|number if case.spec_default.max_relative_error is not none else "undefined" }}</td><td>{{ case.spec_default.rms_error|number }}</td><td>{{ case.spec_default.nonfinite_mismatches|number }}</td></tr>{% endfor %}
     </tbody></table></div>
     {% endif %}
     {% endif %}
     {% if job.benchmark %}
     <h2>Benchmark results</h2>
-    <p>Benchmark: {{ job.benchmark.status }} · attempts: {{ job.benchmark.attempts }}.</p>
+    <p>Benchmark: {{ job.benchmark.status }} · attempts: {{ job.benchmark.attempts|number }}.</p>
     {% if job.benchmark.report %}
     <p>Synchronized call latency in µs ({{ job.benchmark.report.protocol }}). {% if job.publication and job.publication.status == "published" %}Published result.{% else %}Results are private.{% endif %}</p>
     <div class="table-scroll" role="region" aria-label="Benchmark measurements" tabindex="0"><table><thead><tr><th>Case</th><th>Median µs</th><th>p95 µs</th><th>Samples</th><th>Reference median µs</th><th>Speedup</th></tr></thead><tbody>
     {% for case in job.benchmark.report.cases %}<tr><td>{{ case.id }}</td>
     {% if case.excluded %}<td colspan="5">Empty case: correctness only; excluded from performance score.</td>
-    {% else %}<td>{{ case.candidate.median_us }}</td><td>{{ case.candidate.p95_us }}</td><td>{{ case.candidate.samples }}</td><td>{{ case.reference.median_us }}</td><td>{{ case.speedup }}×</td>{% endif %}</tr>{% endfor %}
+    {% else %}<td>{{ case.candidate.median_us|number }}</td><td>{{ case.candidate.p95_us|number }}</td><td>{{ case.candidate.samples|number }}</td><td>{{ case.reference.median_us|number }}</td><td>{{ case.speedup|number }}×</td>{% endif %}</tr>{% endfor %}
     </tbody></table></div>
-    <p class="score-summary">Geometric mean speedup: {% if job.benchmark.report.geomean_speedup is not none %}{{ job.benchmark.report.geomean_speedup }}×{% else %}No nonempty performance cases.{% endif %}</p>
+    <p class="score-summary">Geometric mean speedup: {% if job.benchmark.report.geomean_speedup is not none %}{{ job.benchmark.report.geomean_speedup|number }}×{% else %}No nonempty performance cases.{% endif %}</p>
     {% endif %}
     {% endif %}
     <p>Content SHA256: <code>{{ job.candidate.content_sha256 }}</code></p>

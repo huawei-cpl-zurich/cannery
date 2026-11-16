@@ -97,7 +97,10 @@ def test_web_and_cli_render_same_complete_private_report(report, monkeypatch):
     finish_job(engine, claim_job(engine, "c" * 64), report=summary, artifact=artifact)
     with Session(engine) as db:
         info = get_info(db, "team", identifier)
+    from cannery.web.presentation import configure
+
     templates = Jinja2Templates(directory=str(Path("src/cannery/web/templates")))
+    configure(templates)
     page = templates.env.get_template("submissions.html").render(
         job=info,
         pages={},

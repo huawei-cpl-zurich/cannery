@@ -16,6 +16,7 @@ from cannery.releases import catalog
 from cannery.releases.details import detail
 from cannery.releases.discovery_api import selected, selection_error
 from cannery.settings import Settings
+from cannery.web.presentation import configure, number
 
 
 def chart(points: list[dict[str, Any]]) -> dict[str, Any]:
@@ -35,7 +36,7 @@ def chart(points: list[dict[str, Any]]) -> dict[str, Any]:
     line = f"M {dots[0]['x']} {dots[0]['y']}"
     for dot in dots[1:]:
         line += f" H {dot['x']} V {dot['y']}"
-    ticks = [{"y": 220 - i * 45, "label": f"{ceiling * i / 4:.3g}"} for i in range(5)]
+    ticks = [{"y": 220 - i * 45, "label": number(ceiling * i / 4)} for i in range(5)]
     axis_times = [(50, times[0]), (400, (times[0] + times[-1]) / 2), (750, times[-1])]
     if times[0] == times[-1]:
         axis_times = [(400, times[0])]
@@ -50,7 +51,7 @@ def chart(points: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "ticks": ticks,
         "dates": dates,
-        "best": f"{points[-1]['geomean_speedup']:.3g}",
+        "best": number(points[-1]["geomean_speedup"]),
         "points": dots,
         "line": line,
         "reference_y": 220 - 180 / ceiling,
@@ -66,6 +67,7 @@ def install_release_web(
     templates: Jinja2Templates,
     context: dict[str, object],
 ) -> None:
+    configure(templates)
     if not settings.release_enabled:
         return
 
