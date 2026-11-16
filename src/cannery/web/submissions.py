@@ -126,6 +126,7 @@ def install_submission_web(
             name, version = spec.manifest["kernel"]["name"], spec.version
         body = SubmitRequest.model_validate(
             {
+                "implementation_name": fields.get("implementation_name") or None,
                 "spec_version": version,
                 "device": fields.get("device"),
                 "language": fields.get("language"),
@@ -169,7 +170,17 @@ def install_submission_web(
     async def create(request: Request) -> HTMLResponse | RedirectResponse:
         namespace = identity(settings)
         fields = await form_data(
-            request, {"spec_id", "device", "language", "url", "commit", "path", "dependencies"}
+            request,
+            {
+                "spec_id",
+                "device",
+                "language",
+                "url",
+                "commit",
+                "path",
+                "dependencies",
+                "implementation_name",
+            },
         )
         try:
             name, body = await run_in_threadpool(parse_request, fields, namespace)
@@ -178,7 +189,10 @@ def install_submission_web(
                 request,
                 "Submit Implementation",
                 specs=await run_in_threadpool(specs),
-                error="Choose a frozen specification and valid pinned Git source/target.",
+                error=(
+                    "Choose a frozen specification and valid pinned Git source/target. "
+                    "Names must be 1–80 printable characters, or left blank."
+                ),
             )
         key = await run_in_threadpool(submit, settings, engine, namespace, name, body)
         return RedirectResponse(f"/submissions/{key}", status_code=303)
@@ -226,10 +240,17 @@ def install_submission_web(
     @app.post("/submissions/{identifier}/revisions", include_in_schema=False)
     async def revision(request: Request, identifier: UUID) -> RedirectResponse:
         identity(settings)
-        fields = await form_data(request, {"commit"})
+        fields = await form_data(request, {"commit", "implementation_name"})
+        fields["implementation_name"] = fields.get("implementation_name") or ""
         try:
-            body = RevisionRequest.model_validate(fields)
+            body = RevisionRequest.model_validate(
+                fields | {"implementation_name": fields["implementation_name"] or None}
+            )
         except ValueError:
-            raise HTTPException(400, "A full commit SHA is required") from None
-        key = await run_in_threadpool(revise, settings, engine, identifier, body.commit)
+            raise HTTPException(
+                400, "A full commit SHA and valid optional implementation name are required"
+            ) from None
+        key = await run_in_threadpool(
+            revise, settings, engine, identifier, body.commit, body.implementation_name
+        )
         return RedirectResponse(f"/submissions/{key}", status_code=303)

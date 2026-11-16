@@ -2,6 +2,8 @@
 {% block content %}
 <h1>{% if release %}Published release{% else %}Global Best{% endif %}</h1>
 {% if release %}
+<h2>{{ release.implementation_name }}</h2>
+<p>Team: {{ release.team }}</p>
 <p>{{ release.kernel }}@spec-v{{ release.spec_version }} · {{ release.device }} · {{ release.language }} · published {{ release.published_at }} by {{ release.publisher }}</p>
 <p>Release <code>{{ release.id }}</code>. Geometric mean speedup: {{ release.score.geomean_speedup if release.score.geomean_speedup is not none else 'unscored' }}×.</p>
 <p>Exact runtime: <code>{{ release.runtime }}</code>. Cohort: <code>{{ release.cohort }}</code>.</p>
