@@ -16,6 +16,7 @@ from cannery.releases import catalog
 from cannery.releases.details import detail
 from cannery.releases.discovery_api import selected, selection_error
 from cannery.settings import Settings
+from cannery.web.downloads import origin, snippets
 from cannery.web.presentation import configure, number
 
 
@@ -130,5 +131,11 @@ def install_release_web(
             name="releases.html",
             context=context
             | template_context(settings)
-            | {"title": "Global Best", "release": value},
+            | {
+                "title": "Global Best",
+                "release": value,
+                "download_snippets": snippets(
+                    value, origin(request, settings), settings.hub_enabled
+                ),
+            },
         )

@@ -33,3 +33,14 @@ def test_navigation_and_local_assets(client) -> None:
     with TestClient(create_app()) as anonymous:
         assert anonymous.get("/my-submissions").status_code == 401
         assert anonymous.post("/register-kernel", json={}).status_code == 401
+
+
+def test_help_is_public_and_footer_linked_with_account_authentication(client):
+    with TestClient(create_app(Settings(auth_enabled=True, hub_enabled=True))) as authenticated:
+        page = authenticated.get("/help")
+        assert page.status_code == 200
+        assert "Help &amp; quickstart" in page.text and "python3.12 -m venv" in page.text
+        assert "cannery login" in page.text and "YOUR_USERNAME" in page.text
+        assert "subdirectory=kernels" in page.text and "kernel.forward(x)" in page.text
+        assert 'aria-current="page">Help' in page.text
+        assert authenticated.get("/static/downloads.js").status_code == 200

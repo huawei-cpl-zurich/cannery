@@ -81,3 +81,13 @@ version/Global Best selection and offline Cannery get_kernel are unsupported.
 Ordinary upstream kernel loading and explicit local overrides retain their
 existing paths. Private package downloads ignore ambient proxy settings and
 reject credential forwarding to other origins.
+
+## Website quickstart
+
+The footer **Help** page explains client installation, sign-in and running a
+loaded kernel. Each published release has a split **Download** button: the main
+action saves the verified binary archive; the arrow offers pinned Python/Hugging
+Face loading and CLI download-only snippets. CLI examples include the target
+runtime JSON for downloads on a CPU host. Actual execution still requires the
+release's matching Ascend environment. Copy controls fall back to text selection
+when clipboard access is unavailable.

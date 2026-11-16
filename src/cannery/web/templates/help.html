@@ -1,0 +1,51 @@
+{% extends "page.html" %}
+{% block content %}
+<h1>Help &amp; quickstart</h1>
+<p>Install the clients, sign in with your CANNery account, and choose a published kernel to download or run. No Hugging Face account is needed.</p>
+<section aria-labelledby="install-cli"><h2 id="install-cli">1. Install the CLI</h2>
+<p>Use Python 3.12 or newer and Git. A separate environment is enough for downloads; an NPU is not required.</p>
+<pre id="help-install"><code>python3.12 -m venv .venv-cannery
+. .venv-cannery/bin/activate
+python -m pip install 'git+https://github.com/huawei-cpl-zurich/cannery.git'</code></pre>
+<button type="button" data-copy="help-install">Copy CLI setup</button>
+<p>Client source: <a href="https://github.com/huawei-cpl-zurich/cannery" rel="noreferrer">Cannery CLI</a> · <a href="https://github.com/huawei-cpl-zurich/cannery-kernels" rel="noreferrer">Python kernel client</a>.</p>
+</section>
+<section aria-labelledby="sign-in"><h2 id="sign-in">2. Sign in</h2>
+{% if auth_enabled %}<p><a href="/login">Sign in on the website</a> using your assigned username and password. For CLI and Python downloads, sign in once from the CLI too. Replace <code>YOUR_USERNAME</code>; the password is prompted privately. Your team is selected automatically.</p>
+<pre id="help-login"><code>{{ login_command }}</code></pre>
+<button type="button" data-copy="help-login">Copy sign-in command</button>
+{% else %}<p>Account sign-in is not enabled on this installation.</p>{% endif %}
+<p>Use the same server URL for login and <code>HF_ENDPOINT</code>, including host and port. <code>localhost</code> refers to the machine running the client; remote clients need a reachable HTTPS address for this installation.</p>
+</section>
+<section aria-labelledby="download-kernel"><h2 id="download-kernel">3. Download a published kernel</h2>
+<p>Open <a href="/global-best">Global Best</a>, select the device and kernel, and open an implementation. The <strong>Download</strong> button saves its verified binary archive. The arrow beside it contains commands pinned to that exact release.</p>
+<p>Choose <strong>CLI · download only</strong> to cache the package and manifest without loading native code. Its runtime JSON describes the release’s target, so the CLI can download on a CPU machine. Keep the manifest with the package.</p>
+</section>
+{% if hub_enabled %}<section aria-labelledby="python-client"><h2 id="python-client">4. Install the Python / Hugging Face client</h2>
+<p>In the Ascend environment that will run the kernel, use Python 3.11 or newer and the release’s exact PyTorch, torch-npu and CANN versions. Keep those installed runtime versions. These source installs require Git and current stable Rust/Cargo; operator-provided wheels can be used instead.</p>
+<pre id="help-python"><code>python -m pip install \
+  'git+https://github.com/huawei-cpl-zurich/cannery-kernels.git#subdirectory=kernels' \
+  'git+https://github.com/huawei-cpl-zurich/cannery-kernels.git#subdirectory=cannery-runtime' \
+  'huggingface-hub==1.33.0'</code></pre>
+<button type="button" data-copy="help-python">Copy Python setup</button>
+<p>Copy and run <strong>Python · Hugging Face</strong> from the release’s download menu in this environment. It sets <code>HF_ENDPOINT</code>, downloads the pinned package and loads it with explicit trust. The client uses your CLI sign-in from the same machine and user account.</p>
+</section>
+<section aria-labelledby="run-kernel"><h2 id="run-kernel">5. Run the loaded kernel</h2>
+<p>After the release snippet creates <code>kernel</code>, call its entrypoint with supported inputs. This example uses the current unary float32 interface; replace the example shape with one supported by your release. A3 and A5 packages require their matching device/runtime.</p>
+<pre id="help-run"><code>import torch
+import torch_npu
+
+shape = (2, 3)  # Choose a shape listed on the release page.
+x = torch.randn(shape, device="npu", dtype=torch.float32)
+y = kernel.forward(x)
+torch.npu.synchronize()
+print(y)</code></pre>
+<button type="button" data-copy="help-run">Copy run example</button>
+</section>{% endif %}
+<section aria-labelledby="troubleshooting"><h2 id="troubleshooting">If a download fails</h2>
+<p><strong>Sign-in required:</strong> browser and CLI sessions are separate. Run the CLI login command for the same origin used by the client. Explicit <code>HF_TOKEN</code> overrides the saved CLI credential.</p>
+<p><strong>Runtime mismatch:</strong> select a release matching the device and exact runtime shown on its page. Static CATLASS releases accept only their listed shapes.</p>
+<p><strong>Release unavailable:</strong> withdrawn releases cannot be downloaded again. Retry a transient connection failure; a download does not submit, rebuild, benchmark or publish a kernel.</p>
+</section>
+<p class="copy-status" role="status" aria-live="polite"></p>
+{% endblock %}

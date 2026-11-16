@@ -63,7 +63,12 @@ def install_downloads(app: FastAPI, settings: Settings, engine: Engine) -> None:
         return Response(
             raw,
             media_type="application/octet-stream" if package else "application/json",
-            headers={"Cache-Control": "private, no-store", "ETag": '"' + ref.sha256 + '"'},
+            headers={"Cache-Control": "private, no-store", "ETag": '"' + ref.sha256 + '"'}
+            | (
+                {"Content-Disposition": f'attachment; filename="kernel-{identifier}.tar"'}
+                if package
+                else {}
+            ),
         )
 
     @app.get("/api/v1/releases/{identifier}/manifest")

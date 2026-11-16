@@ -6,6 +6,7 @@
   <title>{{ title }} · CANNery</title>
   <script src="/static/htmx.min.js" defer></script>
   {% if auth_enabled %}<script src="/static/accounts.js" defer></script>{% endif %}
+  <script src="/static/downloads.js" defer></script>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
@@ -27,6 +28,6 @@
     {% endblock %}
     <div class="page-tools"><button hx-get="{{ request.url.path }}{% if request.url.query %}?{{ request.url.query }}{% endif %}" hx-target="#content" hx-select="#content" hx-swap="outerHTML">Refresh page</button></div>
   </main>
-  <footer class="site-footer">CANNery · Ascend kernel registry and benchmarks</footer>
+  <footer class="site-footer">CANNery · Ascend kernel registry and benchmarks · <a href="/help"{% if title == "Help" %} aria-current="page"{% endif %}>Help</a></footer>
 </body>
 </html>

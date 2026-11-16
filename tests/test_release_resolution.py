@@ -192,3 +192,14 @@ def test_resolution_checks_language_static_shapes_and_runtime(releases):
         ] == str(native[0])
         with pytest.raises(SelectionError):
             resolve(db, ResolveRequest(**body(m, runtime=m.cohort.runtime | {"cann": "other"})))
+
+
+def test_package_download_is_an_attachment_without_changing_verified_bytes(published):
+    _, _, store, manifest, identifier, client = published
+    response = client.get(f"/api/v1/releases/{identifier}/package")
+    assert response.status_code == 200
+    assert (
+        response.headers["content-disposition"] == f'attachment; filename="kernel-{identifier}.tar"'
+    )
+    assert response.content == store.get(manifest.package)
+    assert "private, no-store" in response.headers["cache-control"]
