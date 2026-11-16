@@ -11,6 +11,7 @@ from sqlalchemy import (
     DateTime,
     ForeignKey,
     ForeignKeyConstraint,
+    String,
     UniqueConstraint,
     event,
     select,
@@ -168,3 +169,14 @@ def owned_release(mapper: Mapper[Any], connection: Connection, target: Publicati
         != target.candidate_id
     ):
         raise ValueError("Publication must use its own candidate's release")
+
+
+class HubSnapshot(Base):
+    __tablename__ = "hub_snapshots"
+    release_id: Mapped[UUID] = mapped_column(ForeignKey("releases.id"), primary_key=True)
+    revision: Mapped[str] = mapped_column(String(40), unique=True)
+    descriptor: Mapped[dict[str, Any]] = mapped_column(JSON)
+
+
+event.listen(HubSnapshot, "before_update", immutable)
+event.listen(HubSnapshot, "before_delete", immutable)

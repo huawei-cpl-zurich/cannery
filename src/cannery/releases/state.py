@@ -239,6 +239,9 @@ def complete(engine: Engine, claim: Claim, manifest: ReleaseManifest, pin: Artif
             mode="json"
         ) or release.document != manifest.model_dump(mode="json"):
             raise ValueError("Immutable release evidence changed")
+        from cannery.releases.hub import ensure_snapshot
+
+        ensure_snapshot(db, release)
         pub.release_id = release.id
         pub.status = "published"
         pub.published_at = now()

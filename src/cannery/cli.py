@@ -7,6 +7,7 @@ from cannery.accounts.client import headers as auth_headers
 from cannery.accounts.client_cli import install as install_account_cli
 from cannery.maintenance.cli import app as maintenance
 from cannery.releases.cli import install_release_cli
+from cannery.releases.hub_cli import app as hub_app
 from cannery.submissions.cli import install_cli
 
 app = typer.Typer(no_args_is_help=True, pretty_exceptions_show_locals=False)
@@ -131,3 +132,6 @@ def registrations(url: str = "http://127.0.0.1:8000") -> None:
 
 install_cli(app)
 install_release_cli(app)
+
+
+app.add_typer(hub_app, name="hub")
