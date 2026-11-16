@@ -55,6 +55,8 @@ def test_hub_pins_headers_bytes_and_resume(hub):
         assert head.headers["etag"] == '"' + digest(full.content) + '"'
         partial = client.get(base + "/" + name, headers={"Range": "bytes=3-"})
         assert partial.status_code == 206 and partial.content == full.content[3:]
+        crossing = client.get(base + "/" + name, headers={"Range": "bytes=0-999999999"})
+        assert crossing.status_code == 206 and crossing.content == full.content
         assert (
             client.get(base + "/" + name, headers={"Range": "bytes=999999999-"}).status_code == 416
         )

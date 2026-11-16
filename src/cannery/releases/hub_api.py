@@ -100,10 +100,11 @@ def install_hub(app: FastAPI, settings: Settings, engine: Engine) -> None:
             if match is None:
                 raise HTTPException(416, "Unsupported range")
             start, end = int(match[1]), int(match[2]) if match[2] else len(raw) - 1
-            if start > end or end >= len(raw):
+            if start > end or start >= len(raw):
                 raise HTTPException(
                     416, "Invalid range", headers={"Content-Range": f"bytes */{len(raw)}"}
                 )
+            end = min(end, len(raw) - 1)
             headers["Content-Range"] = f"bytes {start}-{end}/{len(raw)}"
             raw = raw[start : end + 1]
             headers["Content-Length"] = str(len(raw))
