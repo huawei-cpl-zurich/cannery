@@ -12,7 +12,7 @@ from cannery.accounts.context import identity
 from cannery.artifacts import ArtifactError, ArtifactRef, ArtifactStore
 from cannery.releases import catalog
 from cannery.releases.assets import verify_package
-from cannery.releases.contract import read_manifest
+from cannery.releases.contract import ReleaseManifest, read_manifest
 from cannery.releases.discovery_api import selection_error
 from cannery.releases.resolution import ResolveRequest, resolve
 from cannery.settings import Settings
@@ -20,7 +20,7 @@ from cannery.settings import Settings
 
 def release_bytes(
     app: FastAPI, engine: Engine, identifier: UUID, package: bool
-) -> tuple[bytes, Any, ArtifactRef]:
+) -> tuple[bytes, ReleaseManifest, ArtifactRef]:
     try:
         with Session(engine) as db:
             release, _ = catalog.release_info(db, identifier)

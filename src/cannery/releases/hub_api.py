@@ -56,8 +56,10 @@ def install_hub(app: FastAPI, settings: Settings, engine: Engine) -> None:
         namespace: str,
         name: str,
         revision: str,
+        response: Response,
         user: Annotated[str, Depends(authorized)],
     ) -> dict[str, Any]:
+        response.headers["Cache-Control"] = "private, no-store"
         with Session(engine) as db:
             row = snapshot(db, f"{namespace}/{name}", revision)
             return {
@@ -94,7 +96,7 @@ def install_hub(app: FastAPI, settings: Settings, engine: Engine) -> None:
         }
         status = 200
         if request.method == "GET" and "range" in request.headers:
-            match = re.fullmatch(r"bytes=(\d+)-(\d*)", request.headers["range"])
+            match = re.fullmatch(r"bytes=(\d{1,20})-(\d{0,20})", request.headers["range"])
             if match is None:
                 raise HTTPException(416, "Unsupported range")
             start, end = int(match[1]), int(match[2]) if match[2] else len(raw) - 1
