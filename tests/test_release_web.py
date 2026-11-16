@@ -98,3 +98,16 @@ def test_single_publication_is_centered_with_one_utc_date_and_readable_scale():
     assert result["ticks"][0] == {"y": 220, "label": "0"}
     assert len(result["ticks"]) == 5
     assert result["best"] == "0.5"
+
+
+def test_global_best_shows_names_teams_rounded_scores_and_compact_dates(releases):
+    engine, add, _, manifest = releases
+    release_id, candidate_id, _ = add(1.23456789)
+    page = web(engine).get("/global-best", params={"kernel": manifest.kernel})
+    assert page.status_code == 200
+    assert f"Implementation {str(candidate_id)[:8]}" in page.text
+    assert "<th>Team</th>" in page.text and "<td>team</td>" in page.text
+    assert "1.235×" in page.text and "1.23456789" not in page.text
+    assert ">01 Jan 2026</time>" in page.text
+    assert 'datetime="2026-01-01T00:00:01+00:00"' in page.text
+    assert f"/releases/{release_id}" in page.text and "Repository</a>" in page.text
