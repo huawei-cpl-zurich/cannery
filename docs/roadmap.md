@@ -118,6 +118,19 @@ UI polish and build-speed improvements remain separate follow-up work.
 - Back up **PostgreSQL and internal Git snapshot repositories**, test restore, reconcile orphaned private staging artifacts.
 - Role gate workers/storage/Git snapshot admin UI; expose only user-relevant submission ETA.
 
+## M8 — Private Hub consumption
+
+- Expose immutable published releases through the authenticated Hugging Face read protocol.
+- Use our fork's `kernels.get_kernel` with a pinned release revision and existing account credentials.
+- Preserve artifact hashes, runtime matching and explicit native-code trust; never rebuild at download time.
+- Verify cold/warm downloads, dependency failures, revocation and bounded cache-lock waits locally.
+
+**Acceptance:** load/call the existing A3 Ascend C, A5 Ascend C and A5 CATLASS
+packages on matching registered runtimes using retained seeded baseline outputs.
+See [private Hub setup and protocol boundaries](private-hub.md). Moving Global
+Best selection, version aliases, offline Cannery loading and Hub uploads remain
+future work.
+
 ## Parallel `cannery-kernels` deliverables
 
 1. Confirm private package metadata and ABI contract for CANN backend.

@@ -12,6 +12,8 @@ Authors register a frozen, versioned, Git-backed PyTorch specification and subse
 - [Implementation notes](docs/implementation.md) — Python libraries, API/data contracts, scheduling, benchmark engine and security.
 - [Roadmap](docs/roadmap.md) — incremental PoC milestones, acceptance criteria and cross-repository runtime work.
 
+- [Private Hub consumption](docs/private-hub.md) — pinned `kernels.get_kernel` downloads through our private service.
+
 - [Offline maintenance](docs/maintenance.md) — backup/restore drills, artifact auditing and backed-up collection.
 
 ## Related repository
@@ -44,6 +46,8 @@ loadability alone do not prove correctness.
 M7a adds [offline recovery and maintenance](docs/maintenance.md), including durable
 controller journals. M7b adds [A3 native Ascend C workers](docs/a3-worker.md);
 M7c adds [local accounts, namespace permissions and credential rotation](docs/accounts.md).
+M8 adds opt-in [private Hub consumption](docs/private-hub.md) through our
+`cannery-kernels` fork, reusing published packages and local-account credentials.
 # Submission reuse
 
 Submitting the same pinned source, specification and target returns the existing
