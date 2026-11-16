@@ -4,10 +4,10 @@ import hashlib
 import json
 from dataclasses import dataclass
 from pathlib import PurePosixPath
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, Self
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from cannery.git_intake import relative_source_path
 
@@ -47,6 +47,15 @@ class RecipeEntrypoint(StrictModel):
         return relative_source_path(value)
 
 
+class TensorRecipeEntrypoint(RecipeEntrypoint):
+    tensor_contract_file: str
+
+    @field_validator("tensor_contract_file")
+    @classmethod
+    def safe_contract(cls, value: str) -> str:
+        return relative_source_path(value)
+
+
 class Interface(StrictModel):
     inputs: tuple[Name, ...] = Field(min_length=1, max_length=32)
     outputs: tuple[Name, ...] = Field(min_length=1, max_length=32)
@@ -71,7 +80,7 @@ class Validation(StrictModel):
 class SpecDefinition(StrictModel):
     version: int = Field(ge=1)
     reference: Entrypoint
-    cases: Entrypoint | RecipeEntrypoint
+    cases: Entrypoint | TensorRecipeEntrypoint | RecipeEntrypoint
     interface: Interface
     validation: Validation
     environment_lock: str = "environment.lock"
@@ -83,9 +92,15 @@ class SpecDefinition(StrictModel):
 
 
 class Manifest(StrictModel):
-    schema_version: int = Field(ge=1, le=1)
+    schema_version: int = Field(ge=1, le=2)
     kernel: KernelIdentity
     spec: SpecDefinition
+
+    @model_validator(mode="after")
+    def matching_cases(self) -> Self:
+        if (self.schema_version == 2) != isinstance(self.spec.cases, TensorRecipeEntrypoint):
+            raise ValueError("Schema 2 requires a tensor recipe and contract binding")
+        return self
 
 
 class EnvironmentLock(StrictModel):
@@ -148,11 +163,37 @@ class ValidatedSpec:
     file_sha256: dict[str, str]
 
 
+def _check_spec_paths(files: dict[str, bytes]) -> None:
+    for path in files:
+        relative_source_path(path)
+        if ".git" in PurePosixPath(path).parts:
+            raise SpecError("Git administration paths are forbidden")
+
+
+def _freeze_spec(
+    files: dict[str, bytes], manifest_path: str, manifest: Manifest, environment: EnvironmentLock
+) -> ValidatedSpec:
+    hashes = {name: hashlib.sha256(data).hexdigest() for name, data in sorted(files.items())}
+    normalized = manifest.model_dump(mode="json")
+    normalized["kernel"].pop("description")
+    normalized["spec"].pop("version")
+    identity = {
+        "manifest": normalized,
+        "files": {name: sha for name, sha in hashes.items() if name != manifest_path},
+    }
+    digest = hashlib.sha256(
+        json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
+    ).hexdigest()
+    return ValidatedSpec(manifest, environment, digest, hashes)
+
+
 def validate_spec(files: dict[str, bytes], source_path: str) -> ValidatedSpec:
     prefix = "" if source_path == "." else relative_source_path(source_path) + "/"
     try:
         manifest_path = prefix + "cannery.yaml"
         manifest = parse_manifest(files[manifest_path])
+        if manifest.schema_version != 1:
+            raise SpecError("Tensor registration is not enabled yet")
         required = [
             manifest.spec.reference.file,
             manifest.spec.cases.recipe_file
@@ -169,10 +210,7 @@ def validate_spec(files: dict[str, bytes], source_path: str) -> ValidatedSpec:
                 object_pairs_hook=unique_pairs,
             )
         )
-        for path in files:
-            relative_source_path(path)
-            if ".git" in PurePosixPath(path).parts:
-                raise SpecError("Git administration paths are forbidden")
+        _check_spec_paths(files)
         if isinstance(manifest.spec.cases, RecipeEntrypoint):
             # Import lazily: recipes reuse the manifest's strict identifier/YAML helpers.
             from cannery.numerics.recipes import parse_recipes
@@ -187,17 +225,6 @@ def validate_spec(files: dict[str, bytes], source_path: str) -> ValidatedSpec:
                 set(case.inputs) != set(manifest.spec.interface.inputs) for case in recipes.cases
             ):
                 raise SpecError("Recipe input names do not match frozen interface")
-        hashes = {name: hashlib.sha256(data).hexdigest() for name, data in sorted(files.items())}
-        normalized = manifest.model_dump(mode="json")
-        normalized["kernel"].pop("description")
-        normalized["spec"].pop("version")
-        identity = {
-            "manifest": normalized,
-            "files": {name: sha for name, sha in hashes.items() if name != manifest_path},
-        }
-        digest = hashlib.sha256(
-            json.dumps(identity, sort_keys=True, separators=(",", ":")).encode()
-        ).hexdigest()
-        return ValidatedSpec(manifest, environment, digest, hashes)
+        return _freeze_spec(files, manifest_path, manifest, environment)
     except (KeyError, ValueError, TypeError, RecursionError):
         raise SpecError("Invalid or incomplete specification files") from None
