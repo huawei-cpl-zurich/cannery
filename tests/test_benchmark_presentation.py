@@ -97,7 +97,10 @@ def test_web_and_cli_render_same_complete_private_report(report, monkeypatch):
     finish_job(engine, claim_job(engine, "c" * 64), report=summary, artifact=artifact)
     with Session(engine) as db:
         info = get_info(db, "team", identifier)
+    from cannery.web.presentation import configure
+
     templates = Jinja2Templates(directory=str(Path("src/cannery/web/templates")))
+    configure(templates)
     page = templates.env.get_template("submissions.html").render(
         job=info,
         pages={},
@@ -105,7 +108,8 @@ def test_web_and_cli_render_same_complete_private_report(report, monkeypatch):
         title="My Submissions",
         request=SimpleNamespace(url=SimpleNamespace(path="/submissions/" + str(identifier))),
     )
-    assert "10.0" in page and "12.0" in page and "100" in page and "20.0" in page
+    assert "<td>10</td>" in page and "<td>12</td>" in page
+    assert "<td>100</td>" in page and "<td>20</td>" in page
     assert "correctness only" in page and "Geometric mean speedup" in page
     assert 'hx-trigger="every 2s"' not in page and "Results are private" in page
     monkeypatch.setattr(

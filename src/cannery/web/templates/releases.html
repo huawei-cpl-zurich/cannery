@@ -4,19 +4,20 @@
 {% if release %}
 <h2>{{ release.implementation_name }}</h2>
 <p>Team: {{ release.team }}</p>
-<p>{{ release.kernel }}@spec-v{{ release.spec_version }} · {{ release.device }} · {{ release.language }} · published {{ release.published_at }} by {{ release.publisher }}</p>
-<p>Release <code>{{ release.id }}</code>. Geometric mean speedup: {{ release.score.geomean_speedup if release.score.geomean_speedup is not none else 'unscored' }}×.</p>
+<p>{{ release.kernel }}@spec-v{{ release.spec_version }} · {{ release.device }} · {{ release.language }} · published <time datetime="{{ release.published_at }}" title="{{ release.published_at }}">{{ release.published_at|publication_date }}</time> by {{ release.publisher }}</p>
+<p>Release <code>{{ release.id }}</code>. Geometric mean speedup: {% if release.score.geomean_speedup is not none %}{{ release.score.geomean_speedup|number }}×{% else %}unscored{% endif %}.</p>
 <p>Exact runtime: <code>{{ release.runtime }}</code>. Cohort: <code>{{ release.cohort }}</code>.</p>
-<p>Validated tolerances: {{ release.tolerances }}. ABI: {{ release.abi }}. Shapes: {{ release.specializations if release.specializations else 'dynamic float32' }}.</p>
-<p>Source: {{ release.source.url }} · <code>{{ release.source.commit }}</code> · {{ release.source.path }}.</p>
+<p>Validated tolerances: {% for pair in release.tolerances %}rtol {{ pair.rtol|number }}, atol {{ pair.atol|number }}{% if not loop.last %}; {% endif %}{% endfor %}. ABI: {{ release.abi }}. Shapes: {{ release.specializations if release.specializations else 'dynamic float32' }}.</p>
+{% set links=release.source|source_links %}
+<p>Source: {% if links %}<a href="{{ links.code or links.repository }}" rel="noreferrer">{{ release.source.url }}</a>{% else %}{{ release.source.url }}{% endif %} · <code>{{ release.source.commit }}</code> · {{ release.source.path }}.</p>
 <p>Manifest SHA256: <code>{{ release.manifest_sha256 }}</code>. Package SHA256: <code>{{ release.package_sha256 }}</code>.</p>
 <p><a href="/api/v1/releases/{{ release.id }}/manifest">Manifest</a> · <a href="/api/v1/releases/{{ release.id }}/package">Binary package</a>. Downloading does not execute code; loading requires explicit trust in an isolated matching runtime.</p>
 <div class="table-scroll" role="region" aria-label="Published results" tabindex="0"><table><thead><tr><th>Case</th><th>Candidate median / p95 µs</th><th>Reference median / p95 µs</th><th>Speedup</th></tr></thead><tbody>
-{% for case in release.score.cases %}<tr><td>{{ case.id }} {{ case.shape }}</td>{% if case.excluded %}<td colspan="3">Empty: correctness only</td>{% else %}<td>{{ case.candidate.median_us }} / {{ case.candidate.p95_us }}</td><td>{{ case.reference.median_us }} / {{ case.reference.p95_us }}</td><td>{{ case.speedup }}×</td>{% endif %}</tr>{% endfor %}
+{% for case in release.score.cases %}<tr><td>{{ case.id }} {{ case.shape }}</td>{% if case.excluded %}<td colspan="3">Empty: correctness only</td>{% else %}<td>{{ case.candidate.median_us|number }} / {{ case.candidate.p95_us|number }}</td><td>{{ case.reference.median_us|number }} / {{ case.reference.p95_us|number }}</td><td>{{ case.speedup|number }}×</td>{% endif %}</tr>{% endfor %}
 </tbody></table></div>
 <h2>Saved numerical validation</h2>
 <div class="table-scroll" role="region" aria-label="Published results" tabindex="0"><table><thead><tr><th>Case</th><th>Input unchanged</th><th>Tolerance pair</th><th>Maximum absolute / relative error</th><th>RMS error</th><th>Nonfinite mismatches</th></tr></thead><tbody>
-{% for case in release.numerical_cases %}{% for name in ['spec_default', 'submission_requested'] %}{% set result=case[name] %}<tr><td>{{ case.id }} · {{ name }}</td><td>{{ case.input_unchanged }}</td><td>{{ result.rtol }}, {{ result.atol }}</td><td>{{ result.max_absolute_error }} / {{ result.max_relative_error if result.max_relative_error is not none else 'undefined' }}</td><td>{{ result.rms_error }}</td><td>{{ result.nonfinite_mismatches }}</td></tr>{% endfor %}{% endfor %}
+{% for case in release.numerical_cases %}{% for name in ['spec_default', 'submission_requested'] %}{% set result=case[name] %}<tr><td>{{ case.id }} · {{ name }}</td><td>{{ case.input_unchanged }}</td><td>{{ result.rtol|number }}, {{ result.atol|number }}</td><td>{{ result.max_absolute_error|number }} / {{ result.max_relative_error|number if result.max_relative_error is not none else 'undefined' }}</td><td>{{ result.rms_error|number }}</td><td>{{ result.nonfinite_mismatches|number }}</td></tr>{% endfor %}{% endfor %}
 </tbody></table></div>
 {% else %}
 <p>Only explicitly published releases appear. Scores compare synchronized call latency with PyTorch within one exact measurement cohort. Slower valid releases remain eligible.</p>
@@ -33,7 +34,7 @@
 </form>
 {% if error %}<p role="alert">{{ error }}. Choose an exact published cohort or saved tolerance pair.</p>{% endif %}
 {% if ranking %}
-<p>Spec v{{ ranking.spec_version }} · {{ ranking.device }} · tolerance {{ ranking.tolerance }} · cohort <code>{{ ranking.cohort }}</code>.</p>
+<p>Spec v{{ ranking.spec_version }} · {{ ranking.device }} · tolerance rtol {{ ranking.tolerance.rtol|number }}, atol {{ ranking.tolerance.atol|number }} · cohort <code>{{ ranking.cohort }}</code>.</p>
 {% if curve.points %}
 <figure class="chart-panel">
 <div class="chart-heading"><h2>Best published speedup</h2><p><strong>{{ curve.best }}×</strong> vs PyTorch</p></div>
@@ -45,9 +46,9 @@
 <line class="chart-reference" x1="50" y1="{{ curve.reference_y }}" x2="750" y2="{{ curve.reference_y }}"/>
 <path class="chart-line" d="{{ curve.line }}"/>
 {% for point in curve.points %}
-<a class="chart-point" href="/releases/{{ point.release_id }}" aria-label="{{ point.language }} · {{ point.geomean_speedup }} times PyTorch speed · {{ point.published_at }} · open release">
+<a class="chart-point" href="/releases/{{ point.release_id }}" aria-label="{{ point.language }} · {{ point.geomean_speedup|number }} times PyTorch speed · {{ point.published_at }} · open release">
 <circle cx="{{ point.x }}" cy="{{ point.y }}" r="6" fill="{{ '#155dc0' if point.language == 'ascendc' else '#ae4700' }}"/>
-<g class="chart-tooltip" aria-hidden="true"><rect x="240" y="2" width="320" height="34" rx="4"/><text x="400" y="16" text-anchor="middle">{{ 'Ascend C' if point.language == 'ascendc' else 'CATLASS' }} · {{ '%.4g'|format(point.geomean_speedup) }}×</text><text x="400" y="29" text-anchor="middle">{{ point.published_at }}</text></g>
+<g class="chart-tooltip" aria-hidden="true"><rect x="240" y="2" width="320" height="34" rx="4"/><text x="400" y="16" text-anchor="middle">{{ 'Ascend C' if point.language == 'ascendc' else 'CATLASS' }} · {{ point.geomean_speedup|number }}×</text><text x="400" y="29" text-anchor="middle">{{ point.published_at|publication_date }}</text></g>
 </a>
 {% endfor %}
 {% for tick in curve.dates %}<text class="chart-label" x="{{ tick.x }}" y="246" text-anchor="{{ 'start' if tick.x == 50 else ('end' if tick.x == 750 else 'middle') }}"><tspan x="{{ tick.x }}">{{ tick.date }}</tspan><tspan x="{{ tick.x }}" dy="16">{{ tick.time }}</tspan></text>{% endfor %}
@@ -56,9 +57,9 @@
 <figcaption><span class="legend-item"><i class="legend-dot ascendc"></i>Ascend C</span><span class="legend-item"><i class="legend-dot catlass"></i>CATLASS</span><span class="legend-item"><i class="legend-reference"></i>PyTorch · 1×</span><span>One strict best-so-far curve among currently published releases.</span></figcaption>
 </figure>
 {% endif %}
-<div class="table-scroll" role="region" aria-label="Published results" tabindex="0"><table><thead><tr><th>Release</th><th>Language</th><th>Speedup</th><th>Published</th></tr></thead><tbody>
-{% for row in ranking.rows %}<tr><td><a href="/releases/{{ row.id }}">{{ row.id }}</a></td><td>{{ row.language }}</td><td>{{ row.score.geomean_speedup }}×</td><td>{{ row.published_at }}</td></tr>{% else %}<tr><td colspan="4">No nonempty performance cases.</td></tr>{% endfor %}
-</tbody></table></div><p>{{ ranking.total }} scored releases. Showing up to 50; the API supports pagination.</p>
+<div class="table-scroll" role="region" aria-label="Published results" tabindex="0"><table><thead><tr><th>Implementation</th><th>Team</th><th>Language</th><th>Speedup</th><th>Published</th><th>Source</th></tr></thead><tbody>
+{% for row in ranking.rows %}<tr><td><a href="/releases/{{ row.id }}">{{ row.implementation_name }}</a></td><td>{{ row.team }}</td><td>{{ row.language }}</td><td>{{ row.score.geomean_speedup|number }}×</td><td><time datetime="{{ row.published_at }}" title="{{ row.published_at }}">{{ row.published_at|publication_date }}</time></td><td>{% set links=row.source|source_links %}{% if links %}<a href="{{ links.code or links.repository }}" rel="noreferrer">{{ "Source" if links.code else "Repository" }}</a>{% else %}—{% endif %}</td></tr>{% else %}<tr><td colspan="6">No nonempty performance cases.</td></tr>{% endfor %}
+</tbody></table></div><p>{{ ranking.total|number }} scored releases. Showing up to 50; the API supports pagination.</p>
 {% endif %}
 {% else %}<p>No published results yet.</p>{% endif %}
 {% endif %}

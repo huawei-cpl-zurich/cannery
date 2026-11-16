@@ -16,6 +16,7 @@ from cannery.registry.api import RegistrationRequest, job_info, submit
 from cannery.registry.registrations import Registration
 from cannery.settings import Settings
 from cannery.web.examples import NAMESPACE, NUMERICAL_REGISTRATION, REGISTRATION
+from cannery.web.presentation import configure
 
 
 def install_registration(
@@ -25,6 +26,8 @@ def install_registration(
     templates: Jinja2Templates,
     context: dict[str, object],
 ) -> None:
+    configure(templates)
+
     def render(request: Request, **values: object) -> HTMLResponse:
         return templates.TemplateResponse(
             request=request,

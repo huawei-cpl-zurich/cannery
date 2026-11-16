@@ -33,6 +33,7 @@ from cannery.web.examples import (
     SPEC_LABEL,
     SUBMISSION,
 )
+from cannery.web.presentation import configure
 
 
 async def form_data(request: Request, allowed: set[str]) -> dict[str, str]:
@@ -87,6 +88,8 @@ def install_submission_web(
     templates: Jinja2Templates,
     context: dict[str, object],
 ) -> None:
+    configure(templates)
+
     def specs() -> list[dict[str, str]]:
         namespace = identity(settings)
         with Session(engine) as session:

@@ -189,6 +189,18 @@ def test_auth_browser_cli_and_outage_recovery(deployment, tmp_path):
             page.get_by_label("Git repository URL").fill("https://example.com/kernel.git")
             page.get_by_label("Full commit SHA").fill("a" * 40)
             page.get_by_label("Source directory").fill("spec")
+
+            def conflict(route):
+                route.fulfill(
+                    status=409,
+                    json={"detail": "Existing submission has a fixed implementation name."},
+                )
+
+            page.route("**/register-kernel", conflict)
+            page.get_by_role("button", name="Register specification", exact=True).click()
+            page.get_by_role("alert").filter(has_text="fixed implementation name").wait_for()
+            assert page.url == base + "/register-kernel"
+            page.unroute("**/register-kernel", conflict)
             page.get_by_role("button", name="Register specification", exact=True).click()
             page.wait_for_url("**/registrations/*")
             assert "queued" in page.locator("#registration").inner_text()

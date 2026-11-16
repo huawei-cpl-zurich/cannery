@@ -26,6 +26,13 @@ def send(
     try:
         with httpx.Client(timeout=5, headers=auth_headers(url), trust_env=False) as client:
             response = client.post(url.rstrip("/") + endpoint, json=body)
+            if response.status_code == 409:
+                typer.echo(
+                    "This source already has a fixed implementation name. "
+                    "Omit --name or use the original name.",
+                    err=True,
+                )
+                raise typer.Exit(1)
             response.raise_for_status()
             key = UUID(response.json()["id"])
             typer.echo(f"Submission {key}")
