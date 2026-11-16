@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
-from sqlalchemy import (
+from sqlalchemy import String, (
     JSON,
     CheckConstraint,
     DateTime,
@@ -168,3 +168,10 @@ def owned_release(mapper: Mapper[Any], connection: Connection, target: Publicati
         != target.candidate_id
     ):
         raise ValueError("Publication must use its own candidate's release")
+
+
+class HubSnapshot(Base):
+    __tablename__ = "hub_snapshots"
+    release_id: Mapped[UUID] = mapped_column(ForeignKey("releases.id"), primary_key=True)
+    revision: Mapped[str] = mapped_column(String(40), unique=True)
+    descriptor: Mapped[dict[str, Any]] = mapped_column(JSON)

@@ -7,7 +7,7 @@ from sqlalchemy.orm import Session
 from cannery.numerics.comparison import Comparison
 from cannery.numerics.state import NumericalResult
 from cannery.releases.catalog import describe, manifest_of
-from cannery.releases.models import Publication, Release
+from cannery.releases.models import HubSnapshot, Publication, Release
 
 
 def detail(db: Session, release: Release, publication: Publication) -> dict[str, Any]:
@@ -24,4 +24,14 @@ def detail(db: Session, release: Release, publication: Publication) -> dict[str,
                     "submission_requested": Comparison(**case["submission_requested"]).as_dict(),
                 }
             )
-    return describe(release, publication) | {"numerical_cases": cases}
+    snapshot = db.get(HubSnapshot, release.id)
+    hub = (
+        {
+            "repo_id": manifest.kernel,
+            "revision": snapshot.revision,
+            "release_revision": f"release-{release.id}",
+        }
+        if snapshot
+        else None
+    )
+    return describe(release, publication) | {"numerical_cases": cases, "hub": hub}

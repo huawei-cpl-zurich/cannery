@@ -131,3 +131,7 @@ def registrations(url: str = "http://127.0.0.1:8000") -> None:
 
 install_cli(app)
 install_release_cli(app)
+
+from cannery.releases.hub_cli import app as hub_app
+
+app.add_typer(hub_app, name="hub")
