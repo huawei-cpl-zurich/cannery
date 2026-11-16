@@ -195,3 +195,19 @@ without creating work. Omit the name or use the original name when retrying.
 Public release metadata exposes `implementation_name` and the owning `team`;
 `publisher` continues to describe the publication actor. Retained manifests and
 Hub identities are unchanged.
+
+## Result display and upstream source
+
+Global Best shows the immutable implementation name and owning team. Reused
+executions keep the original release's name, source and measurements; naming a
+new request does not rename an existing published execution.
+
+Web measurements use at most three decimal places with trailing zeros removed;
+nonzero magnitudes below0.001 use scientific notation. Integer counts use grouping.
+Raw API values, stored evidence, chart coordinates and form inputs retain full
+precision. Publication dates display in UTC with exact timestamps in tooltips.
+
+Source links open the submitted directory at its exact commit on github.com,
+gitlab.com, gitcode.com and gitee.com, including supported SSH clone URLs.
+Other HTTPS hosts receive repository-only links; unknown SSH hosts remain text.
+Links do not grant upstream access or send Cannery credentials to providers.
