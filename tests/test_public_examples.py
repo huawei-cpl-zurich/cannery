@@ -114,6 +114,7 @@ def test_toy_preset_selects_required_spec_and_target(client, monkeypatch, preset
     assert Fields(client.get("/submit-implementation").text).values["url"] == ""
     fields = Fields(client.get(f"/submit-implementation?example={preset}").text).values
     assert fields == {
+        "implementation_name": "",
         "spec_id": expected,
         "device": "a5",
         "language": language,
