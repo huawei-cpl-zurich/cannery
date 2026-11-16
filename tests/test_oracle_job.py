@@ -1,4 +1,5 @@
 import base64
+import hashlib
 import json
 from uuid import uuid4
 
@@ -6,10 +7,13 @@ import pytest
 from test_baseline_format import fixture
 from test_build_executor import Memory
 from test_recipe_spec import recipe_spec
+from test_tensor_spec_reader import tensor_files
 
 from cannery.artifacts import ArtifactError
 from cannery.numerics.baseline_format import baseline_key
+from cannery.numerics.baseline_v2 import baseline_key_v2
 from cannery.numerics.oracle_job import OracleFailure, OracleJob, OraclePending
+from cannery.registry.tensor_manifest import validate_tensor_spec
 
 
 class Docker:
@@ -56,19 +60,34 @@ class Docker:
         return 0, b""
 
     def complete(self, outputs):
+        def encode(value):
+            if isinstance(value, bytes):
+                return base64.b64encode(value).decode()
+            return {key: encode(data) for key, data in value.items()}
+
         self.info["State"]["Status"] = "exited"
-        self.reply = json.dumps(
-            {"outputs": {k: base64.b64encode(v).decode() for k, v in outputs.items()}}
-        ).encode()
+        self.reply = json.dumps({"outputs": encode(outputs)}).encode()
         self.result_path.write_bytes(self.reply)
         # Docker auto-removes the completed container after the durable result.
         self.info = None
 
 
-@pytest.fixture
-def setup_job(tmp_path, monkeypatch):
-    spec, suite, outputs = fixture()
-    files, _, _ = recipe_spec()
+@pytest.fixture(params=["unary", "tensor"])
+def setup_job(tmp_path, monkeypatch, request):
+    if request.param == "unary":
+        spec, suite, outputs = fixture()
+        files, _, _ = recipe_spec()
+        key = baseline_key(spec.content_sha256, suite, spec.environment)
+    else:
+        files = tensor_files()
+        frozen = validate_tensor_spec(files, "spec")
+        spec, suite = frozen.spec, frozen.suite
+        contract = frozen.contract.output_contract()
+        outputs = {
+            case: {name: bytes(descriptor.nbytes) for name, descriptor in values.items()}
+            for case, values in contract.cases.items()
+        }
+        key = baseline_key_v2(spec.content_sha256, suite, spec.environment, contract)
     docker = Docker()
     monkeypatch.setattr("cannery.numerics.oracle_job.docker", docker)
     memory = Memory()
@@ -78,7 +97,7 @@ def setup_job(tmp_path, monkeypatch):
         return OracleJob(
             tmp_path,
             "test-baseline-control",
-            baseline_key(spec.content_sha256, suite, spec.environment),
+            key,
             attempt,
             "sha256:" + "a" * 64,
             memory,
@@ -238,3 +257,37 @@ def test_checkpoint_published_during_terminal_inspection_is_not_lost(setup_job, 
 
     monkeypatch.setattr("cannery.numerics.oracle_job.docker", inspect_race)
     assert progress().sha256 and docker.starts == 1
+
+
+def test_reply_shape_failure_never_publishes_or_reruns_reference(setup_job):
+    job, progress, docker, memory, *_ = setup_job
+    for _ in range(2):
+        with pytest.raises(OraclePending):
+            progress()
+    docker.info = None
+    (job().journal / "output/result.json").write_text('{"outputs":{"small":7}}')
+    with pytest.raises(OracleFailure, match="Invalid CPU"):
+        progress()
+    assert docker.creates == docker.starts == 1 and memory.puts == 0
+
+
+def test_job_freezes_correct_worker_and_scalar_mutation_contract(setup_job):
+    job, progress, docker, _, spec, *_ = setup_job
+    with pytest.raises(OraclePending):
+        progress()
+    plan = json.loads((job().journal / "input/plan.json").read_bytes())
+    context = json.loads((job().journal / "context.json").read_bytes())
+    command = next(call for call in docker.calls if call[0] == "create")
+    source = command[-1]
+    assert isinstance(source, str)
+    compile(source, "<oracle-dispatch>", "exec")
+    assert hashlib.sha256(source.encode()).hexdigest() == context["worker_sha256"]
+    if spec.manifest.schema_version == 2:
+        assert plan["contract"]["cases"]["small"]["aliases"] == {"updated": "cache"}
+        assert plan["contract"]["cases"]["small"]["scalars"]["offset"]["value"] == 1
+        assert "def _generate_v2(" in source
+    else:
+        assert "contract" not in plan
+        assert context["worker_sha256"] == (
+            "386c3485506f68cc7a585ce414851c6a85d38e3c3ae85a2d9878eb99d7b3e382"
+        )
