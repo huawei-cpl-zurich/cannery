@@ -3,7 +3,9 @@
 import json
 from typing import Any
 
+from cannery.builds.ascendc import BuildError
 from cannery.registry.tensor_manifest import ValidatedTensorSpec
+from cannery.submissions.manifest import SubmissionManifest
 
 
 def tensor_variants(frozen: ValidatedTensorSpec) -> list[dict[str, Any]]:
@@ -45,3 +47,29 @@ def tensor_variants(frozen: ValidatedTensorSpec) -> list[dict[str, Any]]:
             domains.add(domain)
             variants.append(variant)
     return variants
+
+
+def tensor_build_parameters(
+    manifest: SubmissionManifest, frozen: ValidatedTensorSpec, abi_header: str, language: str
+) -> dict[str, Any]:
+    impl = manifest.implementation
+    if (
+        (manifest.schema_version, impl.language, impl.device, impl.build.abi)
+        != (2, language, "a5", "tensor-v2")
+        or impl.build.options.optimization != "release"
+        or frozen.spec.manifest.schema_version != 2
+        or manifest.spec_version != frozen.spec.manifest.spec.version
+        or manifest.kernel
+        != f"{frozen.spec.manifest.kernel.namespace}/{frozen.spec.manifest.kernel.name}"
+        or type(abi_header) is not str
+        or "cannery_prepare_tensor_v2" not in abi_header
+        or len(abi_header.encode()) > 16384
+    ):
+        raise BuildError("Requires matching A5 tensor spec, submission and pinned ABI header")
+    entry, symbol = impl.entrypoint.split(":")
+    return {
+        "entry": entry,
+        "symbol": symbol,
+        "variants": tensor_variants(frozen),
+        "abi_header": abi_header,
+    }
