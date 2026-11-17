@@ -48,6 +48,8 @@ class CatlassToolchain(StrictModel):
 
 
 class TritonToolchain(StrictModel):
+    cube_cores: int = Field(strict=True, ge=1, le=256)
+    vector_cores: int = Field(strict=True, ge=1, le=256)
     version: str = Field(min_length=1, max_length=128)
     package_root: str
     package_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")

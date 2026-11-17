@@ -43,6 +43,8 @@ def tensor_build(setup_executor, request):
         executor.profile = executor.profile.model_copy(
             update={
                 "triton": TritonToolchain(
+                    cube_cores=32,
+                    vector_cores=64,
                     version="3.6.0",
                     package_root="/home/operator/triton-toolchain/triton",
                     package_sha256="a" * 64,
