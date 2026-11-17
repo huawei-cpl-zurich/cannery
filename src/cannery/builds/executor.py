@@ -13,6 +13,7 @@ from typing import Any
 from uuid import UUID
 
 from cannery.artifacts import ArtifactRef, ArtifactStore, digest, verified
+from cannery.builds.ascendc_tensor_compile import AscendCTensorAdapter
 from cannery.builds.catlass_compile import adapter_for
 from cannery.builds.catlass_tensor_compile import CatlassTensorAdapter
 from cannery.builds.library import ExecutionFailure as ExecutionFailure
@@ -203,19 +204,25 @@ class BuildExecutor:
                     header = archive.read("cannery_kernels/tensor_abi.h").decode()
             except (KeyError, ValueError, zipfile.BadZipFile, UnicodeError):
                 raise ExecutionFailure("tensor_loader_header_missing") from None
-            adapter = (
-                TritonTensorAdapter()
-                if validated.manifest.implementation.language == "triton"
-                else CatlassTensorAdapter()
-            )
+            adapters: dict[
+                str, CatlassTensorAdapter | TritonTensorAdapter | AscendCTensorAdapter
+            ] = {
+                "catlass": CatlassTensorAdapter(),
+                "triton": TritonTensorAdapter(),
+                "ascendc": AscendCTensorAdapter(),
+            }
+            adapter = adapters[validated.manifest.implementation.language]
             plan = adapter.build(validated.manifest, frozen, header)
         else:
             plan = adapter_for(validated.manifest).build(validated.manifest)
         program = tensor_smoke_program() if frozen is not None else None
         triton = validated.manifest.implementation.language == "triton"
-        catlass = plan.wrapper_name == "launch.py" and not triton
+        ascendc = frozen is not None and validated.manifest.implementation.language == "ascendc"
+        catlass = plan.wrapper_name == "launch.py" and not (triton or ascendc)
         if triton and self.profile.triton is None:
             raise ExecutionFailure("triton_toolchain_unavailable")
+        if ascendc and self.profile.ascendc is None:
+            raise ExecutionFailure("ascendc_toolchain_unavailable")
         if catlass and self.profile.catlass is None:
             raise ExecutionFailure("catlass_toolchain_unavailable")
         compile_options: dict[str, Any] = (
@@ -233,6 +240,13 @@ class BuildExecutor:
                 backend="triton",
                 triton=self.profile.triton.model_dump(mode="json"),
                 runtime=self.profile.fingerprint,
+            )
+        if ascendc:
+            assert self.profile.ascendc is not None
+            compile_options.update(
+                wrapper_name=plan.wrapper_name,
+                backend="ascendc-tensor",
+                ascendc=self.profile.ascendc.model_dump(mode="json"),
             )
         if self.wheel.stat().st_size > 2 * 1024 * 1024:
             raise ExecutionFailure("loader_size_limit")
@@ -306,9 +320,15 @@ class BuildExecutor:
         if digest(binary) != checksum:
             raise ExecutionFailure("compiled_digest_mismatch")
         if frozen is not None:
-            pins = self.profile.triton if triton else self.profile.catlass
+            pins = (
+                self.profile.ascendc
+                if ascendc
+                else self.profile.triton
+                if triton
+                else self.profile.catlass
+            )
             assert pins is not None
-            backend = "triton" if triton else "catlass"
+            backend = "ascendc" if ascendc else "triton" if triton else "catlass"
             package = tensor_binary_package(
                 binary,
                 candidate.content_sha256,
