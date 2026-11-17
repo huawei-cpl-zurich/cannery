@@ -3,7 +3,10 @@
 sha256-tensor-v2 uses framed, independent uint32 streams. Float samples use
 the upper 24 bits mapped to [-1, 1), rounded to the requested storage dtype.
 Integer samples use modulo reduction into an inclusive interval (not an
-unbiased statistical RNG). All storage is little endian, in logical order.
+unbiased statistical RNG). Permutations use descending Fisher-Yates swaps,
+one uint32 modulo (index + 1) per swap from the same framed stream. They
+contain every index in [0, count) exactly once. All storage is little endian,
+in logical order.
 Existing sha256-f32-v1 recipes and their hashes remain unchanged.
 """
 
@@ -40,7 +43,7 @@ INTEGER_LIMITS = {
 class TensorRecipeV2(StrictModel):
     shape: tuple[Dimension, ...] = Field(min_length=1, max_length=4)
     dtype: DType
-    distribution: Literal["uniform", "randint", "zeros"]
+    distribution: Literal["uniform", "randint", "zeros", "permutation"]
     seed: int = Field(ge=0, le=2**64 - 1)
     low: int | None = None
     high: int | None = None
@@ -59,6 +62,10 @@ class TensorRecipeV2(StrictModel):
             raise ValueError("Transpose requires two dimensions")
         if self.distribution == "uniform" and self.dtype in INTEGER_LIMITS:
             raise ValueError("Uniform requires a floating dtype")
+        if self.distribution == "permutation" and (
+            self.dtype not in {"int32", "int64"} or len(self.shape) != 1
+        ):
+            raise ValueError("Permutation requires a one-dimensional int32/int64 tensor")
         if self.distribution == "randint":
             if self.dtype not in INTEGER_LIMITS or self.low is None or self.high is None:
                 raise ValueError("Randint requires an integer dtype and bounds")
@@ -147,6 +154,18 @@ def _generate_v2(recipe: TensorRecipeV2, case_id: str, input_name: str) -> bytes
         + input_name.encode()
         + b"\0"
     )
+    if recipe.distribution == "permutation":
+        values = list(range(count))
+        index = count - 1
+        for block in range((max(0, count - 1) + 7) // 8):
+            words = struct.unpack("<8I", hashlib.sha256(prefix + struct.pack("<Q", block)).digest())
+            for word in words:
+                if index <= 0:
+                    break
+                other = word % (index + 1)
+                values[index], values[other] = values[other], values[index]
+                index -= 1
+        return b"".join(value.to_bytes(width, "little", signed=True) for value in values)
     output = bytearray()
     for block in range((count + 7) // 8):
         words = struct.unpack("<8I", hashlib.sha256(prefix + struct.pack("<Q", block)).digest())
