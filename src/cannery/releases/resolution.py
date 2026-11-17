@@ -13,14 +13,14 @@ from cannery.registry.models import SpecVersion
 from cannery.releases import catalog
 from cannery.releases.contract import Tolerance, canonical
 from cannery.releases.models import Publication, Release
-from cannery.submissions.manifest import Language, Specialization
+from cannery.submissions.manifest import Specialization, TensorLanguage
 
 Value = Annotated[str, Field(min_length=1, max_length=256)]
 
 
 class ResolveRequest(catalog.Selection):
     runtime: dict[str, Value] = Field(min_length=6, max_length=6)
-    language: Language | None = None
+    language: TensorLanguage | None = None
     shape: tuple[int, ...] | None = None
     dtype: Literal["float32"] = "float32"
     release_id: UUID | None = None

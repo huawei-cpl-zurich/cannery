@@ -18,7 +18,7 @@
 </tbody></table></div>
 <h2>Saved numerical validation</h2>
 <div class="table-scroll" role="region" aria-label="Published results" tabindex="0"><table><thead><tr><th>Case</th><th>Input unchanged</th><th>Tolerance pair</th><th>Maximum absolute / relative error</th><th>RMS error</th><th>Nonfinite mismatches</th></tr></thead><tbody>
-{% for case in release.numerical_cases %}{% for name in ['spec_default', 'submission_requested'] %}{% set result=case[name] %}<tr><td>{{ case.id }} · {{ name }}</td><td>{{ case.input_unchanged }}</td><td>{{ result.rtol|number }}, {{ result.atol|number }}</td><td>{{ result.max_absolute_error|number }} / {{ result.max_relative_error|number if result.max_relative_error is not none else 'undefined' }}</td><td>{{ result.rms_error|number }}</td><td>{{ result.nonfinite_mismatches|number }}</td></tr>{% endfor %}{% endfor %}
+{% for case in release.numerical_cases %}{% for name in ['spec_default', 'submission_requested'] %}{% set result=case[name] %}<tr><td>{{ case.id }} · {{ name }}</td><td>{{ case.input_unchanged }}</td><td>{% if result.metric == 'exact' %}exact{% else %}{{ result.rtol|number }}, {{ result.atol|number }}{% endif %}</td><td>{{ result.max_absolute_error|number }} / {{ result.max_relative_error|number if result.max_relative_error is not none else 'undefined' }}</td><td>{{ result.rms_error|number }}</td><td>{{ result.nonfinite_mismatches|number }}</td></tr>{% endfor %}{% endfor %}
 </tbody></table></div>
 {% else %}
 <p>Only explicitly published releases appear. Scores compare synchronized call latency with PyTorch within one exact measurement cohort. Slower valid releases remain eligible.</p>

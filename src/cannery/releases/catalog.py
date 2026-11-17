@@ -13,7 +13,9 @@ from cannery.devices import Device
 from cannery.registry.manifest import Manifest, StrictModel
 from cannery.registry.models import Kernel, SpecVersion
 from cannery.releases.contract import SHA, ReleaseManifest, Tolerance
+from cannery.releases.document import ReleaseDocument, parse_release_document
 from cannery.releases.models import Publication, Release, ReleaseTolerance
+from cannery.releases.tensor_contract import TensorReleaseManifest
 from cannery.submissions.manifest import KernelPath
 from cannery.submissions.names import label
 
@@ -48,8 +50,8 @@ def published() -> Select[*tuple[Release, Publication]]:
     )
 
 
-def manifest_of(release: Release) -> ReleaseManifest:
-    return ReleaseManifest.model_validate_json(json.dumps(release.document))
+def manifest_of(release: Release) -> ReleaseDocument:
+    return parse_release_document(release.document)
 
 
 def describe(release: Release, pub: Publication) -> dict[str, Any]:
@@ -69,8 +71,16 @@ def describe(release: Release, pub: Publication) -> dict[str, Any]:
         "runtime": m.cohort.runtime,
         "abi": m.abi,
         "specializations": [s.model_dump(mode="json") for s in m.specializations]
-        if m.specializations
+        if isinstance(m, ReleaseManifest) and m.specializations
         else None,
+        **(
+            {
+                "interface": m.interface.model_dump(mode="json"),
+                "cases": {name: case.model_dump(mode="json") for name, case in m.cases.items()},
+            }
+            if isinstance(m, TensorReleaseManifest)
+            else {}
+        ),
         "tolerances": [t.model_dump() for t in m.tolerances],
         "score": m.score.model_dump(mode="json"),
         "source": m.source.model_dump(mode="json"),

@@ -12,15 +12,15 @@ from cannery.accounts.context import identity
 from cannery.artifacts import ArtifactError, ArtifactRef, ArtifactStore
 from cannery.releases import catalog
 from cannery.releases.assets import verify_package
-from cannery.releases.contract import ReleaseManifest, read_manifest
 from cannery.releases.discovery_api import selection_error
+from cannery.releases.document import ReleaseDocument, read_release_document
 from cannery.releases.resolution import ResolveRequest, resolve
 from cannery.settings import Settings
 
 
 def release_bytes(
     app: FastAPI, engine: Engine, identifier: UUID, package: bool
-) -> tuple[bytes, ReleaseManifest, ArtifactRef]:
+) -> tuple[bytes, ReleaseDocument, ArtifactRef]:
     try:
         with Session(engine) as db:
             release, _ = catalog.release_info(db, identifier)
@@ -30,7 +30,7 @@ def release_bytes(
         raw = store.get(ref)
         if package:
             verify_package(raw, manifest)
-        elif read_manifest(raw, ref.sha256) != manifest:
+        elif read_release_document(raw, ref.sha256) != manifest:
             raise ValueError("Manifest differs")
         with Session(engine) as db:
             catalog.release_info(db, identifier)
