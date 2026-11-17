@@ -13,8 +13,8 @@ from cannery.registry import recipe_registration as recipes
 from cannery.registry.registrations import Registration, create_registration
 from cannery.settings import Settings
 
-# Public registration remains unary until the complete tensor pipeline is enabled.
-pytestmark = pytest.mark.parametrize("ingress", ["unary"], indirect=True)
+# Exercise both formats through the same durable registration handoff.
+pytestmark = pytest.mark.parametrize("ingress", ["unary", "tensor"], indirect=True)
 
 
 @pytest.fixture
@@ -23,6 +23,7 @@ def registration(ingress, monkeypatch, tmp_path):
     with Session(engine) as db:
         binding = SnapshotBinding.model_validate(db.get(BaselineState, baseline_key).snapshot)
     settings = Settings(
+        tensor_enabled=True,
         snapshot_root=tmp_path / "snapshots",
         intake_scratch=tmp_path / "scratch",
         baseline_root=tmp_path / "control",

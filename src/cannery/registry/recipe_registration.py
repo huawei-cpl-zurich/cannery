@@ -8,12 +8,15 @@ from cannery.git_intake import SnapshotBinding
 from cannery.git_intake.snapshots import SnapshotStore
 from cannery.numerics.baseline_format import baseline_key
 from cannery.numerics.baseline_state import ensure_baseline
+from cannery.numerics.baseline_v2 import baseline_key_v2
 from cannery.numerics.baselines import BaselinePending, BaselineUnavailable, advance_baseline
 from cannery.numerics.oracle_job import OraclePending
-from cannery.numerics.recipes import parse_recipes
+from cannery.numerics.recipes import RecipeSuite, parse_recipes
+from cannery.numerics.recipes_v2 import RecipeSuiteV2
 from cannery.registry.freeze import BaselineEvidence
 from cannery.registry.manifest import RecipeEntrypoint, ValidatedSpec
 from cannery.registry.registrations import Claim, current_claim, retain_baseline_registration
+from cannery.registry.tensor_manifest import validate_tensor_spec
 from cannery.settings import Settings
 
 
@@ -31,8 +34,20 @@ def recipe_evidence(
     if not isinstance(cases, RecipeEntrypoint):
         raise BaselineUnavailable("baseline_recipe_required")
     prefix = "" if binding.source.path == "." else binding.source.path + "/"
-    suite = parse_recipes(store.read(binding).files[prefix + cases.recipe_file])
-    key = baseline_key(spec.content_sha256, suite, spec.environment)
+    files = store.read(binding).files
+    suite: RecipeSuite | RecipeSuiteV2
+    contract = None
+    if spec.manifest.schema_version == 2:
+        tensor = validate_tensor_spec(files, binding.source.path)
+        if tensor.spec != spec:
+            raise BaselineUnavailable("baseline_identity_mismatch")
+        suite, contract = tensor.suite, tensor.contract
+        key = baseline_key_v2(
+            spec.content_sha256, suite, spec.environment, contract.output_contract()
+        )
+    else:
+        suite = parse_recipes(files[prefix + cases.recipe_file])
+        key = baseline_key(spec.content_sha256, suite, spec.environment)
     if claim.prepared_snapshot is None:
         ensure_baseline(engine, key, spec.content_sha256, binding)
         if not retain_baseline_registration(engine, claim, binding, key):
@@ -64,6 +79,7 @@ def recipe_evidence(
         volume=settings.baseline_volume,
         image=settings.smoke_image,
         fence=fence,
+        contract=contract,
     )
 
 

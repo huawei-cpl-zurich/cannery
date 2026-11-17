@@ -37,6 +37,7 @@ class Settings(BaseSettings):
         return self
 
     service_name: str = "cannery"
+    tensor_enabled: bool = False
     release_enabled: bool = False
     hub_enabled: bool = False
 

@@ -19,7 +19,7 @@ from cannery.git_intake.snapshots import SnapshotStore
 from cannery.numerics.baselines import BaselinePending, BaselineUnavailable
 from cannery.numerics.oracle_job import OraclePending
 from cannery.registry.freeze import BaselineEvidence, SmokeEvidence, freeze_in_session
-from cannery.registry.manifest import validate_spec
+from cannery.registry.intake import registration_spec
 from cannery.registry.models import SpecConflict
 from cannery.registry.recipe_registration import cleanup_recipe, recipe_evidence
 from cannery.registry.registrations import (
@@ -98,6 +98,7 @@ def register_spec(identifier: str) -> None:
                 "scratch": str(scratch),
                 "snapshots": str(settings.snapshot_root),
                 "image": settings.smoke_image,
+                "tensor_enabled": settings.tensor_enabled,
                 "timeout": settings.smoke_timeout,
                 "handle": handle,
             }
@@ -136,7 +137,9 @@ def register_spec(identifier: str) -> None:
         if binding.source != claim.source:
             raise SpecConflict("Source binding mismatch")
         store = SnapshotStore(settings.snapshot_root)
-        spec = validate_spec(store.read(binding).files, binding.source.path)
+        spec = registration_spec(
+            store.read(binding).files, binding.source.path, tensor_enabled=settings.tensor_enabled
+        )
         if claim.expected_name is not None and spec.manifest.kernel.name != claim.expected_name:
             raise SpecConflict("Kernel name mismatch")
         if evidence is None:
