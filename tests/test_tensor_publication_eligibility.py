@@ -1,7 +1,9 @@
 import copy
+import json
 from uuid import uuid4
 
 import pytest
+import test_tensor_numerical_executor as numerical_fixture
 from release_fixtures import admission as admission
 from release_fixtures import arguments as arguments
 from release_fixtures import benchmark as benchmark
@@ -21,6 +23,7 @@ from cannery.benchmark.tensor_scoring import tensor_score
 from cannery.git_intake import GitSource
 from cannery.git_intake.snapshots import SelectedTree, SnapshotStore
 from cannery.numerics.baseline_state import BaselineState
+from cannery.numerics.recipes_v2 import input_sha256_v2
 from cannery.numerics.state import NumericalResult, NumericalState
 from cannery.registry.models import SpecVersion
 from cannery.releases.eligibility import (
@@ -32,13 +35,38 @@ from cannery.submissions.manifest import validate_tensor_submission
 from cannery.submissions.models import Candidate, Submission
 
 
+def multiple_case_files():
+    files = tensor_files()
+    suite = json.loads(files["spec/recipes.yaml"])
+    contract = json.loads(files["spec/tensor-contract.yaml"])
+    extra = copy.deepcopy(suite["cases"][0])
+    extra["id"] = "large"
+    extra["inputs"]["x"]["shape"] = [4, 3]
+    extra["inputs"]["cache"]["shape"] = [8, 3]
+    suite["cases"].append(extra)
+    definition = copy.deepcopy(contract["cases"]["small"])
+    definition["outputs"]["updated"]["shape"] = [8, 3]
+    definition["outputs"]["indices"]["shape"] = [4]
+    contract["cases"]["large"] = definition
+    files["spec/recipes.yaml"] = json.dumps(suite).encode()
+    files["spec/tensor-contract.yaml"] = json.dumps(contract).encode()
+    return files
+
+
 @pytest.fixture
-def attestation(tmp_path):
+def attestation(tmp_path, monkeypatch):
+    monkeypatch.setattr(numerical_fixture, "tensor_files", multiple_case_files)
     isolated = tmp_path / "numeric"
     isolated.mkdir()
     setup = setup_executor.__wrapped__(isolated)
     control = {}
     validation = make_validation.__wrapped__(setup, control)
+    # The shared numerical fixture updates its first mutable cache only.
+    # Give every additional case the corresponding simulated post-call hash.
+    options = control["options"]
+    for case, row in zip(options["suite"].cases, control["reply"]["cases"], strict=True):
+        descriptor = options["contract"].cases[case.id].outputs["updated"]
+        row["inputs"]["cache"] = input_sha256_v2(case.inputs["cache"], bytes(descriptor.nbytes))
     return make_attestation.__wrapped__(validation, control)
 
 
@@ -47,7 +75,7 @@ def completed(admission, attestation, tmp_path):
     engine, key, _, _ = admission
     report, evidence, frozen, _, _ = attestation
     snapshots = SnapshotStore(tmp_path / "frozen")
-    files = tensor_files()
+    files = multiple_case_files()
     binding = snapshots.commit(
         "e" * 64,
         GitSource(url="https://example.com/spec.git", commit="a" * 40, path="spec"),
@@ -89,13 +117,13 @@ def completed(admission, attestation, tmp_path):
     )
     assert suite.sha256 == frozen.suite.sha256
     assert next(iter(suite.cases[0].inputs.values())).shape == (4, 3)
-    row = tensor_score(
+    scored_rows = tensor_score(
         suite,
         frozen.contract,
-        {"small": [2.0] * 100},
-        {"small": [2.0] * 100},
+        {case.id: [2.0] * 100 for case in suite.cases},
+        {case.id: [2.0] * 100 for case in suite.cases},
         first_input=frozen.spec.manifest.spec.interface.inputs[0],
-    )["cases"][0]
+    )["cases"]
     with engine.begin() as c:
         c.execute(
             update(SpecVersion)
@@ -148,7 +176,11 @@ def completed(admission, attestation, tmp_path):
         for attempt, kind, check in zip(
             attempts, ["candidate", "reference"], [report, reference_check], strict=True
         ):
-            scored = row if kind == "candidate" else {"id": "small", "reference": latency}
+            scored = (
+                scored_rows
+                if kind == "candidate"
+                else [{"id": row["id"], "reference": latency} for row in scored_rows]
+            )
             result = dict(
                 passed=True,
                 kind=kind,
@@ -156,7 +188,7 @@ def completed(admission, attestation, tmp_path):
                 protocol=cohort.protocol,
                 cohort=cohort.model_dump(mode="json"),
                 correctness=[check, check],
-                cases=[scored],
+                cases=scored,
             )
             if kind == "candidate":
                 result["geomean_speedup"] = 1.0
@@ -233,3 +265,27 @@ def test_unavailable_snapshot_fails_closed_then_recovers(completed, monkeypatch)
         tensor_publication_manifest(*completed)
     monkeypatch.setattr(snapshots, "read", read)
     assert tensor_publication_manifest(*completed).submission_id == completed[1]
+
+
+def test_reordering_both_timing_reports_cannot_change_frozen_dispatch_order(completed):
+    engine, key, _ = completed
+    manifest = tensor_publication_manifest(*completed)
+    assert [row.id for row in manifest.score.cases] == ["small", "large"]
+    assert len(manifest.variants()) == 2
+    with Session(engine) as db:
+        job = db.get(PerformanceJob, candidate_key(key))
+        reference = db.get(PerformanceJob, job.reference_key)
+        reports = [
+            (attempt, copy.deepcopy(db.get(PerformanceResult, attempt).report))
+            for attempt in [job.attempt, reference.attempt]
+        ]
+    with engine.begin() as connection:
+        for attempt, report in reports:
+            report["cases"].reverse()
+            connection.execute(
+                update(PerformanceResult)
+                .where(PerformanceResult.id == attempt)
+                .values(report=report)
+            )
+    with pytest.raises(PublicationUnavailable):
+        tensor_publication_manifest(*completed)

@@ -262,6 +262,7 @@ def retained(
             check(report, evidence, score, default, pair, spec.spec.validation.equal_nan)
 
     if tensor is not None:
+        require([case.id for case in score.cases] == [case.id for case in tensor.suite.cases])
         require(
             numerical.report["binary_sha256"] == package.sha256
             and numerical.report["baseline_sha256"] == evidence.artifact.sha256
