@@ -12,10 +12,13 @@ from cannery.benchmark.contract import Cohort, cache_key, reference_key
 from cannery.benchmark.evidence import read_timings
 from cannery.benchmark.executor import BenchmarkExecutor
 from cannery.benchmark.state import PerformanceJob, PerformanceResult, ensure_job
+from cannery.benchmark.tensor_evidence import read_tensor_timings
+from cannery.benchmark.tensor_timing import TENSOR_PROTOCOL
 from cannery.builds.executor import ExecutionFailure
 from cannery.builds.state import BuildResult, BuildState
 from cannery.git_intake import SnapshotBinding
 from cannery.numerics.coordinator import retained as retained_numerical
+from cannery.numerics.recipes_v2 import RecipeSuiteV2
 from cannery.numerics.state import NumericalResult, NumericalState
 from cannery.registry.freeze import BaselineEvidence
 from cannery.registry.models import SpecVersion
@@ -82,8 +85,14 @@ def discover(engine: Engine, cohort: Cohort) -> None:
         artifact = ArtifactRef.model_validate(binary)
         if artifact.repository != "private" or artifact.revision != artifact.sha256:
             raise ValueError("Invalid admitted artifact")
-        identity = {"spec_id": str(spec_id), "cohort": cohort.model_dump(mode="json")}
-        reference = reference_key(spec_sha, evidence.suite_sha256, evidence.generator, cohort)
+        protocol = {"sha256-f32-v1": "sync-call-v1", "sha256-tensor-v2": TENSOR_PROTOCOL}.get(
+            evidence.generator
+        )
+        if protocol is None:
+            raise ValueError("Unsupported measurement generator")
+        measurement = Cohort.model_validate(cohort.model_dump(mode="json") | {"protocol": protocol})
+        identity = {"spec_id": str(spec_id), "cohort": measurement.model_dump(mode="json")}
+        reference = reference_key(spec_sha, evidence.suite_sha256, evidence.generator, measurement)
         ensure_job(engine, reference, "reference", identity)
         ensure_job(
             engine,
@@ -172,9 +181,17 @@ def retained(engine: Engine, job: PerformanceJob, executor: BenchmarkExecutor) -
         # Storage outage defers the candidate without ever rerunning a ready reference.
         raw = executor.artifacts.get(artifact)
         try:
-            data["reference_samples"] = read_timings(
-                raw, artifact, data["spec"].content_sha256, data["suite"], cohort
-            )
+            if isinstance(data["suite"], RecipeSuiteV2):
+                contract = data.get("contract")
+                if contract is None:
+                    raise BenchmarkBlocked("tensor_contract_missing")
+                data["reference_samples"] = read_tensor_timings(
+                    raw, artifact, data["spec"].content_sha256, data["suite"], contract, cohort
+                )
+            else:
+                data["reference_samples"] = read_timings(
+                    raw, artifact, data["spec"].content_sha256, data["suite"], cohort
+                )
         except ValueError:
             raise BenchmarkBlocked("reference_timing_invalid") from None
         requested = SubmissionManifest.model_validate(candidate.manifest).validation

@@ -311,3 +311,37 @@ def test_default_runtime_keeps_stdout_out_of_host_result_file(tmp_path, monkeypa
     config, token, calls = setup(tmp_path, monkeypatch)
     supervise(config, token, "runtime")
     assert not (Path(config.workspace) / token.hex / "output/results.json").exists()
+
+
+def triton_pins():
+    return {
+        "cube_cores": 32,
+        "vector_cores": 64,
+        "version": "3.6.0",
+        "package_root": "/home/operator/triton-toolchain/triton",
+        "package_sha256": "a" * 64,
+        "bishengir_sha256": "b" * 64,
+        "bisheng_sha256": "c" * 64,
+    }
+
+
+def test_triton_compile_mounts_only_pinned_frontend_without_devices(tmp_path, monkeypatch):
+    import json
+
+    config, token, calls = setup(tmp_path, monkeypatch)
+    assert "triton" not in config.model_dump(mode="json")
+    config = WorkerProfile.model_validate(config.model_dump() | {"triton": triton_pins()})
+    (Path(config.workspace) / token.hex / "input/build.json").write_text(
+        json.dumps({"wrapper_name": "launch.py", "backend": "triton", "triton": triton_pins()})
+    )
+    supervise(config, token, "compile")
+    args = next(c for c in calls if c[:2] == ["docker", "run"])
+    assert "--device" not in args and "TORCH_DEVICE_BACKEND_AUTOLOAD=0" in args
+    assert "TRITON_CACHE_DIR=/tmp/triton-cache" in args
+    assert any(
+        "src=/home/operator/triton-toolchain/triton" in a and a.endswith("readonly") for a in args
+    )
+    calls.clear()
+    supervise(config, token, "runtime")
+    args = next(c for c in calls if c[:2] == ["docker", "run"])
+    assert not any("triton-toolchain" in a or "TRITON_CACHE_DIR=" in a for a in args)
