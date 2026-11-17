@@ -345,3 +345,19 @@ def test_triton_compile_mounts_only_pinned_frontend_without_devices(tmp_path, mo
     supervise(config, token, "runtime")
     args = next(c for c in calls if c[:2] == ["docker", "run"])
     assert not any("triton-toolchain" in a or "TRITON_CACHE_DIR=" in a for a in args)
+
+
+def test_ascendc_tensor_compile_uses_pinned_tools_without_framework_mounts(tmp_path, monkeypatch):
+    import json
+
+    config, token, calls = setup(tmp_path, monkeypatch)
+    assert "ascendc" not in config.model_dump(mode="json")
+    pins = {"bisheng_sha256": "a" * 64, "ld_sha256": "b" * 64}
+    config = WorkerProfile.model_validate(config.model_dump() | {"ascendc": pins})
+    (Path(config.workspace) / token.hex / "input/build.json").write_text(
+        json.dumps({"wrapper_name": "launch.py", "backend": "ascendc-tensor", "ascendc": pins})
+    )
+    supervise(config, token, "compile")
+    args = next(c for c in calls if c[:2] == ["docker", "run"])
+    assert "--device" not in args and "TORCH_DEVICE_BACKEND_AUTOLOAD=0" in args
+    assert not any("TRITON_CACHE_DIR=" in a or "CATLASS_DSL_CACHE_DIR=" in a for a in args)

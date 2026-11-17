@@ -52,6 +52,18 @@ def snapshot():
    activations=db.scalar(select(func.count()).select_from(PublicationEvent)
     .where(PublicationEvent.kind=='published')))
 mode=sys.argv[1] if len(sys.argv)>1 else 'worker'
+if mode=='read_snapshot':
+ from cannery.git_intake import SnapshotBinding
+ from cannery.git_intake.snapshots import SnapshotStore
+ from cannery.submissions.models import Candidate
+ with Session(engine) as db:binding=SnapshotBinding.model_validate(db.get(Candidate,key).snapshot)
+ store=SnapshotStore(Path(Settings().snapshot_root));assert store.read(binding).files
+ try:(store.root/'must-not-write').write_text('bad')
+ except OSError as error:
+  import errno
+  assert error.errno==errno.EROFS
+ else:raise AssertionError('Snapshot mount must be read-only')
+ print('read-only retained snapshot verified');raise SystemExit
 if mode=='seed':
  # Only our locally generated trusted fixture pickle is mounted into these isolated containers.
  tables,blobs=pickle.loads((root/'fixture').read_bytes())
@@ -154,14 +166,21 @@ def test_two_publishers_recover_and_fence_withdrawal(admission, setup_executor, 
         "CANNERY_ARTIFACT_URL": "http://artifacts:8000",
         "CANNERY_ARTIFACT_READ_TOKEN": "${READ_TOKEN}",
         "CANNERY_ARTIFACT_WRITE_TOKEN": "${WRITE_TOKEN}",
+        "CANNERY_SNAPSHOT_ROOT": "/var/lib/cannery/snapshots",
     }
     worker = {
         "image": image,
         "pull_policy": "never",
         "user": "0:0",
         "init": True,
+        "read_only": True,
+        "tmpfs": ["/tmp:size=32m"],
         "environment": settings | {"NODE": "node1"},
-        "volumes": [f"{control}:/control", f"{node}:/probe/node.py:ro"],
+        "volumes": [
+            f"{control}:/control",
+            f"{node}:/probe/node.py:ro",
+            f"{control / 'snapshots'}:/var/lib/cannery/snapshots:ro",
+        ],
         "command": ["python", "/probe/node.py"],
         "pids_limit": 64,
     }
@@ -257,6 +276,9 @@ def test_two_publishers_recover_and_fence_withdrawal(admission, setup_executor, 
         compose("wait", "migrate")
         artifact_ready()
         compose("run", "--rm", "--no-deps", "node1", "python", "/probe/node.py", "seed")
+        assert "read-only retained snapshot verified" in compose(
+            "run", "--rm", "--no-deps", "node1", "python", "/probe/node.py", "read_snapshot"
+        )
         assert json.loads(
             compose("run", "--rm", "--no-deps", "node1", "python", "/probe/node.py", "reuse")
         )["reused"]

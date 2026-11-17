@@ -70,6 +70,11 @@ def test_a3_overlay_is_opt_in_and_keeps_existing_workers_on_bridge():
         timeout=20,
     )
     services = json.loads(result.stdout)["services"]
+    publisher = services["publisher"]
+    assert publisher["environment"]["CANNERY_SNAPSHOT_ROOT"] == "/var/lib/cannery/snapshots"
+    assert publisher["read_only"]
+    snapshots = next(m for m in publisher["volumes"] if m["target"] == "/var/lib/cannery/snapshots")
+    assert snapshots["source"] == "git-snapshots" and snapshots["read_only"]
     for name in ["builder", "validator", "benchmarker"]:
         assert "network_mode" not in services[name]
         assert services[name]["environment"]["CANNERY_BUILD_LOADER_SHA256"] == "a" * 64

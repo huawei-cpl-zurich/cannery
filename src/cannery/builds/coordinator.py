@@ -42,10 +42,13 @@ from cannery.builds.state import (
 )
 from cannery.database import make_engine
 from cannery.devices import Device
+from cannery.git_intake import SnapshotBinding
 from cannery.git_intake.snapshots import SnapshotStore
+from cannery.registry.models import SpecVersion
+from cannery.registry.tensor_manifest import ValidatedTensorSpec, validate_tensor_spec
 from cannery.settings import Settings
 from cannery.shutdown import stop_on_term
-from cannery.submissions.models import Candidate, SubmissionReuse
+from cannery.submissions.models import Candidate, Submission, SubmissionReuse
 
 
 def discover(engine: Engine, *, device: Device = "a5") -> None:
@@ -147,6 +150,25 @@ def evidence(executor: BuildExecutor) -> dict[str, Any]:
     return details
 
 
+def retained_tensor_spec(engine: Engine, key: UUID, executor: BuildExecutor) -> ValidatedTensorSpec:
+    """Read the exact spec selected at ingress, without executing its reference."""
+    with Session(engine) as session:
+        request = session.get(Submission, key)
+        frozen = session.get(SpecVersion, request.spec_id) if request is not None else None
+        if frozen is None:
+            raise ExecutionFailure("retained_spec_missing")
+        binding = SnapshotBinding.model_validate(frozen.snapshot)
+        tensor = validate_tensor_spec(executor.snapshots.read(binding).files, binding.source.path)
+        if (
+            tensor.spec.content_sha256 != frozen.content_sha256
+            or tensor.spec.file_sha256 != frozen.file_sha256
+            or tensor.spec.manifest.model_dump(mode="json") != frozen.manifest
+            or tensor.spec.manifest.spec.version != frozen.version
+        ):
+            raise ExecutionFailure("retained_spec_mismatch")
+        return tensor
+
+
 def process(
     engine: Engine,
     key: UUID,
@@ -165,7 +187,13 @@ def process(
                 if candidate is None:
                     raise ExecutionFailure("retained_source_missing")
             try:
-                reference = executor.execute(candidate, claim.attempt, keeper.fence)
+                if candidate.manifest.get("schema_version") == 2:
+                    frozen = retained_tensor_spec(engine, key, executor)
+                    reference = executor.execute(
+                        candidate, claim.attempt, keeper.fence, frozen=frozen
+                    )
+                else:
+                    reference = executor.execute(candidate, claim.attempt, keeper.fence)
             except (BuildError, RemoteFailure) as failure:
                 if list(executor.remote.journal.glob("*.dispatch")):
                     executor.cleanup(claim.attempt)
