@@ -5,8 +5,8 @@ import json
 from pathlib import Path
 
 from cannery.builds import catlass, catlass_tensor, tensor_native
-from cannery.builds.ascendc import BuildError, BuildPlan
-from cannery.builds.tensor_signatures import tensor_variants
+from cannery.builds.ascendc import BuildPlan
+from cannery.builds.tensor_signatures import tensor_build_parameters
 from cannery.registry.tensor_manifest import ValidatedTensorSpec
 from cannery.submissions.manifest import SubmissionManifest
 
@@ -29,30 +29,7 @@ class CatlassTensorAdapter:
     def build(
         self, manifest: SubmissionManifest, frozen: ValidatedTensorSpec, abi_header: str
     ) -> BuildPlan:
-        impl = manifest.implementation
-        if (
-            (manifest.schema_version, impl.language, impl.device, impl.build.abi)
-            != (2, "catlass", "a5", "tensor-v2")
-            or impl.build.options.optimization != "release"
-            or frozen.spec.manifest.schema_version != 2
-            or manifest.spec_version != frozen.spec.manifest.spec.version
-            or manifest.kernel
-            != f"{frozen.spec.manifest.kernel.namespace}/{frozen.spec.manifest.kernel.name}"
-            or not isinstance(abi_header, str)
-            or not abi_header
-            or "cannery_prepare_tensor_v2" not in abi_header
-            or len(abi_header.encode()) > 16384
-        ):
-            raise BuildError(
-                "Requires matching A5 tensor spec, CATLASS submission and pinned ABI header"
-            )
-        entry, symbol = impl.entrypoint.split(":")
-        parameters = {
-            "entry": entry,
-            "symbol": symbol,
-            "variants": tensor_variants(frozen),
-            "abi_header": abi_header,
-        }
+        parameters = tensor_build_parameters(manifest, frozen, abi_header, "catlass")
         helpers = "\n".join(
             inspect.getsource(value)
             for value in (
