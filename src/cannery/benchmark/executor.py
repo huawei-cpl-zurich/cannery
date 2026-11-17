@@ -295,7 +295,15 @@ class BenchmarkExecutor(BuildExecutor):
                 if isinstance(suite, RecipeSuiteV2):
                     assert contract is not None
                     summary = (
-                        tensor_score(suite, contract, reference_samples, samples) if passed else {}
+                        tensor_score(
+                            suite,
+                            contract,
+                            reference_samples,
+                            samples,
+                            first_input=spec.manifest.spec.interface.inputs[0],
+                        )
+                        if passed
+                        else {}
                     )
                 else:
                     summary = score(suite, reference_samples, samples) if passed else {}
