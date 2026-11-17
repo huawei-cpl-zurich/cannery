@@ -47,6 +47,11 @@ class CatlassToolchain(StrictModel):
         return self
 
 
+class AscendCToolchain(StrictModel):
+    bisheng_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    ld_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+
 class TritonToolchain(StrictModel):
     cube_cores: int = Field(strict=True, ge=1, le=256)
     vector_cores: int = Field(strict=True, ge=1, le=256)
@@ -86,6 +91,7 @@ class WorkerProfile(StrictModel):
     compiler: str = Field(min_length=1, max_length=4096)
     catlass: CatlassToolchain | None = None
     triton: TritonToolchain | None = None
+    ascendc: AscendCToolchain | None = None
 
     @model_serializer(mode="wrap")
     def serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -95,6 +101,8 @@ class WorkerProfile(StrictModel):
             value.pop("device", None)
         if not self.toolchain_in_image:
             value.pop("toolchain_in_image", None)
+        if self.ascendc is None:
+            value.pop("ascendc", None)
         if self.triton is None:
             value.pop("triton", None)
         return value
@@ -290,6 +298,11 @@ if phase == 'compile':
                  '--env','PYTHONPATH='+str(package.parent)+':'+os.environ.get('PYTHONPATH',''),
                  '--env','TRITON_CACHE_DIR=/tmp/triton-cache',
                  '--env','TORCH_DEVICE_BACKEND_AUTOLOAD=0']
+    elif plan.get('backend')=='ascendc-tensor':
+        pins=config.get('ascendc')
+        if not pins or plan.get('ascendc')!=pins or plan.get('wrapper_name')!='launch.py':
+            raise ValueError('Ascend C toolchain pins unavailable or mismatched')
+        args += ['--env','TORCH_DEVICE_BACKEND_AUTOLOAD=0']
     elif plan.get('wrapper_name', 'launch.asc') == 'launch.py':
         pins = config.get('catlass')
         if not pins or plan.get('catlass') != pins:

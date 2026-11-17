@@ -15,13 +15,17 @@ def tensor_score(
     contract: TensorContractV2,
     reference: dict[str, list[float]],
     candidate: dict[str, list[float]],
+    *,
+    first_input: str,
 ) -> dict[str, Any]:
+    if any(first_input not in case.inputs for case in suite.cases):
+        raise ValueError("Display input must belong to every frozen case")
     timed = set(tensor_timed_cases(suite, contract))
     if set(reference) != timed or set(candidate) != timed:
         raise ValueError("Timing must cover every nonempty tensor case")
     cases, ratios = [], []
     for case in suite.cases:
-        row: dict[str, Any] = {"id": case.id, "shape": list(next(iter(case.inputs.values())).shape)}
+        row: dict[str, Any] = {"id": case.id, "shape": list(case.inputs[first_input].shape)}
         if case.id not in timed:
             row["excluded"] = "empty_correctness_only"
         else:

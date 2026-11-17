@@ -77,9 +77,20 @@ def tensor_benchmark(tensor_validation, tensor_control):
 
 def test_tensor_timing_is_scored_only_after_both_numeric_checks(tensor_benchmark):
     executor, options, reply, remote, memory = tensor_benchmark
+    suite = options["suite"]
+    options["suite"] = suite.model_copy(
+        update={
+            "cases": tuple(
+                case.model_copy(update={"inputs": dict(reversed(list(case.inputs.items())))})
+                for case in suite.cases
+            )
+        }
+    )
+    assert next(iter(options["suite"].cases[0].inputs.values())).shape == (4, 3)
     attempt = uuid4()
     report, artifact = executor.benchmark(attempt, lambda: None, **options)
     assert report["passed"] and report["protocol"] == TENSOR_PROTOCOL
+    assert report["cases"][0]["shape"] == [2, 3]
     assert report["geomean_speedup"] == 2 and all(c["passed"] for c in report["correctness"])
     assert executor.benchmark(attempt, lambda: None, **options) == (report, artifact)
     assert remote.uploads.count("benchmark.tar.gz") == 1

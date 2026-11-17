@@ -8,7 +8,7 @@
 <p>{{ release.kernel }}@spec-v{{ release.spec_version }} · {{ release.device }} · {{ release.language }} · published <time datetime="{{ release.published_at }}" title="{{ release.published_at }}">{{ release.published_at|publication_date }}</time> by {{ release.publisher }}</p>
 <p>Release <code>{{ release.id }}</code>. Geometric mean speedup: {% if release.score.geomean_speedup is not none %}{{ release.score.geomean_speedup|number }}×{% else %}unscored{% endif %}.</p>
 <p>Exact runtime: <code>{{ release.runtime }}</code>. Cohort: <code>{{ release.cohort }}</code>.</p>
-<p>Validated tolerances: {% for pair in release.tolerances %}rtol {{ pair.rtol|number }}, atol {{ pair.atol|number }}{% if not loop.last %}; {% endif %}{% endfor %}. ABI: {{ release.abi }}. Shapes: {{ release.specializations if release.specializations else 'dynamic float32' }}.</p>
+<p>Validated tolerances: {% for pair in release.tolerances %}rtol {{ pair.rtol|number }}, atol {{ pair.atol|number }}{% if not loop.last %}; {% endif %}{% endfor %}. ABI: {{ release.abi }}. {% if release.abi == 'tensor-v2' %}Static named tensor domains: {{ release.cases|length }} cases (see manifest for shapes, dtypes, and scalar values).{% else %}Shapes: {{ release.specializations if release.specializations else 'dynamic float32' }}.{% endif %}</p>
 {% set links=release.source|source_links %}
 <p>Source: {% if links %}<a href="{{ links.code or links.repository }}" rel="noreferrer">{{ release.source.url }}</a>{% else %}{{ release.source.url }}{% endif %} · <code>{{ release.source.commit }}</code> · {{ release.source.path }}.</p>
 <p>Manifest SHA256: <code>{{ release.manifest_sha256 }}</code>. Package SHA256: <code>{{ release.package_sha256 }}</code>.</p>
