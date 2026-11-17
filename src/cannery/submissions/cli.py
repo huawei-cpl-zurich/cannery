@@ -11,7 +11,7 @@ from pydantic import TypeAdapter
 
 from cannery.accounts.client import headers as auth_headers
 from cannery.git_intake import GitSource
-from cannery.submissions.manifest import Device, KernelPath, Language
+from cannery.submissions.manifest import Device, KernelPath, TensorLanguage
 
 
 def send(
@@ -104,7 +104,7 @@ def install_cli(app: typer.Typer) -> None:
         path: Annotated[str, typer.Option()],
         spec_version: Annotated[int, typer.Option(min=1)],
         device: Annotated[Device, typer.Option()],
-        lang: Annotated[Language, typer.Option()],
+        lang: Annotated[TensorLanguage, typer.Option()],
         implementation_name: Annotated[str | None, typer.Option("--name")] = None,
         dependency: Annotated[list[str] | None, typer.Option("--dependency")] = None,
         url: str = "http://127.0.0.1:8000",

@@ -65,11 +65,10 @@ def test_unsupported_tensor_contract_combinations_rejected(mutation):
         validate_tensor_submission(files, "candidate")
 
 
-def test_tensor_reader_does_not_admit_legacy_sources_or_change_requested_target():
+def test_tensor_reader_does_not_admit_legacy_sources_and_target_can_describe_triton():
     with pytest.raises(SubmissionError):
         validate_tensor_submission(submission_files(), "candidate")
-    with pytest.raises(ValueError):
-        RequestedTarget(device="a5", language="triton")
+    assert RequestedTarget(device="a5", language="triton").language == "triton"
     manifest = yaml.safe_load(tensor_files()["candidate/submission.yaml"])
     for abi in (None, "unary-f32-v1", "catlass-unary-f32-v1"):
         altered = copy.deepcopy(manifest)
