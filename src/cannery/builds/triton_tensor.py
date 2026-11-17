@@ -57,6 +57,7 @@ def validate_triton_export(
         for field, default, allowed in [
             ("workspace_size", -1, (-1, 0)),
             ("sync_block_lock_layout", 0, (0,)),
+            ("lock_num", 0, (0,)),
         ]:
             value = metadata.get(field, default)
             if type(value) is not int or value not in allowed:
