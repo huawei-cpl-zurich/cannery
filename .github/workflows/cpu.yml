@@ -17,6 +17,7 @@ jobs:
           CANNERY_ORACLE_TEST_IMAGE=cannery-tensor-oracle-test
           pytest -q tests/test_tensor_oracle_worker.py tests/test_oracle_worker.py
           tests/test_oracle_job.py tests/test_tensor_oracle_job_docker.py
+          tests/test_tensor_validation_runtime.py
 
   quality:
     runs-on: ubuntu-24.04
