@@ -8,6 +8,7 @@ from dataclasses import replace
 from uuid import uuid4
 
 import pytest
+import yaml
 from test_build_executor import setup_executor as setup_executor
 from test_build_sandbox import catlass_pins
 from test_tensor_spec_reader import tensor_files
@@ -16,7 +17,7 @@ from test_tensor_submission_reader import tensor_files as submission_files
 from cannery.artifacts import digest
 from cannery.builds.executor import ExecutionFailure, tensor_smoke_program
 from cannery.builds.remote import RemotePending
-from cannery.builds.sandbox import CatlassToolchain, TritonToolchain
+from cannery.builds.sandbox import AscendCToolchain, CatlassToolchain, TritonToolchain
 from cannery.builds.tensor_signatures import tensor_variants
 from cannery.git_intake import GitSource
 from cannery.git_intake.snapshots import SelectedTree
@@ -24,10 +25,19 @@ from cannery.registry.tensor_manifest import validate_tensor_spec
 from cannery.submissions.manifest import validate_tensor_submission
 
 
-@pytest.fixture(params=["catlass", "triton"])
+@pytest.fixture(params=["catlass", "triton", "ascendc"])
 def tensor_build(setup_executor, request):
     executor, candidate, remote, memory = setup_executor
     files = submission_files(request.param)
+    if request.param == "ascendc":
+        value = yaml.safe_load(files["candidate/submission.yaml"])
+        value["implementation"]["entrypoint"] = "factory.py:build"
+        value["implementation"]["build"]["inputs"].append("factory.py")
+        files["candidate/submission.yaml"] = yaml.safe_dump(value).encode()
+        files["candidate/factory.py"] = b"def build(signature): pass\n"
+        executor.profile = executor.profile.model_copy(
+            update={"ascendc": AscendCToolchain(bisheng_sha256="d" * 64, ld_sha256="e" * 64)}
+        )
     valid = validate_tensor_submission(files, "candidate")
     binding = executor.snapshots.commit(
         "d" * 64,
@@ -69,7 +79,10 @@ def test_tensor_compile_package_and_native_smoke_follow_durable_flow(tensor_buil
     assert metadata["variants"] == tensor_variants(frozen)
     compiler = json.loads(metadata["compiler"])
     backend = candidate.manifest["implementation"]["language"]
-    assert compiler[backend]["package_sha256"] == "a" * 64
+    if backend == "ascendc":
+        assert compiler[backend] == {"bisheng_sha256": "d" * 64, "ld_sha256": "e" * 64}
+    else:
+        assert compiler[backend]["package_sha256"] == "a" * 64
     assert "bitcode_root" not in compiler[backend] and "package_root" not in compiler[backend]
     context = json.loads((remote.journal / "context.json").read_bytes())
     assert context["tensor_spec"] == frozen.spec.content_sha256
