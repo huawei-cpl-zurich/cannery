@@ -9,21 +9,38 @@ from test_build_state import candidate
 from test_numerical_evaluation import arguments as arguments
 from test_recipe_spec import recipe_spec
 from test_submission_requests import records as records
+from test_tensor_benchmark_executor import tensor_benchmark as tensor_benchmark
+from test_tensor_numerical_executor import tensor_control as tensor_control
+from test_tensor_numerical_executor import tensor_validation as tensor_validation
+from test_tensor_spec_reader import tensor_files
 
+from cannery.artifacts import ArtifactError
 from cannery.benchmark import scheduling
+from cannery.benchmark.contract import Cohort
 from cannery.benchmark.evidence import timing_artifact
 from cannery.benchmark.state import PerformanceJob, claim_job, finish_job
+from cannery.benchmark.tensor_evidence import tensor_timing_artifact
+from cannery.benchmark.tensor_timing import tensor_timed_cases
 from cannery.builds.state import claim_build, finish_build
+from cannery.numerics.recipes_v2 import RecipeSuiteV2
 from cannery.numerics.state import NumericalState, claim_numerical, finish_numerical
 from cannery.registry.freeze import BaselineEvidence
 from cannery.registry.models import SpecVersion
 from cannery.submissions.models import Candidate
 
 
-@pytest.fixture
-def queue(records, benchmark, monkeypatch):
+@pytest.fixture(params=["unary", "tensor"])
+def queue(records, benchmark, monkeypatch, request):
     engine, _ = records
     _, executor, _, memory, _, spec, suite, cohort = benchmark
+    contract = None
+    if request.param == "tensor":
+        executor, options, _, _, memory = request.getfixturevalue("tensor_benchmark")
+        spec, suite, cohort, contract = (
+            options[name] for name in ["spec", "suite", "cohort", "contract"]
+        )
+        # Worker discovery starts from hardware identity, then selects the suite protocol.
+        cohort = cohort.model_copy(update={"protocol": "sync-call-v1"})
     binary = memory.put("binary.tar", b"admitted")
     baseline = BaselineEvidence(
         spec_sha256=spec.content_sha256,
@@ -53,6 +70,7 @@ def queue(records, benchmark, monkeypatch):
             "baseline": "cpu-cache",
             "binary": binary,
             "baseline_artifact": "private-cpu-artifact",
+            **({"contract": contract} if contract is not None else {}),
         }
 
     monkeypatch.setattr(scheduling, "retained_numerical", retained)
@@ -63,7 +81,11 @@ def queue(records, benchmark, monkeypatch):
             model_validate=lambda _: SimpleNamespace(source=SimpleNamespace(path="spec"))
         ),
     )
-    executor.snapshots = SimpleNamespace(read=lambda _: SimpleNamespace(files=recipe_spec()[0]))
+    executor.snapshots = SimpleNamespace(
+        read=lambda _: SimpleNamespace(
+            files=tensor_files() if contract is not None else recipe_spec()[0]
+        )
+    )
 
     def add(passed=True):
         key = candidate(records)
@@ -87,7 +109,7 @@ def queue(records, benchmark, monkeypatch):
 
 
 def test_only_passed_candidates_discovered_once_and_share_reference(queue):
-    engine, executor, _, _, _, cohort, add = queue
+    engine, executor, _, _, suite, cohort, add = queue
     first, second, wrong = add(), add(), add(False)
     scheduling.discover(engine, cohort)
     scheduling.discover(engine, cohort)
@@ -97,11 +119,14 @@ def test_only_passed_candidates_discovered_once_and_share_reference(queue):
         refs = [r for r in jobs if r.kind == "reference"]
         candidates = [r for r in jobs if r.kind == "candidate"]
         assert len(refs) == 1 and {c.candidate_id for c in candidates} == {first, second}
+        assert refs[0].identity["cohort"]["protocol"] == (
+            "sync-call-tensor-v2" if suite.generator == "sha256-tensor-v2" else "sync-call-v1"
+        )
         assert all(c.reference_key == refs[0].key for c in candidates)
         assert db.get(PerformanceJob, scheduling.candidate_key(wrong)) is None
 
 
-def test_reference_and_candidate_load_only_matching_completed_cache(queue):
+def test_reference_and_candidate_load_only_matching_completed_cache(queue, monkeypatch):
     engine, executor, memory, spec, suite, cohort, add = queue
     key = add()
     scheduling.discover(engine, cohort)
@@ -113,13 +138,28 @@ def test_reference_and_candidate_load_only_matching_completed_cache(queue):
     assert "binary" not in reference_inputs
     with pytest.raises(scheduling.ReferencePending):
         scheduling.retained(engine, job, executor)
-    values = {c.id: [1.0] * 100 for c in suite.cases[:-1]}
-    artifact = memory.put("raw.json", timing_artifact(spec.content_sha256, suite, cohort, values))
+    if isinstance(suite, RecipeSuiteV2):
+        contract = reference_inputs["contract"]
+        values = {key: [1.0] * 100 for key in tensor_timed_cases(suite, contract)}
+        measurement = Cohort.model_validate(reference.identity["cohort"])
+        packed = tensor_timing_artifact(spec.content_sha256, suite, contract, measurement, values)
+    else:
+        values = {c.id: [1.0] * 100 for c in suite.cases[:-1]}
+        packed = timing_artifact(spec.content_sha256, suite, cohort, values)
+    artifact = memory.put("raw.json", packed)
     claim = claim_job(engine, reference.key)
     assert finish_job(engine, claim, report={"passed": True}, artifact=artifact)
     inputs = scheduling.retained(engine, job, executor)
     assert inputs["reference_samples"] == values and inputs["reference_files"] is None
     assert inputs["candidate_sha256"] and inputs["binary"]
+    assert claim_job(engine, reference.key) is None
+
+    def disconnected(*args):
+        raise ArtifactError("injected storage disconnect")
+
+    monkeypatch.setattr(memory, "get", disconnected)
+    with pytest.raises(ArtifactError):
+        scheduling.retained(engine, job, executor)
     assert claim_job(engine, reference.key) is None
 
 
