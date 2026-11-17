@@ -13,11 +13,19 @@ from cannery.artifacts import ArtifactRef, digest, verified
 from cannery.builds.executor import BuildExecutor, ExecutionFailure
 from cannery.builds.remote import RemoteFailure, RemotePending, durable_write
 from cannery.builds.sandbox import job_script
+from cannery.builds.tensor_signatures import tensor_variants
 from cannery.numerics.baseline_format import BaselineBundle
+from cannery.numerics.baseline_v2 import BaselineBundleV2
 from cannery.numerics.evaluation import evaluate
+from cannery.numerics.evaluation_v2 import evaluate_tensor
 from cannery.numerics.recipes import RecipeSuite
+from cannery.numerics.recipes_v2 import RecipeSuiteV2
+from cannery.numerics.tensor_contract import TensorContractV2
+from cannery.numerics.validation_protocol_v2 import parse_tensor_results
 from cannery.numerics.validation_runtime import parse_results, runtime_program
+from cannery.numerics.validation_runtime_v2 import tensor_runtime_program
 from cannery.registry.manifest import ValidatedSpec
+from cannery.registry.tensor_manifest import ValidatedTensorSpec
 from cannery.submissions.manifest import SubmissionManifest
 from cannery.submissions.models import Candidate
 
@@ -30,15 +38,36 @@ class NumericalExecutor(BuildExecutor):
         fence: Callable[[], None],
         *,
         spec: ValidatedSpec,
-        suite: RecipeSuite,
-        baseline: BaselineBundle,
+        suite: RecipeSuite | RecipeSuiteV2,
+        baseline: BaselineBundle | BaselineBundleV2,
         binary: ArtifactRef,
         baseline_artifact: ArtifactRef,
+        contract: TensorContractV2 | None = None,
     ) -> dict[str, Any]:
         self.fence = fence
         manifest = SubmissionManifest.model_validate(candidate.manifest)
+        tensor = isinstance(suite, RecipeSuiteV2)
+        if isinstance(suite, RecipeSuiteV2):
+            if (
+                contract is None
+                or not isinstance(baseline, BaselineBundleV2)
+                or manifest.schema_version != 2
+                or spec.manifest.schema_version != 2
+                or self.profile.device != "a5"
+            ):
+                raise ExecutionFailure("tensor_validation_contract_mismatch")
+            contract.validate_suite(suite)
+        elif (
+            contract is not None
+            or not isinstance(baseline, BaselineBundle)
+            or manifest.schema_version != 1
+            or spec.manifest.schema_version != 1
+        ):
+            raise ExecutionFailure("validation_contract_mismatch")
         build = manifest.implementation.build
         if build.abi == "catlass-unary-f32-v1":
+            if not isinstance(suite, RecipeSuite):
+                raise ExecutionFailure("validation_contract_mismatch")
             covered = {tuple(s.shape) for s in build.specializations or ()}
             if any(tuple(next(iter(c.inputs.values())).shape) not in covered for c in suite.cases):
                 raise ExecutionFailure("unsupported_case_shape")
@@ -53,7 +82,7 @@ class NumericalExecutor(BuildExecutor):
             r"[A-Za-z0-9_.-]+\.whl", self.wheel.name
         ):
             raise ExecutionFailure("loader_digest_mismatch")
-        program = runtime_program()
+        program = tensor_runtime_program() if tensor else runtime_program()
         context = json.dumps(
             {
                 "profile": self.profile.model_dump(mode="json"),
@@ -65,6 +94,7 @@ class NumericalExecutor(BuildExecutor):
                 "suite": suite.sha256,
                 "defaults": spec.manifest.spec.validation.model_dump(mode="json"),
                 "requested": manifest.validation.model_dump(mode="json"),
+                **({"tensor_contract": contract.sha256} if contract is not None else {}),
                 "job_contract": digest(
                     job_script(
                         self.profile,
@@ -94,12 +124,21 @@ class NumericalExecutor(BuildExecutor):
                 member = archive.extractfile("metadata.json")
                 if member is None:
                     raise ValueError
-                metadata = json.loads(member.read(16385))
+                metadata = json.loads(member.read(256 * 1024 + 1 if tensor else 16385))
             if (
                 metadata["source_sha256"] != candidate.content_sha256
                 or metadata["runtime"] != self.profile.fingerprint
             ):
                 raise ValueError
+            if tensor:
+                assert isinstance(suite, RecipeSuiteV2) and contract is not None
+                if (
+                    metadata["schema_version"] != 3
+                    or metadata["abi"] != "tensor-v2"
+                    or metadata["variants"]
+                    != tensor_variants(ValidatedTensorSpec(spec, suite, contract))
+                ):
+                    raise ValueError
         except (ValueError, KeyError, tarfile.TarError):
             raise ExecutionFailure("admitted_artifact_mismatch") from None
         self.operation("prepare", job_script(self.profile, attempt, "prepare"))
@@ -114,8 +153,14 @@ class NumericalExecutor(BuildExecutor):
                     {
                         "suite": suite.model_dump(mode="json"),
                         "input_sha256": {
-                            c["id"]: c["input_sha256"] for c in baseline.metadata["cases"]
+                            c["id"]: c["inputs"] if tensor else c["input_sha256"]
+                            for c in baseline.metadata["cases"]
                         },
+                        **(
+                            {"contract": contract.model_dump(mode="json")}
+                            if contract is not None
+                            else {}
+                        ),
                     },
                     sort_keys=True,
                 ).encode(),
@@ -154,15 +199,29 @@ class NumericalExecutor(BuildExecutor):
         if digest(raw) != checksum:
             raise ExecutionFailure("numerical_digest_mismatch")
         try:
-            values = parse_results(raw, suite)
-            report = evaluate(
-                baseline,
-                suite,
-                {k: v.data for k, v in values.items()},
-                {k: v.input_sha256 for k, v in values.items()},
-                spec.manifest.spec.validation,
-                manifest.validation,
-            )
+            if isinstance(suite, RecipeSuiteV2):
+                assert isinstance(baseline, BaselineBundleV2) and contract is not None
+                tensors = parse_tensor_results(raw, suite, contract)
+                report = evaluate_tensor(
+                    baseline,
+                    suite,
+                    contract,
+                    tensors.outputs,
+                    tensors.input_hashes,
+                    spec.manifest.spec.validation,
+                    manifest.validation,
+                )
+            else:
+                assert isinstance(baseline, BaselineBundle)
+                values = parse_results(raw, suite)
+                report = evaluate(
+                    baseline,
+                    suite,
+                    {k: v.data for k, v in values.items()},
+                    {k: v.input_sha256 for k, v in values.items()},
+                    spec.manifest.spec.validation,
+                    manifest.validation,
+                )
         except ValueError:
             raise ExecutionFailure("invalid_numerical_output") from None
         report.update(
