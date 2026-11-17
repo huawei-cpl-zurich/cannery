@@ -14,6 +14,7 @@ from starlette.concurrency import run_in_threadpool
 from cannery.accounts.context import identity, template_context
 from cannery.registry.models import Kernel, SpecVersion
 from cannery.releases.api import publish, withdraw_publication
+from cannery.releases.details import tensor_comparison
 from cannery.settings import Settings
 from cannery.submissions.api import (
     RevisionRequest,
@@ -34,6 +35,26 @@ from cannery.web.examples import (
     SUBMISSION,
 )
 from cannery.web.presentation import configure
+
+
+def numerical_cases(job: dict[str, Any]) -> list[dict[str, Any]]:
+    numerical = job.get("numerical")
+    report = numerical.get("report") if numerical else None
+    if not report:
+        return []
+    if report.get("schema_version", 1) != 2:
+        return list(report["cases"])
+    return [
+        {
+            "id": f"{case['id']}/{name}",
+            "input_unchanged": case["readonly_inputs_unchanged"]
+            and case["mutable_aliases_consistent"],
+            "spec_default": tensor_comparison(output["spec_default"]),
+            "submission_requested": tensor_comparison(output["submission_requested"]),
+        }
+        for case in report["cases"]
+        for name, output in case["outputs"].items()
+    ]
 
 
 async def form_data(request: Request, allowed: set[str]) -> dict[str, str]:
@@ -221,6 +242,7 @@ def install_submission_web(
             request,
             "My Submissions",
             job=job,
+            numerical_cases=numerical_cases(job),
             pending=submission_pending(job, settings.benchmark_enabled),
         )
 
