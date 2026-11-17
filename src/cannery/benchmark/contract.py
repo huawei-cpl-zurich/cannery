@@ -11,6 +11,7 @@ from pydantic import Field, model_validator
 from cannery.artifacts import digest
 from cannery.devices import Device, matches_soc
 from cannery.numerics.recipes import RecipeSuite
+from cannery.numerics.recipes_v2 import RecipeSuiteV2
 from cannery.registry.manifest import StrictModel, unique_pairs
 
 PROTOCOL: Literal["sync-call-v1"] = "sync-call-v1"
@@ -28,7 +29,7 @@ class Cohort(StrictModel):
     image: str = Field(pattern=r"^sha256:[a-f0-9]{64}$")
     loader_sha256: str = Field(pattern=SHA)
     runtime: dict[str, str]
-    protocol: Literal["sync-call-v1"] = PROTOCOL
+    protocol: Literal["sync-call-v1", "sync-call-tensor-v2"] = PROTOCOL
 
     @model_validator(mode="after")
     def complete_runtime(self) -> "Cohort":
@@ -41,12 +42,14 @@ class Cohort(StrictModel):
             "soc",
         } or not all(self.runtime.values()):
             raise ValueError("Incomplete runtime fingerprint")
+        if self.protocol == "sync-call-tensor-v2" and self.device != "a5":
+            raise ValueError("Tensor timing requires A5")
         if not matches_soc(self.device, self.runtime["soc"]):
             raise ValueError("Cohort device/SoC mismatch")
         return self
 
 
-def cache_key(spec_sha256: str, suite: RecipeSuite, cohort: Cohort) -> str:
+def cache_key(spec_sha256: str, suite: RecipeSuite | RecipeSuiteV2, cohort: Cohort) -> str:
     return reference_key(spec_sha256, suite.sha256, suite.generator, cohort)
 
 
@@ -55,7 +58,11 @@ def reference_key(spec_sha256: str, suite_sha256: str, generator: str, cohort: C
     for value in (spec_sha256, suite_sha256):
         if len(value) != 64 or any(c not in "0123456789abcdef" for c in value):
             raise ValueError("Invalid specification or suite digest")
-    if generator != "sha256-f32-v1":
+    expected_generator = {
+        "sync-call-v1": "sha256-f32-v1",
+        "sync-call-tensor-v2": "sha256-tensor-v2",
+    }[cohort.protocol]
+    if generator != expected_generator:
         raise ValueError("Unsupported input generator")
     return digest(
         json.dumps(
