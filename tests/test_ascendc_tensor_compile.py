@@ -59,6 +59,7 @@ def compiler(tmp_path, monkeypatch):
             "entrypoint": "ascendc_tensor_add",
             "bindings": [["input", "x"], ["input", "cache"], ["output", "indices"]],
             "block_num": 1,
+            "include_dirs": control.get("include_dirs", []),
         }
 
     monkeypatch.setitem(sys.modules, "fixture_ascendc_exports", SimpleNamespace(factory=factory))
@@ -126,3 +127,12 @@ def test_existing_cpp_tensor_declarations_fail_with_explicit_factory_requirement
             validate_tensor_spec(tensor_files(), "spec"),
             "int cannery_prepare_tensor_v2(void);",
         )
+
+
+@pytest.mark.parametrize("directory", ["../", "/tmp", "missing"])
+def test_source_include_paths_cannot_escape_snapshot(compiler, directory):
+    ns, config, source, out, control, _ = compiler
+    control["include_dirs"] = [directory]
+    with pytest.raises(ValueError, match="include directory"):
+        ns["compile_ascendc"](config, source, out)
+    assert not control["commands"]

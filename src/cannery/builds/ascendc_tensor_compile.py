@@ -62,15 +62,27 @@ def compile_ascendc(plan,source,output):
     for index,signature in enumerate(PARAMETERS['variants']):
         request=factory(copy.deepcopy(signature))
         fields={'source','entrypoint','bindings','block_num'}
-        if type(request) is not dict or set(request)!=fields:
+        if (type(request) is not dict or not fields<=set(request)
+            or set(request)-fields-{'include_dirs'}):
             raise BuildError('Expected Ascend C source and static export declaration')
+        directories=request.get('include_dirs',[])
+        if type(directories) is not list or len(directories)>16:
+            raise BuildError('Invalid Ascend C include directories')
+        includes=['-I',str(source)]
+        for directory in directories:
+            if type(directory) is not str or Path(directory).is_absolute():
+                raise BuildError('Invalid Ascend C include directory')
+            path=(source/directory).resolve()
+            if not path.is_relative_to(source) or not path.is_dir():
+                raise BuildError('Ascend C include directory outside source')
+            includes+=['-I',str(path)]
         code=request['source']
         if type(code) is not str or not 1<=len(code.encode())<=131072:
             raise BuildError('Invalid generated Ascend C source size')
         path=output.parent/f'variant-{index}.asc';path.write_text(code)
         obj=path.with_suffix('.o');binary=path.with_suffix('.bin')
         subprocess.run([compiler,'-O2','-x','asc','--npu-arch=dav-3510','--cce-aicore-only',
-            '-I',str(source),str(path),'-o',str(obj)],check=True,stdout=sys.stderr,timeout=120)
+            *includes,str(path),'-o',str(obj)],check=True,stdout=sys.stderr,timeout=120)
         if obj.stat().st_size>MAX_OBJECT_BYTES:raise BuildError('Ascend C object size limit')
         subprocess.run([linker,'-m','aicorelinux','-Ttext=0',str(obj),'-o',str(binary)],
             check=True,stdout=sys.stderr,timeout=60)
