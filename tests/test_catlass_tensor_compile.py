@@ -1,3 +1,4 @@
+import copy
 import hashlib
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
@@ -118,6 +119,9 @@ def compilation(tmp_path, monkeypatch):
 
     def build_variant(signature):
         control["calls"] += 1
+        if control["fault"] == "mutate":
+            signature["inputs"][0]["shape"][:] = [99]
+            signature["scalars"][0]["value"] = 99
         bindings = [["input", "x"], ["input", "cache"], ["output", "indices"]]
         arguments = []
         for index, (direction, name) in enumerate(bindings):
@@ -194,4 +198,14 @@ def test_changed_pins_and_unconfined_exports_fail_before_link(compilation, fault
         control["fault"] = "escape"
     with pytest.raises(ValueError):
         ns["compile_tensor_exports"](pins, source, output)
+    assert not control["commands"] and not output.exists()
+
+
+def test_author_mutation_cannot_change_frozen_signatures(compilation):
+    ns, pins, source, output, control, _, _ = compilation
+    original = copy.deepcopy(ns["PARAMETERS"]["variants"])
+    control["fault"] = "mutate"
+    with pytest.raises(ns["BuildError"]):
+        ns["compile_tensor_exports"](pins, source, output)
+    assert ns["PARAMETERS"]["variants"] == original
     assert not control["commands"] and not output.exists()
