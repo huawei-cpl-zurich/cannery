@@ -61,6 +61,11 @@ def compile_triton(plan,source,output):
     if (package.resolve()!=Path(pins['package_root']).resolve()
         or triton.__version__!=pins['version'] or package_sha256(package)!=pins['package_sha256']):
         raise BuildError('Triton frontend fingerprint mismatch')
+    # The read-only namespace mount intentionally excludes distribution entry points.
+    from triton.backends import Backend,backends
+    from triton.backends.ascend.compiler import AscendBackend
+    from triton.backends.ascend.driver import NPUDriver
+    backends.clear();backends['ascend']=Backend(AscendBackend,NPUDriver)
     source=source.resolve();entry=(source/PARAMETERS['entry']).resolve()
     if not entry.is_relative_to(source):raise BuildError('Entrypoint outside source tree')
     sys.path.insert(0,str(source))

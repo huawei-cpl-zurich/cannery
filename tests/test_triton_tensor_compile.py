@@ -38,6 +38,13 @@ def compiler(tmp_path, monkeypatch):
     framework.__path__ = []
     compiler_module = ModuleType("triton.compiler")
     compiler_module.ASTSource = lambda fn, **kwargs: SimpleNamespace(fn=fn, **kwargs)
+    registry = ModuleType("triton.backends")
+    registry.backends = {}
+    registry.Backend = lambda compiler, driver: SimpleNamespace(compiler=compiler, driver=driver)
+    ascend_compiler = ModuleType("triton.backends.ascend.compiler")
+    ascend_compiler.AscendBackend = object()
+    ascend_driver = ModuleType("triton.backends.ascend.driver")
+    ascend_driver.NPUDriver = object()
     backend = ModuleType("triton.backends.compiler")
     backend.GPUTarget = lambda *args: args
     controls = {"fault": None, "calls": [], "commands": []}
@@ -47,6 +54,9 @@ def compiler(tmp_path, monkeypatch):
 
     def compile_source(src, *, target):
         controls["calls"].append((src, target))
+        assert list(registry.backends) == ["ascend"]
+        assert registry.backends["ascend"].compiler is ascend_compiler.AscendBackend
+        assert registry.backends["ascend"].driver is ascend_driver.NPUDriver
         assert src.signature == {"x": "*fp16", "cache": "*fp16", "indices": "*i32"}
         values = copy.deepcopy(metadata)
         if controls["fault"] == "workspace":
@@ -60,6 +70,9 @@ def compiler(tmp_path, monkeypatch):
         ("triton", framework),
         ("triton.compiler", compiler_module),
         ("triton.backends.compiler", backend),
+        ("triton.backends", registry),
+        ("triton.backends.ascend.compiler", ascend_compiler),
+        ("triton.backends.ascend.driver", ascend_driver),
     ]:
         monkeypatch.setitem(sys.modules, name, module)
     root = tmp_path / "cann"
