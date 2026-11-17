@@ -23,10 +23,12 @@ from cannery.builds.remote import (
     durable_write,
     settle_operation,
 )
-from cannery.builds.sandbox import RUNTIME, WorkerProfile, job_script
+from cannery.builds.sandbox import WorkerProfile, job_script
 from cannery.builds.tensor_package import tensor_binary_package
 from cannery.git_intake import SnapshotBinding
 from cannery.git_intake.snapshots import SnapshotStore
+from cannery.numerics.recipes_v2 import generate_v2, input_sha256_v2
+from cannery.numerics.validation_runtime_v2 import tensor_runtime_program
 from cannery.registry.tensor_manifest import ValidatedTensorSpec
 from cannery.submissions.manifest import (
     SubmissionManifest,
@@ -319,6 +321,28 @@ class BuildExecutor:
                 "admitted.tar": downloaded,
                 "artifact.json": reference.model_dump_json().encode(),
                 self.wheel.name: wheel,
+                **(
+                    {
+                        "cases.json": json.dumps(
+                            {
+                                "suite": frozen.suite.model_dump(mode="json"),
+                                "contract": frozen.contract.model_dump(mode="json"),
+                                "input_sha256": {
+                                    case.id: {
+                                        name: input_sha256_v2(
+                                            recipe, generate_v2(recipe, case.id, name)
+                                        )
+                                        for name, recipe in case.inputs.items()
+                                    }
+                                    for case in frozen.suite.cases
+                                },
+                            },
+                            sort_keys=True,
+                        ).encode()
+                    }
+                    if frozen is not None
+                    else {}
+                ),
             },
         )
         index_path = self.remote.journal / "runtime-index"
@@ -366,25 +390,13 @@ class BuildExecutor:
 
 
 def tensor_smoke_program() -> str:
-    """Load and call each immutable variant; correctness is a separate stage."""
-    return (
-        RUNTIME.split("shapes = ", 1)[0]
-        + r"""
-assert kernel.metadata['abi'] == 'tensor-v2'
-for variant in kernel.metadata['variants']:
-    inputs = [torch.zeros(tuple(item['shape']), dtype=getattr(torch,item['dtype']),
-                          device='npu:0') for item in variant['inputs']]
-    scalars = {item['name']: item['value'] for item in variant['scalars']}
-    result = kernel.forward(*inputs, **scalars)
-    torch.npu.synchronize()
-    assert list(result) == [item['name'] for item in variant['outputs']]
-    for item in variant['outputs']:
-        value = result[item['name']]
-        assert list(value.shape) == item['shape']
-        assert value.dtype == getattr(torch,item['dtype']) and value.device.type == 'npu'
-        if item['alias'] is not None:
-            index = [entry['name'] for entry in variant['inputs']].index(item['alias'])
-            assert value is inputs[index]
-print('tensor binary loaded and called; numerical correctness and benchmarks remain pending')
-"""
+    """Call frozen recipes using the numerical runner's ND/alias/descriptor checks.
+
+    Only a bounded status crosses the smoke wire; numerical grading stays in
+    the separate validation stage. Inputs and expected oracle outputs are not stored.
+    """
+    return tensor_runtime_program().split("wire.write", 1)[0] + (
+        "wire.write(b'tensor binary loaded and called; "
+        "numerical correctness and benchmarks remain pending')\n"
+        "wire.close()\n"
     )

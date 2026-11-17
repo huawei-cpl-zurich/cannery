@@ -1,5 +1,7 @@
 import io
 import json
+import os
+import subprocess
 import tarfile
 import zipfile
 from dataclasses import replace
@@ -12,7 +14,7 @@ from test_tensor_spec_reader import tensor_files
 from test_tensor_submission_reader import tensor_files as submission_files
 
 from cannery.artifacts import digest
-from cannery.builds.executor import ExecutionFailure
+from cannery.builds.executor import ExecutionFailure, tensor_smoke_program
 from cannery.builds.remote import RemotePending
 from cannery.builds.sandbox import CatlassToolchain
 from cannery.builds.tensor_signatures import tensor_variants
@@ -93,3 +95,81 @@ def test_tensor_requires_pinned_header_before_remote_dispatch(tensor_build):
     with pytest.raises(ExecutionFailure, match="tensor_loader_header_missing"):
         executor.execute(candidate, uuid4(), lambda: None, frozen=frozen)
     assert not remote.started and not memory.puts
+
+
+def test_smoke_regenerates_bounded_integer_inputs_in_isolated_cpu_simulation(tmp_path):
+    image = os.environ.get("CANNERY_ORACLE_TEST_IMAGE")
+    if not image:
+        pytest.skip("Set CANNERY_ORACLE_TEST_IMAGE for isolated CPU smoke simulation")
+    from test_tensor_oracle_worker import REFERENCE, plan
+
+    from cannery.numerics.oracle_job import CPU_FLAGS
+    from cannery.numerics.recipes_v2 import RecipeSuiteV2, generate_v2, input_sha256_v2
+
+    suite, request = plan(REFERENCE)
+    for case in request["suite"]["cases"]:
+        case["inputs"]["indices"]["low"] = 1
+    suite = RecipeSuiteV2.model_validate(request["suite"])
+    request["input_sha256"] = {
+        case.id: {
+            name: input_sha256_v2(recipe, generate_v2(recipe, case.id, name))
+            for name, recipe in case.inputs.items()
+        }
+        for case in suite.cases
+    }
+    tmp_path.chmod(0o755)
+    (tmp_path / "cases.json").write_text(json.dumps(request))
+    reference = REFERENCE.replace(
+        "    assert os.geteuid()==10001",
+        '    assert bool((indices>=1).all()), "smoke violated frozen integer bounds"',
+    )
+    source = tensor_smoke_program().split("# Reserve the result channel", 1)[0]
+    source += """
+import torch
+wire=sys.stdout.buffer
+torch_npu=SimpleNamespace(get_npu_format=lambda _:2,
+    empty_with_format=lambda shape,dtype,**_:torch.empty(shape,dtype=dtype))
+torch.npu=SimpleNamespace(synchronize=lambda:None)
+"""
+    source += (
+        reference
+        + """
+class Kernel:
+    metadata={'schema_version':3,'abi':'tensor-v2', 'variants':[{'inputs':[
+        {'name':n} for n in ['x','cache','indices','mask']]}]}
+    forward=staticmethod(reference)
+kernel=Kernel()
+"""
+    )
+    # Execute the complete smoke loop, with only the device/bootstrap simulated.
+    program = tensor_smoke_program()
+    source += program[program.index("plan=json.loads") :]
+    name = "cannery-llm-catalog-smoke-bounds-" + uuid4().hex
+    try:
+        result = subprocess.run(
+            [
+                "docker",
+                "run",
+                *CPU_FLAGS[1:],
+                "--name",
+                name,
+                "--label",
+                "cannery.task=llm-catalog",
+                "--mount",
+                f"type=bind,src={tmp_path},dst=/input,readonly",
+                image,
+                "python",
+                "-I",
+                "-c",
+                source,
+            ],
+            capture_output=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, result.stderr.decode(errors="replace")
+        assert (
+            result.stdout == b"tensor binary loaded and called; "
+            b"numerical correctness and benchmarks remain pending"
+        )
+    finally:
+        subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=15)
