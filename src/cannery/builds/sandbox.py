@@ -21,7 +21,18 @@ class CatlassToolchain(StrictModel):
     bitcode_key: str = Field(pattern=r"^[a-f0-9]{16}$")
     manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     bitcode_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    aic_bitcode_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    package_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     bitcode_root: str
+
+    @model_serializer(mode="wrap")
+    def serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        value: dict[str, Any] = handler(self)
+        # Keep existing unary profiles and recovered contexts byte-compatible.
+        for name in ("aic_bitcode_sha256", "package_sha256"):
+            if value.get(name) is None:
+                value.pop(name, None)
+        return value
 
     @model_validator(mode="after")
     def confined_cache(self) -> Self:
@@ -33,6 +44,29 @@ class CatlassToolchain(StrictModel):
             or any(c in self.bitcode_root for c in "\n\r\x00,")
         ):
             raise ValueError("Expected a specific absolute helper bitcode cache")
+        return self
+
+
+class TritonToolchain(StrictModel):
+    cube_cores: int = Field(strict=True, ge=1, le=256)
+    vector_cores: int = Field(strict=True, ge=1, le=256)
+    version: str = Field(min_length=1, max_length=128)
+    package_root: str
+    package_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    bishengir_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    bisheng_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+
+    @model_validator(mode="after")
+    def confined_package(self) -> Self:
+        path = PurePosixPath(self.package_root)
+        if (
+            not path.is_absolute()
+            or len(path.parts) < 5
+            or path.name != "triton"
+            or ".." in path.parts
+            or any(c in self.package_root for c in "\n\r\x00,")
+        ):
+            raise ValueError("Expected a specific absolute Triton package root")
         return self
 
 
@@ -51,6 +85,7 @@ class WorkerProfile(StrictModel):
     fingerprint: dict[str, str]
     compiler: str = Field(min_length=1, max_length=4096)
     catlass: CatlassToolchain | None = None
+    triton: TritonToolchain | None = None
 
     @model_serializer(mode="wrap")
     def serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
@@ -60,6 +95,8 @@ class WorkerProfile(StrictModel):
             value.pop("device", None)
         if not self.toolchain_in_image:
             value.pop("toolchain_in_image", None)
+        if self.triton is None:
+            value.pop("triton", None)
         return value
 
     @model_validator(mode="after")
@@ -98,6 +135,8 @@ class WorkerProfile(StrictModel):
             or not all(self.fingerprint.values())
         ):
             raise ValueError("Device and runtime fingerprint disagree")
+        if self.triton is not None and (self.device != "a5" or self.toolchain_in_image):
+            raise ValueError("Triton requires A5 host-mounted toolchains")
         if self.device == "a3" and self.catlass is not None:
             raise ValueError("CATLASS DSL toolchains require A5")
         if self.toolchain_in_image and self.catlass is not None:
@@ -242,7 +281,16 @@ if config['toolchain_read_group'] is not None:
 held = None
 if phase == 'compile':
     plan = json.loads((source / 'build.json').read_bytes())
-    if plan.get('wrapper_name', 'launch.asc') == 'launch.py':
+    if plan.get('backend')=='triton':
+        pins=config.get('triton')
+        if not pins or plan.get('triton')!=pins or plan.get('wrapper_name')!='launch.py':
+            raise ValueError('Triton toolchain pins unavailable or mismatched')
+        package=Path(pins['package_root'])
+        args += ['--mount',f'type=bind,src={package},dst={package},readonly',
+                 '--env','PYTHONPATH='+str(package.parent)+':'+os.environ.get('PYTHONPATH',''),
+                 '--env','TRITON_CACHE_DIR=/tmp/triton-cache',
+                 '--env','TORCH_DEVICE_BACKEND_AUTOLOAD=0']
+    elif plan.get('wrapper_name', 'launch.asc') == 'launch.py':
         pins = config.get('catlass')
         if not pins or plan.get('catlass') != pins:
             raise ValueError('CATLASS toolchain pins unavailable or mismatched')

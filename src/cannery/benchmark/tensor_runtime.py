@@ -17,7 +17,7 @@ from cannery.numerics.recipes_v2 import (
 )
 from cannery.numerics.tensor_contract import TensorContractV2
 from cannery.numerics.validation_protocol_v2 import TensorResultsV2, parse_tensor_results
-from cannery.numerics.validation_runtime_v2 import TENSOR_RUNTIME
+from cannery.numerics.validation_runtime_v2 import TENSOR_RUNTIME, TENSOR_THREADS
 from cannery.registry.manifest import unique_pairs
 
 REFERENCE = r"""
@@ -119,6 +119,7 @@ def tensor_benchmark_program(kind: Literal["reference", "candidate"]) -> str:
         + inspect.getsource(_generate_v2)
         + inspect.getsource(input_sha256_v2)
         + inspect.getsource(measure_tensor)
+        + TENSOR_THREADS
         + SETUP.replace("sha256-f32-v1", "sha256-tensor-v2")
         + (REFERENCE if kind == "reference" else CANDIDATE)
         + helpers
