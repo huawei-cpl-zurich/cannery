@@ -29,6 +29,8 @@ def tensor_binary_package(
         or profile.device != "a5"
         or frozen.spec.manifest.schema_version != 2
         or manifest.spec_version != frozen.spec.manifest.spec.version
+        or manifest.kernel
+        != f"{frozen.spec.manifest.kernel.namespace}/{frozen.spec.manifest.kernel.name}"
     ):
         raise ExecutionFailure("tensor_package_contract_mismatch")
     if type(compiler) is not str or not compiler.strip() or len(compiler) > 8192:

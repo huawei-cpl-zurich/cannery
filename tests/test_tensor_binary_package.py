@@ -89,3 +89,11 @@ def test_existing_unary_package_bytes_stay_identical(tmp_path):
     assert hashlib.sha256(binary_package(elf(), "a" * 64, profile(tmp_path))).hexdigest() == (
         "dde8c17d05620b30ed9aa5709355c889fa41f4520bf27c3d8281da8ea1d9ca53"
     )
+
+
+@pytest.mark.parametrize("kernel", ["other/identity", "team/different", "other/different"])
+def test_other_kernel_cannot_supply_the_frozen_domain(tmp_path, kernel):
+    values = list(domain(tmp_path))
+    values[3] = values[3].model_copy(update={"kernel": kernel})
+    with pytest.raises(ExecutionFailure, match="contract_mismatch"):
+        pack(values)
