@@ -109,3 +109,35 @@ def test_storage_outage_and_fencing_do_not_publish_or_execute(assets):
 
     with pytest.raises(RuntimeError, match="lease lost"):
         verify_assets(memory, manifest, lost)
+
+
+@pytest.mark.parametrize(
+    "kind,value,substitute",
+    [
+        ("float64", -0.0, 0.0),
+        ("int64", 1, True),
+        ("float64", 1.0, 1),
+        ("int64", 1, 1.0),
+        ("bool", False, 0),
+    ],
+)
+def test_repinned_scalar_type_or_signed_zero_change_is_not_the_same_native_domain(
+    assets, kind, value, substitute
+):
+    memory, original, metadata, library = assets
+    document = original.model_dump(mode="json")
+    for case in document["cases"].values():
+        case["scalars"]["offset"] = {"kind": kind, "value": value}
+    manifest = type(original).model_validate_json(json.dumps(document))
+    metadata["variants"] = manifest.variants()
+    valid = memory.put(
+        "valid-domain.tar", archive_library(library, metadata, metadata_limit=256 * 1024)
+    )
+    manifest = manifest.model_copy(update={"package": valid})
+    assert verify_assets(memory, manifest, lambda: None) == memory.get(valid)
+    metadata["variants"][0]["scalars"][0]["value"] = substitute
+    wrong = memory.put(
+        "wrong-domain.tar", archive_library(library, metadata, metadata_limit=256 * 1024)
+    )
+    with pytest.raises(InvalidReleaseArtifact):
+        verify_assets(memory, manifest.model_copy(update={"package": wrong}), lambda: None)

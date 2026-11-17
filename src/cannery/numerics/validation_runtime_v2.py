@@ -36,6 +36,10 @@ def tensor(data,recipe):
          if data else torch.empty(recipe.shape,dtype=dtype))
     result=torch_npu.empty_with_format(recipe.shape,dtype=dtype,device='npu',acl_format=2)
     result.copy_(cpu)
+    # CPU view copies can refresh four-dimensional tensors to NCHW metadata.
+    if torch_npu.get_npu_format(result)!=2:
+        result=torch_npu.npu_format_cast(result,2)
+    assert torch_npu.get_npu_format(result)==2
     return result
 
 

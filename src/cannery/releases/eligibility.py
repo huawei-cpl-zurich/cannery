@@ -15,6 +15,7 @@ from cannery.benchmark.scheduling import candidate_key
 from cannery.benchmark.state import PerformanceJob, PerformanceResult
 from cannery.builds.state import BuildResult, BuildState
 from cannery.git_intake import SnapshotBinding
+from cannery.git_intake.process import IntakeProcessError
 from cannery.git_intake.snapshots import SnapshotStore
 from cannery.numerics.baseline_state import BaselineState
 from cannery.numerics.baseline_v2 import OutputTensorV2
@@ -144,7 +145,11 @@ def tensor_publication_manifest(
             require(frozen, "retained_spec_required")
             assert frozen
             binding = SnapshotBinding.model_validate(frozen.snapshot)
-            tensor = validate_tensor_spec(snapshots.read(binding).files, binding.source.path)
+            try:
+                selected = snapshots.read(binding)
+            except IntakeProcessError:
+                raise PublicationUnavailable("release_snapshot_unavailable") from None
+            tensor = validate_tensor_spec(selected.files, binding.source.path)
             require(
                 tensor.spec.content_sha256 == frozen.content_sha256
                 and tensor.spec.file_sha256 == frozen.file_sha256
@@ -263,6 +268,7 @@ def retained(
             check(report, evidence, score, default, pair, spec.spec.validation.equal_nan)
 
     if tensor is not None:
+        require([case.id for case in score.cases] == [case.id for case in tensor.suite.cases])
         require(
             numerical.report["binary_sha256"] == package.sha256
             and numerical.report["baseline_sha256"] == evidence.artifact.sha256
