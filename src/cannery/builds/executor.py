@@ -9,6 +9,7 @@ import tempfile
 import zipfile
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 from uuid import UUID
 
 from cannery.artifacts import ArtifactRef, ArtifactStore, digest, verified
@@ -25,6 +26,7 @@ from cannery.builds.remote import (
 )
 from cannery.builds.sandbox import WorkerProfile, job_script
 from cannery.builds.tensor_package import tensor_binary_package
+from cannery.builds.triton_tensor_compile import TritonTensorAdapter
 from cannery.git_intake import SnapshotBinding
 from cannery.git_intake.snapshots import SnapshotStore
 from cannery.numerics.recipes_v2 import generate_v2, input_sha256_v2
@@ -201,14 +203,22 @@ class BuildExecutor:
                     header = archive.read("cannery_kernels/tensor_abi.h").decode()
             except (KeyError, ValueError, zipfile.BadZipFile, UnicodeError):
                 raise ExecutionFailure("tensor_loader_header_missing") from None
-            plan = CatlassTensorAdapter().build(validated.manifest, frozen, header)
+            adapter = (
+                TritonTensorAdapter()
+                if validated.manifest.implementation.language == "triton"
+                else CatlassTensorAdapter()
+            )
+            plan = adapter.build(validated.manifest, frozen, header)
         else:
             plan = adapter_for(validated.manifest).build(validated.manifest)
         program = tensor_smoke_program() if frozen is not None else None
-        catlass = plan.wrapper_name == "launch.py"
+        triton = validated.manifest.implementation.language == "triton"
+        catlass = plan.wrapper_name == "launch.py" and not triton
+        if triton and self.profile.triton is None:
+            raise ExecutionFailure("triton_toolchain_unavailable")
         if catlass and self.profile.catlass is None:
             raise ExecutionFailure("catlass_toolchain_unavailable")
-        compile_options = (
+        compile_options: dict[str, Any] = (
             {
                 "wrapper_name": plan.wrapper_name,
                 "catlass": self.profile.catlass.model_dump(mode="json"),
@@ -216,6 +226,14 @@ class BuildExecutor:
             if catlass and self.profile.catlass is not None
             else {}
         )
+        if triton:
+            assert self.profile.triton is not None
+            compile_options.update(
+                wrapper_name=plan.wrapper_name,
+                backend="triton",
+                triton=self.profile.triton.model_dump(mode="json"),
+                runtime=self.profile.fingerprint,
+            )
         if self.wheel.stat().st_size > 2 * 1024 * 1024:
             raise ExecutionFailure("loader_size_limit")
         wheel = self.wheel.read_bytes()
@@ -288,7 +306,9 @@ class BuildExecutor:
         if digest(binary) != checksum:
             raise ExecutionFailure("compiled_digest_mismatch")
         if frozen is not None:
-            assert self.profile.catlass is not None
+            pins = self.profile.triton if triton else self.profile.catlass
+            assert pins is not None
+            backend = "triton" if triton else "catlass"
             package = tensor_binary_package(
                 binary,
                 candidate.content_sha256,
@@ -298,7 +318,7 @@ class BuildExecutor:
                 compiler=json.dumps(
                     {
                         "bisheng": self.profile.compiler,
-                        "catlass": self.profile.catlass.model_dump(exclude={"bitcode_root"}),
+                        backend: pins.model_dump(exclude={"bitcode_root", "package_root"}),
                     },
                     sort_keys=True,
                     separators=(",", ":"),
