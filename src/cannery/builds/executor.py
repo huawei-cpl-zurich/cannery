@@ -6,12 +6,14 @@ import os
 import re
 import tarfile
 import tempfile
+import zipfile
 from collections.abc import Callable
 from pathlib import Path
 from uuid import UUID
 
 from cannery.artifacts import ArtifactRef, ArtifactStore, digest, verified
 from cannery.builds.catlass_compile import adapter_for
+from cannery.builds.catlass_tensor_compile import CatlassTensorAdapter
 from cannery.builds.library import ExecutionFailure as ExecutionFailure
 from cannery.builds.library import archive_library, check_library
 from cannery.builds.remote import (
@@ -21,10 +23,16 @@ from cannery.builds.remote import (
     durable_write,
     settle_operation,
 )
-from cannery.builds.sandbox import WorkerProfile, job_script
+from cannery.builds.sandbox import RUNTIME, WorkerProfile, job_script
+from cannery.builds.tensor_package import tensor_binary_package
 from cannery.git_intake import SnapshotBinding
 from cannery.git_intake.snapshots import SnapshotStore
-from cannery.submissions.manifest import SubmissionManifest, validate_submission
+from cannery.registry.tensor_manifest import ValidatedTensorSpec
+from cannery.submissions.manifest import (
+    SubmissionManifest,
+    validate_submission,
+    validate_tensor_submission,
+)
 from cannery.submissions.models import Candidate
 
 
@@ -158,12 +166,21 @@ class BuildExecutor:
         )
 
     def execute(
-        self, candidate: Candidate, attempt: UUID, fence: Callable[[], None]
+        self,
+        candidate: Candidate,
+        attempt: UUID,
+        fence: Callable[[], None],
+        *,
+        frozen: ValidatedTensorSpec | None = None,
     ) -> ArtifactRef:
         self.fence = fence
         binding = SnapshotBinding.model_validate(candidate.snapshot)
         files = self.snapshots.read(binding).files
-        validated = validate_submission(files, binding.source.path)
+        validated = (
+            validate_tensor_submission(files, binding.source.path)
+            if frozen is not None
+            else validate_submission(files, binding.source.path)
+        )
         if validated.manifest.implementation.device != self.profile.device:
             raise ExecutionFailure("worker_device_mismatch")
         if (
@@ -172,7 +189,20 @@ class BuildExecutor:
             or validated.manifest.model_dump(mode="json") != candidate.manifest
         ):
             raise ExecutionFailure("retained_source_mismatch")
-        plan = adapter_for(validated.manifest).build(validated.manifest)
+        if frozen is not None:
+            if self.wheel.stat().st_size > 2 * 1024 * 1024:
+                raise ExecutionFailure("loader_size_limit")
+            if digest(self.wheel.read_bytes()) != self.wheel_sha256:
+                raise ExecutionFailure("loader_digest_mismatch")
+            try:
+                with zipfile.ZipFile(self.wheel) as archive:
+                    header = archive.read("cannery_kernels/tensor_abi.h").decode()
+            except (KeyError, ValueError, zipfile.BadZipFile, UnicodeError):
+                raise ExecutionFailure("tensor_loader_header_missing") from None
+            plan = CatlassTensorAdapter().build(validated.manifest, frozen, header)
+        else:
+            plan = adapter_for(validated.manifest).build(validated.manifest)
+        program = tensor_smoke_program() if frozen is not None else None
         catlass = plan.wrapper_name == "launch.py"
         if catlass and self.profile.catlass is None:
             raise ExecutionFailure("catlass_toolchain_unavailable")
@@ -199,7 +229,10 @@ class BuildExecutor:
                 "wrapper": plan.wrapper,
                 "command": plan.command,
                 **compile_options,
-                "job_contract": digest(job_script(self.profile, attempt, "runtime")),
+                **({"tensor_spec": frozen.spec.content_sha256} if frozen is not None else {}),
+                "job_contract": digest(
+                    job_script(self.profile, attempt, "runtime", runtime_program=program)
+                ),
             },
             sort_keys=True,
         ).encode()
@@ -252,7 +285,27 @@ class BuildExecutor:
         binary = library.read_bytes()
         if digest(binary) != checksum:
             raise ExecutionFailure("compiled_digest_mismatch")
-        package = binary_package(binary, candidate.content_sha256, self.profile, validated.manifest)
+        if frozen is not None:
+            assert self.profile.catlass is not None
+            package = tensor_binary_package(
+                binary,
+                candidate.content_sha256,
+                self.profile,
+                validated.manifest,
+                frozen,
+                compiler=json.dumps(
+                    {
+                        "bisheng": self.profile.compiler,
+                        "catlass": self.profile.catlass.model_dump(exclude={"bitcode_root"}),
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ),
+            )
+        else:
+            package = binary_package(
+                binary, candidate.content_sha256, self.profile, validated.manifest
+            )
         fence()
         reference = self.artifacts.put("builds/" + attempt.hex + "/package.tar", package)
         downloaded = self.artifacts.get(reference)
@@ -276,7 +329,7 @@ class BuildExecutor:
         try:
             self.operation(
                 f"runtime-{index}",
-                job_script(self.profile, attempt, "runtime"),
+                job_script(self.profile, attempt, "runtime", runtime_program=program),
                 npu=self.profile.npu,
             )
         except RemoteFailure as error:
@@ -310,3 +363,28 @@ class BuildExecutor:
             raise RemotePending(
                 "Cleanup failed; retain ownership and retry after recovery"
             ) from None
+
+
+def tensor_smoke_program() -> str:
+    """Load and call each immutable variant; correctness is a separate stage."""
+    return (
+        RUNTIME.split("shapes = ", 1)[0]
+        + r"""
+assert kernel.metadata['abi'] == 'tensor-v2'
+for variant in kernel.metadata['variants']:
+    inputs = [torch.zeros(tuple(item['shape']), dtype=getattr(torch,item['dtype']),
+                          device='npu:0') for item in variant['inputs']]
+    scalars = {item['name']: item['value'] for item in variant['scalars']}
+    result = kernel.forward(*inputs, **scalars)
+    torch.npu.synchronize()
+    assert list(result) == [item['name'] for item in variant['outputs']]
+    for item in variant['outputs']:
+        value = result[item['name']]
+        assert list(value.shape) == item['shape']
+        assert value.dtype == getattr(torch,item['dtype']) and value.device.type == 'npu'
+        if item['alias'] is not None:
+            index = [entry['name'] for entry in variant['inputs']].index(item['alias'])
+            assert value is inputs[index]
+print('tensor binary loaded and called; numerical correctness and benchmarks remain pending')
+"""
+    )
