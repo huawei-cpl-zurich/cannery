@@ -10,9 +10,8 @@ from cannery.artifacts import ArtifactRef, ArtifactStore, digest
 from cannery.benchmark.contract import summarize
 from cannery.registry.manifest import unique_pairs
 from cannery.releases.contract import ReleaseManifest, canonical
+from cannery.releases.document import ReleaseDocument
 from cannery.releases.tensor_contract import TensorReleaseManifest
-
-ReleaseDocument = ReleaseManifest | TensorReleaseManifest
 
 
 class InvalidReleaseArtifact(ValueError):

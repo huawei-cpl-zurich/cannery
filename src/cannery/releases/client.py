@@ -17,13 +17,14 @@ import httpx
 
 from cannery.accounts.client import headers as auth_headers
 from cannery.releases.assets import verify_package
-from cannery.releases.contract import SHA, ReleaseManifest, Tolerance, read_manifest
+from cannery.releases.contract import SHA, Tolerance
+from cannery.releases.document import ReleaseDocument, read_release_document
 from cannery.releases.resolution import ResolveRequest
 
 
 @dataclass(frozen=True)
 class CachedRelease:
-    manifest: ReleaseManifest
+    manifest: ReleaseDocument
     manifest_path: Path
     package_path: Path
     manifest_sha256: str
@@ -123,8 +124,8 @@ class ReleaseClient:
         if not isinstance(pin, str) or re.fullmatch(SHA, pin) is None:
             raise ValueError("Invalid manifest pin")
         root = f"/api/v1/releases/{identifier}"
-        raw = self.bytes(root + "/manifest", 128 * 1024)
-        manifest = read_manifest(raw, pin)
+        raw = self.bytes(root + "/manifest", 256 * 1024)
+        manifest = read_release_document(raw, pin)
         if (
             manifest.kernel != request.kernel
             or manifest.device != request.device

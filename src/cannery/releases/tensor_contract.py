@@ -133,6 +133,11 @@ class TensorReleaseManifest(StrictModel):
                 raise ValueError("Only entirely empty tensor cases may be excluded")
         return self
 
+    def supports(self, runtime: dict[str, str], shape: tuple[int, ...] | None = None) -> bool:
+        # A unary shape cannot describe a named mixed-dtype/scalar call domain.
+        # All mandatory static domains ship together; the loader checks the full call.
+        return shape is None and self.cohort.runtime == runtime
+
     def variants(self) -> list[dict[str, Any]]:
         """Reconstruct package dispatch order from the mandatory score case order."""
         variants, seen = [], set()
