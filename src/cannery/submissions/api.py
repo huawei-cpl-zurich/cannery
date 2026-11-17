@@ -22,7 +22,7 @@ from cannery.registry.manifest import Name
 from cannery.registry.models import SpecVersion
 from cannery.releases.api import publication_info
 from cannery.settings import Settings
-from cannery.submissions.manifest import Device, Language
+from cannery.submissions.manifest import Device, TensorLanguage
 from cannery.submissions.models import (
     Candidate,
     RequestedTarget,
@@ -39,7 +39,7 @@ class SubmitRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
     spec_version: int = Field(ge=1, strict=True)
     device: Device
-    language: Language
+    language: TensorLanguage
     source: GitSource
     implementation_name: ImplementationName | None = None
 
@@ -72,6 +72,13 @@ def submit(
         )
         if spec is None:
             raise HTTPException(404, "Frozen specification not found")
+        tensor = spec.manifest.get("schema_version", 1) == 2
+        if (
+            tensor
+            and (not settings.tensor_enabled or body.device != "a5")
+            or (body.language == "triton" and not tensor)
+        ):
+            raise HTTPException(422, "Tensor submissions require enabled A5 tensor specifications")
         spec_id = spec.id
     try:
         key = new_submission(

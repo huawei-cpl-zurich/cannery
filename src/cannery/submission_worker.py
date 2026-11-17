@@ -68,6 +68,8 @@ def intake_submission(identifier: str) -> None:
                 "namespace": request.namespace,
                 "kernel": f"{kernel['namespace']}/{kernel['name']}",
                 "spec_version": spec.version,
+                "spec_schema": spec.manifest.get("schema_version", 1),
+                "tensor_enabled": settings.tensor_enabled,
                 "target": request.target,
                 "scratch": str(scratch),
                 "snapshots": str(settings.snapshot_root),
@@ -102,7 +104,9 @@ def intake_submission(identifier: str) -> None:
             if state is None:
                 return
             store = SnapshotStore(settings.snapshot_root)
-            candidate = freeze_candidate(session, key, snapshot, store=store)
+            candidate = freeze_candidate(
+                session, key, snapshot, store=store, tensor_enabled=settings.tensor_enabled
+            )
             reuse_completed(engine, session, candidate, store, lambda: make_store(settings))
             if current_intake(session, claim) is None:
                 raise IntakeError("Intake lease expired during snapshot verification")

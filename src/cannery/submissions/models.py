@@ -10,7 +10,7 @@ from sqlalchemy.orm import Mapped, Mapper, mapped_column
 
 from cannery.database import Base
 from cannery.registry.manifest import StrictModel
-from cannery.submissions.manifest import Device, Language
+from cannery.submissions.manifest import Device, TensorLanguage
 
 
 class SubmissionConflict(ValueError):
@@ -19,7 +19,7 @@ class SubmissionConflict(ValueError):
 
 class RequestedTarget(StrictModel):
     device: Device
-    language: Language
+    language: TensorLanguage
 
 
 class Submission(Base):

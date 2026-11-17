@@ -9,7 +9,8 @@ from cannery.git_intake.process import IntakeError, attempt_budget
 from cannery.git_intake.snapshots import SnapshotStore, extract_tree
 from cannery.git_intake.transport import RemoteRule, fetched_source
 from cannery.registry.freeze import kernel_key
-from cannery.submissions.manifest import SubmissionError, validate_submission
+from cannery.submissions.intake import submission_for_spec
+from cannery.submissions.manifest import SubmissionError
 
 
 class RepositoryDenied(SubmissionError):
@@ -27,7 +28,12 @@ def main() -> None:
     scratch = Path(payload["scratch"])
     with fetched_source(source, namespace, rules, scratch=scratch) as repository:
         selected = extract_tree(repository, source)
-    manifest = validate_submission(selected.files, source.path).manifest
+    manifest = submission_for_spec(
+        selected.files,
+        source.path,
+        payload.get("spec_schema", 1),
+        tensor_enabled=payload.get("tensor_enabled") is True,
+    ).manifest
     if manifest.kernel != payload["kernel"] or manifest.spec_version != payload["spec_version"]:
         raise SubmissionError("Frozen specification mismatch")
     if payload["target"] != {

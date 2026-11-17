@@ -11,7 +11,7 @@ from cannery.benchmark.state import PerformanceJob
 from cannery.git_intake import SnapshotBinding
 from cannery.git_intake.snapshots import SnapshotStore
 from cannery.releases.assets import verify_assets
-from cannery.releases.eligibility import publication_manifest
+from cannery.releases.eligibility import publication_document
 from cannery.submissions.models import Candidate, Submission, SubmissionReuse
 
 
@@ -50,7 +50,7 @@ def reuse_completed(
         # Re-read the protected snapshot, validate all saved stage identities, and
         # verify the binary/timing bytes. These checks execute no submitted code.
         snapshots.read(SnapshotBinding.model_validate(original.snapshot))
-        manifest = publication_manifest(engine, original.id)
+        manifest = publication_document(engine, original.id, snapshots)
         verify_assets(artifacts(), manifest, lambda: None)
         session.add(SubmissionReuse(id=candidate.id, original_id=original.id))
         return

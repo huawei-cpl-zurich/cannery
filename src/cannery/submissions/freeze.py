@@ -8,12 +8,17 @@ from cannery.git_intake import GitSource, SnapshotBinding
 from cannery.git_intake.snapshots import SnapshotStore
 from cannery.registry.freeze import kernel_key
 from cannery.registry.models import SpecVersion
-from cannery.submissions.manifest import validate_submission
+from cannery.submissions.intake import submission_for_spec
 from cannery.submissions.models import Candidate, Submission, SubmissionConflict
 
 
 def freeze_candidate(
-    session: Session, identifier: UUID, snapshot: SnapshotBinding, *, store: SnapshotStore
+    session: Session,
+    identifier: UUID,
+    snapshot: SnapshotBinding,
+    *,
+    store: SnapshotStore,
+    tensor_enabled: bool = False,
 ) -> Candidate:
     request = session.get(Submission, identifier)
     if request is None:
@@ -28,7 +33,12 @@ def freeze_candidate(
         namespace, name = spec.manifest["kernel"]["namespace"], spec.manifest["kernel"]["name"]
         if snapshot.internal_repository != kernel_key(namespace, name):
             raise SubmissionConflict("Snapshot kernel mismatch")
-        validated = validate_submission(store.read(snapshot).files, source.path)
+        validated = submission_for_spec(
+            store.read(snapshot).files,
+            source.path,
+            spec.manifest.get("schema_version", 1),
+            tensor_enabled=tensor_enabled,
+        )
         manifest = validated.manifest
         implementation = manifest.implementation
         if manifest.kernel != f"{namespace}/{name}" or manifest.spec_version != spec.version:
