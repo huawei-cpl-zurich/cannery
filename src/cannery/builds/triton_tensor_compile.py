@@ -64,8 +64,13 @@ def compile_triton(plan,source,output):
     # The read-only namespace mount intentionally excludes distribution entry points.
     from triton.backends import Backend,backends
     from triton.backends.ascend.compiler import AscendBackend
-    from triton.backends.ascend.driver import NPUDriver
+    from triton.backends.ascend.driver import NPUDriver,NPUUtils
     backends.clear();backends['ascend']=Backend(AscendBackend,NPUDriver)
+    # Freeze only the hardware-property query; compilation still uses the pinned backend.
+    cores=tuple(pins[key] for key in ('cube_cores','vector_cores'))
+    if any(type(n) is not int or not 1<=n<=256 for n in cores):
+        raise BuildError('Invalid core counts')
+    NPUUtils.get_device_core=lambda self:cores
     source=source.resolve();entry=(source/PARAMETERS['entry']).resolve()
     if not entry.is_relative_to(source):raise BuildError('Entrypoint outside source tree')
     sys.path.insert(0,str(source))

@@ -45,6 +45,7 @@ def compiler(tmp_path, monkeypatch):
     ascend_compiler.AscendBackend = object()
     ascend_driver = ModuleType("triton.backends.ascend.driver")
     ascend_driver.NPUDriver = object()
+    ascend_driver.NPUUtils = type("NPUUtils", (), {})
     backend = ModuleType("triton.backends.compiler")
     backend.GPUTarget = lambda *args: args
     controls = {"fault": None, "calls": [], "commands": []}
@@ -54,6 +55,7 @@ def compiler(tmp_path, monkeypatch):
 
     def compile_source(src, *, target):
         controls["calls"].append((src, target))
+        assert ascend_driver.NPUUtils().get_device_core() == (32, 64)
         assert list(registry.backends) == ["ascend"]
         assert registry.backends["ascend"].compiler is ascend_compiler.AscendBackend
         assert registry.backends["ascend"].driver is ascend_driver.NPUDriver
@@ -84,6 +86,8 @@ def compiler(tmp_path, monkeypatch):
     monkeypatch.setenv("ASCEND_HOME_PATH", str(root))
     monkeypatch.setattr(ns["shutil"], "which", lambda _: str(linker))
     pins = {
+        "cube_cores": 32,
+        "vector_cores": 64,
         "version": "3.6.0",
         "package_root": str(package),
         "package_sha256": package_sha256(package),
@@ -162,9 +166,21 @@ def test_author_callback_cannot_change_native_dispatch_domain(compiler):
 def test_toolchain_requires_specific_unambiguous_package_root(root):
     with pytest.raises(ValueError):
         TritonToolchain(
+            cube_cores=32,
+            vector_cores=64,
             version="3.6.0",
             package_root=root,
             package_sha256="a" * 64,
             bishengir_sha256="b" * 64,
             bisheng_sha256="c" * 64,
         )
+
+
+@pytest.mark.parametrize("field", ["cube_cores", "vector_cores"])
+@pytest.mark.parametrize("value", [0, -1, True, 257])
+def test_offline_hardware_property_pins_are_bounded_integers(compiler, field, value):
+    ns, config, source, output, control, _, _ = compiler
+    config["triton"][field] = value
+    with pytest.raises(ValueError, match="core counts"):
+        ns["compile_triton"](config, source, output)
+    assert not control["calls"]

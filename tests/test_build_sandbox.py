@@ -315,6 +315,8 @@ def test_default_runtime_keeps_stdout_out_of_host_result_file(tmp_path, monkeypa
 
 def triton_pins():
     return {
+        "cube_cores": 32,
+        "vector_cores": 64,
         "version": "3.6.0",
         "package_root": "/home/operator/triton-toolchain/triton",
         "package_sha256": "a" * 64,
