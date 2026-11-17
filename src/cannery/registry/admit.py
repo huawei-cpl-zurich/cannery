@@ -9,7 +9,8 @@ from cannery.git_intake.process import IntakeError, attempt_budget
 from cannery.git_intake.snapshots import SnapshotStore, extract_tree
 from cannery.git_intake.transport import RemoteRule, fetched_source
 from cannery.registry.freeze import kernel_key
-from cannery.registry.manifest import RecipeEntrypoint, SpecError, validate_spec
+from cannery.registry.intake import registration_spec
+from cannery.registry.manifest import RecipeEntrypoint, SpecError
 from cannery.registry.sandbox import CleanupError, SmokeError, run_smoke
 
 
@@ -28,7 +29,9 @@ def main() -> None:
         raise RepositoryDenied("Repository not authorized")
     with fetched_source(source, namespace, rules, scratch=scratch) as repository:
         selected = extract_tree(repository, source)
-    spec = validate_spec(selected.files, source.path)
+    spec = registration_spec(
+        selected.files, source.path, tensor_enabled=payload.get("tensor_enabled") is True
+    )
     if spec.manifest.kernel.namespace != namespace:
         raise SpecError("Namespace mismatch")
     if payload["name"] is not None and spec.manifest.kernel.name != payload["name"]:
