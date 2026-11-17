@@ -156,7 +156,9 @@ def tensor_publication_manifest(
             return result
     except PublicationUnavailable:
         raise
-    except (KeyError, ValueError, TypeError, AttributeError, OverflowError, OSError):
+    except OSError:
+        raise PublicationUnavailable("release_snapshot_unavailable") from None
+    except (KeyError, ValueError, TypeError, AttributeError, OverflowError):
         raise PublicationUnavailable("release_evidence_invalid") from None
 
 
