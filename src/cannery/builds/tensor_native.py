@@ -179,14 +179,22 @@ PREPARE = r"""
 static std::mutex launch_mutex;
 static aclrtContext bound_context=nullptr;
 static bool ready=false;
-static void release_partial() {
+static int32_t cleanup_error=0;
+static int32_t release_partial() {
+  int32_t failure=0;
   for(auto& v:variants) {
-    if(v.binary) aclrtBinaryUnLoad(v.binary);
-    v.binary=nullptr; v.function=nullptr;
+    v.function=nullptr;
+    if(v.binary) {
+      auto status=aclrtBinaryUnLoad(v.binary);
+      if(status) {if(!failure) failure=status; continue;}
+      v.binary=nullptr;
+    }
   }
+  return failure;
 }
 extern "C" int32_t cannery_prepare_tensor_v2() {
   std::lock_guard<std::mutex> guard(launch_mutex);
+  if(cleanup_error) return cleanup_error;
   aclrtContext current=nullptr;
   auto status=aclrtGetCurrentContext(&current);
   if(status) return status;
@@ -202,7 +210,7 @@ extern "C" int32_t cannery_prepare_tensor_v2() {
     if(!status && !v.binary) status=-14;
     if(!status) status=aclrtBinaryGetFunction(v.binary,v.symbol,&v.function);
     if(!status && !v.function) status=-15;
-    if(status) {release_partial();return status;}
+    if(status) {cleanup_error=release_partial();return cleanup_error ? cleanup_error : status;}
   }
   bound_context=current; ready=true;
   return 0;
