@@ -1,4 +1,5 @@
 """Submission details render both immutable report formats without changing the API."""
+
 import copy
 import struct
 
@@ -17,26 +18,38 @@ def test_numerical_detail_renders_outputs_and_legacy_cases(client, monkeypatch, 
     key = client.post("/api/v1/kernels/team/identity/submissions", json=payload()).json()["id"]
     job = client.get(f"/api/v1/submissions/{key}").json()
     comparison = compare_tensor(
-        struct.pack("<f", 0), struct.pack("<f", 0 if passed else 1),
-        "float32", rtol=0.001, atol=0.001,
+        struct.pack("<f", 0),
+        struct.pack("<f", 0 if passed else 1),
+        "float32",
+        rtol=0.001,
+        atol=0.001,
     )
     exact = compare_tensor(b"\x01", b"\x01", "int8", rtol=0.001, atol=0.001)
-    report = {"schema_version": version, "cases": [{
-        "id": "zeros", "input_unchanged": passed,
-        "spec_default": comparison, "submission_requested": comparison,
-    }]}
+    report = {
+        "schema_version": version,
+        "cases": [
+            {
+                "id": "zeros",
+                "input_unchanged": passed,
+                "spec_default": comparison,
+                "submission_requested": comparison,
+            }
+        ],
+    }
     if version == 2:
-        report["cases"] = [{
-            "id": "zeros", "readonly_inputs_unchanged": True,
-            "mutable_aliases_consistent": passed,
-            "outputs": {
-                "value": {"spec_default": comparison, "submission_requested": comparison},
-                "index": {"spec_default": exact, "submission_requested": exact},
-            },
-        }]
+        report["cases"] = [
+            {
+                "id": "zeros",
+                "readonly_inputs_unchanged": True,
+                "mutable_aliases_consistent": passed,
+                "outputs": {
+                    "value": {"spec_default": comparison, "submission_requested": comparison},
+                    "index": {"spec_default": exact, "submission_requested": exact},
+                },
+            }
+        ]
     job.update(candidate={"content_sha256": "a" * 64}, status="failed")
-    job["numerical"] = {"status": "passed" if passed else "failed", "attempts": 1,
-                        "report": report}
+    job["numerical"] = {"status": "passed" if passed else "failed", "attempts": 1, "report": report}
     original = copy.deepcopy(job)
     monkeypatch.setattr("cannery.web.submissions.get_info", lambda *a, **kw: job)
     page = client.get(f"/submissions/{key}")
