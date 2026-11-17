@@ -33,6 +33,7 @@ from cannery.builds.state import (
     BuildClaim,
     BuildResult,
     BuildState,
+    build_abis,
     claim_build,
     current_build,
     due_builds,
@@ -51,7 +52,7 @@ from cannery.shutdown import stop_on_term
 from cannery.submissions.models import Candidate, Submission, SubmissionReuse
 
 
-def discover(engine: Engine, *, device: Device = "a5") -> None:
+def discover(engine: Engine, *, device: Device = "a5", tensor_enabled: bool = False) -> None:
     with Session(engine) as session, session.begin():
         candidates = session.scalars(
             select(Candidate)
@@ -59,7 +60,7 @@ def discover(engine: Engine, *, device: Device = "a5") -> None:
                 Candidate.manifest["implementation"]["device"].as_string() == device,
                 Candidate.manifest["implementation"]["build"]["abi"]
                 .as_string()
-                .in_(("unary-f32-v1", "catlass-unary-f32-v1")),
+                .in_(build_abis(tensor_enabled)),
                 ~select(BuildState.id).where(BuildState.id == Candidate.id).exists(),
                 ~select(SubmissionReuse.id).where(SubmissionReuse.id == Candidate.id).exists(),
             )
@@ -68,7 +69,7 @@ def discover(engine: Engine, *, device: Device = "a5") -> None:
             .with_for_update(skip_locked=True)
         )
         for candidate in candidates:
-            if not queue_build(session, candidate):
+            if not queue_build(session, candidate, tensor_enabled=tensor_enabled):
                 session.add(
                     BuildState(id=candidate.id, status="failed", error="unsupported_build_contract")
                 )
@@ -175,8 +176,9 @@ def process(
     factory: Callable[[BuildClaim], BuildExecutor],
     *,
     device: Device = "a5",
+    tensor_enabled: bool = False,
 ) -> None:
-    claim = claim_build(engine, key, device=device)
+    claim = claim_build(engine, key, device=device, tensor_enabled=tensor_enabled)
     if claim is None:
         return
     with LeaseKeeper(engine, claim) as keeper:
@@ -341,11 +343,19 @@ def main() -> None:
     try:
         while not stopped.is_set():
             try:
-                discover(engine, device=profile.device)
-                for key in due_builds(engine, device=profile.device):
+                discover(engine, device=profile.device, tensor_enabled=settings.tensor_enabled)
+                for key in due_builds(
+                    engine, device=profile.device, tensor_enabled=settings.tensor_enabled
+                ):
                     if stopped.is_set():
                         break
-                    process(engine, UUID(key), factory, device=profile.device)
+                    process(
+                        engine,
+                        UUID(key),
+                        factory,
+                        device=profile.device,
+                        tensor_enabled=settings.tensor_enabled,
+                    )
             except (SQLAlchemyError, OSError, ValueError):
                 logging.warning("Binary admission coordinator unavailable; retrying")
             if args.once:

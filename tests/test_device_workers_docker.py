@@ -41,7 +41,7 @@ with Session(engine) as db,db.begin():
  db.add(SpecVersion(id=UUID(int=1),kernel_id='kernel',version=1,content_sha256='a'*64,manifest={},snapshot={},file_sha256={},smoke={}));db.flush()
  for device,key in ids.items():
   db.add(Submission(id=UUID(key),namespace='team',spec_id=UUID(int=1),source={},target={'device':device,'language':'ascendc'}));db.flush()
-  db.add(Candidate(id=UUID(key),binding_id=UUID(key),binding={},manifest={'implementation':{'device':device}},snapshot={},content_sha256='a'*64,file_sha256={}));db.flush()
+  db.add(Candidate(id=UUID(key),binding_id=UUID(key),binding={},manifest={'implementation':{'device':device,'build':{'abi':'unary-f32-v1'}}},snapshot={},content_sha256='a'*64,file_sha256={}));db.flush()
   db.add(BuildState(id=UUID(key)));db.add(NumericalState(id=UUID(key)))
 for device in ids:
  ensure_job(engine,device[-1]*64,'reference',{'cohort':{'device':device}})
