@@ -57,8 +57,15 @@ static int aclrtBinaryUnLoad(aclrtBinHandle){++unloads;return fault==8 ? 208 : 0
 static int aclrtLaunchKernelWithHostArgs(aclrtFuncHandle fn,uint32_t blocks,
     void* stream,void* cfg,void* args,size_t size,void* placeholders,size_t count) {
   if(fault==3) return 103;
-  if(stream!=reinterpret_cast<void*>(99) || cfg || placeholders || count || size!=24) return 199;
+  if(stream!=reinterpret_cast<void*>(99) || cfg || placeholders || count) return 199;
   auto** pointers=static_cast<float**>(args);
+  if(size==64) {
+    struct Triton {void* sync;void* workspace;float* pointers[3];int32_t gx,gy,gz;void* debug;};
+    auto* value=static_cast<Triton*>(args);
+    if(value->sync || value->workspace || value->debug || value->gx<1 || value->gy<1 || value->gz<1
+       || value->gx*value->gy*value->gz!=blocks) return 198;
+    pointers=value->pointers;
+  } else if(size!=24) return 199;
   for(uintptr_t i=0;i<reinterpret_cast<uintptr_t>(fn)-1;++i)
       pointers[2][i]=pointers[0][i]+pointers[1][i];
   ++launches;blocks_seen=blocks;return 0;
@@ -104,13 +111,14 @@ def variants():
     return result
 
 
-@pytest.fixture(scope="module")
-def bridge(tmp_path_factory):
+@pytest.fixture(scope="module", params=[False, True], ids=["catlass", "triton"])
+def bridge(tmp_path_factory, request):
     root = tmp_path_factory.mktemp("tensor-native")
     (root / "acl").mkdir()
     (root / "acl/acl.h").write_text(ACL)
     (root / "tensor_abi.h").write_text(HEADER)
-    (root / "bridge.cpp").write_text(native_tensor_wrapper(variants()))
+    grids = [(1, 1, 1), (1, 1, 1), (1, 1, 1), (1, 2, 1)] if request.param else None
+    (root / "bridge.cpp").write_text(native_tensor_wrapper(variants(), triton_grids=grids))
     path = root / "bridge.so"
     subprocess.run(
         [
@@ -266,3 +274,21 @@ def test_failed_partial_unload_is_terminal_and_never_loads_more_handles(bridge, 
         assert call(lib)[0] != 0
     assert lib.test_loads() == 2 and lib.test_unloads() == 1
     assert lib.test_launches() == 0
+
+
+@pytest.mark.parametrize(
+    "grids",
+    [
+        [],
+        [(1, 1, 1)] * 3,
+        [(True, 1, 1)] * 4,
+        [(0, 1, 1)] * 4,
+        [(65536, 1, 1)] * 4,
+        [(1, 1, 1)] * 4,
+        [(1, 1)] * 4,
+        [[1, 1, 1]] * 4,
+    ],
+)
+def test_invalid_triton_grids_never_generate_native_launches(grids):
+    with pytest.raises(BuildError):
+        native_tensor_wrapper(variants(), triton_grids=grids)
