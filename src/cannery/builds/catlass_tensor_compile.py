@@ -65,7 +65,7 @@ class CatlassTensorAdapter:
             )
         )
         prelude = (
-            "import hashlib,importlib.util,json,math,os,re,shutil,struct,subprocess,sys\n"
+            "import copy,hashlib,importlib.util,json,math,os,re,shutil,struct,subprocess,sys\n"
             "from pathlib import Path\nfrom dataclasses import dataclass\n"
             "from typing import Any,Literal\n"
             "class BuildError(ValueError): pass\n"
@@ -115,7 +115,7 @@ def compile_tensor_exports(plan, source, output):
     build_variant=getattr(candidate,PARAMETERS['symbol'])
     variants=[]
     for signature in PARAMETERS['variants']:
-        exported=build_variant(signature)
+        exported=build_variant(copy.deepcopy(signature))
         if type(exported) is not dict or set(exported)!={'artifact','bindings','block_num'}:
             raise BuildError('Expected one compiled artifact, pointer bindings and block count')
         artifact=exported['artifact'];module=artifact.jit_module
