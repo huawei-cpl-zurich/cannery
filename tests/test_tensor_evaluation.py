@@ -11,7 +11,7 @@ from test_tensor_numerical_contract import fixture as contract_fixture
 
 from cannery.numerics.baseline_v2 import pack_baseline_v2, unpack_baseline_v2
 from cannery.numerics.evaluation_v2 import evaluate_tensor
-from cannery.numerics.recipes_v2 import RecipeSuiteV2
+from cannery.numerics.recipes_v2 import RecipeSuiteV2, input_sha256_v2
 from cannery.numerics.tensor_contract import TensorContractV2
 from cannery.registry.manifest import Validation, validate_spec
 from cannery.submissions.manifest import RequestedValidation
@@ -50,6 +50,9 @@ def domain():
         contract=contract.output_contract(),
     )
     hashes = {"small": dict(baseline.metadata["cases"][0]["inputs"])}
+    hashes["small"]["cache"] = input_sha256_v2(
+        suite.cases[0].inputs["cache"], outputs["small"]["updated"]
+    )
     return baseline, suite, contract, copy.deepcopy(outputs), hashes
 
 
@@ -68,19 +71,28 @@ def test_bundle_refactor_preserves_existing_bytes():
 
 
 def test_named_outputs_scalar_and_declared_mutation(domain):
-    domain[4]["small"]["cache"] = "0" * 64
+    updated_hash = domain[4]["small"]["cache"]
     result = evaluate(domain)
     assert result["passed"] and result["schema_version"] == 2
     case = result["cases"][0]
     assert case["inputs"]["cache"] == {
         "mutable": True,
-        "sha256": "0" * 64,
+        "sha256": updated_hash,
         "unchanged": False,
     }
     assert case["readonly_inputs_unchanged"]
+    assert case["mutable_aliases_consistent"]
     assert case["outputs"]["updated"]["alias"] == "cache"
     assert case["scalars"]["offset"] == {"kind": "int64", "value": 1}
     json.dumps(result, allow_nan=False)
+
+
+def test_mutable_input_hash_must_match_returned_alias_bytes(domain):
+    domain[4]["small"]["cache"] = "0" * 64
+    result = evaluate(domain)
+    assert not result["passed"]
+    assert not result["cases"][0]["mutable_aliases_consistent"]
+    assert all(output["passed"] for output in result["cases"][0]["outputs"].values())
 
 
 def test_readonly_input_mutation_fails_even_with_correct_outputs(domain):
