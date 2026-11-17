@@ -95,6 +95,8 @@ def compile_triton(plan,source,output):
         compiled=triton.compile(ASTSource(fn,signature=types,constexprs=constants),
                                 target=GPUTarget('npu',arch,0))
         metadata=compiled.metadata._asdict()
+        if type(metadata.get('cluster_dims')) is tuple:
+            metadata['cluster_dims']=list(metadata['cluster_dims'])
         grid=request['grid']
         if type(grid) is not list:raise BuildError('Expected static three-dimensional grid')
         grid=tuple(grid)

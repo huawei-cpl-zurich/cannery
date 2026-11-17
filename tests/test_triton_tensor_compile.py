@@ -42,6 +42,8 @@ def compiler(tmp_path, monkeypatch):
     backend.GPUTarget = lambda *args: args
     controls = {"fault": None, "calls": [], "commands": []}
     metadata = metadata_fixture()[0]
+    # CompiledKernel converts JSON cluster dimensions to a tuple on load.
+    metadata["cluster_dims"] = tuple(metadata["cluster_dims"])
 
     def compile_source(src, *, target):
         controls["calls"].append((src, target))
