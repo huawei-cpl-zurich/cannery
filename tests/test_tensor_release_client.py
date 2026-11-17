@@ -92,6 +92,26 @@ def test_published_tensor_projection_exposes_descriptors_not_inputs_or_oracle(as
     assert row["specializations"] is None
     assert "data" not in json.dumps(row["cases"])
 
+    from pathlib import Path
+
+    from fastapi import Request
+    from fastapi.templating import Jinja2Templates
+
+    from cannery.web.presentation import configure
+
+    templates = Jinja2Templates(directory=Path(__file__).parents[1] / "src/cannery/web/templates")
+    configure(templates)
+    page = templates.get_template("releases.html").render(
+        release=row | {"numerical_cases": []},
+        pages={},
+        download_snippets={},
+        request=Request(
+            {"type": "http", "path": "/releases/example", "query_string": b"", "headers": []}
+        ),
+    )
+    assert "Static named tensor domains: 2 cases" in page
+    assert "dynamic float32" not in page
+
 
 def test_version_dispatch_rejects_duplicate_keys_and_noncanonical_documents(assets):
     _, manifest, _, _ = assets
