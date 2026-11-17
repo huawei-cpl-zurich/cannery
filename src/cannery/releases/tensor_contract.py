@@ -1,7 +1,7 @@
 """Output-free tensor release reader; publication admission remains separate."""
 
 import json
-from typing import Literal, Self
+from typing import Any, Literal, Self
 from uuid import UUID
 
 from pydantic import Field, model_validator
@@ -132,6 +132,35 @@ class TensorReleaseManifest(StrictModel):
             if timed == (scored.excluded is not None):
                 raise ValueError("Only entirely empty tensor cases may be excluded")
         return self
+
+    def variants(self) -> list[dict[str, Any]]:
+        """Reconstruct package dispatch order from the mandatory score case order."""
+        variants, seen = [], set()
+        for row in self.score.cases:
+            case = self.cases[row.id]
+            variant = {
+                "inputs": [
+                    {"name": name, **case.inputs[name].model_dump(mode="json")}
+                    for name in self.interface.inputs
+                ],
+                "outputs": [
+                    {
+                        "name": name,
+                        **case.outputs[name].model_dump(mode="json"),
+                        "alias": case.aliases.get(name),
+                    }
+                    for name in self.interface.outputs
+                ],
+                "scalars": [
+                    {"name": name, **case.scalars[name].model_dump(mode="json")}
+                    for name in sorted(case.scalars)
+                ],
+            }
+            domain = canonical({k: variant[k] for k in ("inputs", "scalars")})
+            if domain not in seen:
+                seen.add(domain)
+                variants.append(variant)
+        return variants
 
     @property
     def cohort_sha256(self) -> str:
