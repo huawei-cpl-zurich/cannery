@@ -88,10 +88,19 @@ class BuildClaim:
     token: UUID
 
 
-def queue_build(session: Session, candidate: Candidate) -> bool:
+def build_abis(tensor_enabled: bool = False) -> tuple[str, ...]:
+    legacy = ("unary-f32-v1", "catlass-unary-f32-v1")
+    return legacy + (("tensor-v2",) if tensor_enabled else ())
+
+
+def queue_build(session: Session, candidate: Candidate, *, tensor_enabled: bool = False) -> bool:
     """Explicit ABI opt-in only; no author code is imported during discovery."""
     try:
-        adapter_for(SubmissionManifest.model_validate(candidate.manifest))
+        manifest = SubmissionManifest.model_validate(candidate.manifest)
+        if manifest.implementation.build.abi not in build_abis(tensor_enabled):
+            return False
+        if manifest.schema_version != 2:
+            adapter_for(manifest)
     except ValueError:
         return False
     if session.get(BuildState, candidate.id) is None:
@@ -110,7 +119,9 @@ def _terminal(session: Session, state: BuildState, code: str, now: datetime) -> 
     state.lease, state.lease_until = None, None
 
 
-def claim_build(engine: Engine, key: UUID, *, device: Device = "a5") -> BuildClaim | None:
+def claim_build(
+    engine: Engine, key: UUID, *, device: Device = "a5", tensor_enabled: bool = False
+) -> BuildClaim | None:
     now = datetime.now(UTC)
     with Session(engine) as session, session.begin():
         state = session.scalar(
@@ -119,6 +130,9 @@ def claim_build(engine: Engine, key: UUID, *, device: Device = "a5") -> BuildCla
             .where(
                 BuildState.id == key,
                 Candidate.manifest["implementation"]["device"].as_string() == device,
+                Candidate.manifest["implementation"]["build"]["abi"]
+                .as_string()
+                .in_(build_abis(tensor_enabled)),
             )
             .with_for_update(of=BuildState, skip_locked=True)
         )
@@ -215,7 +229,7 @@ def finish_build(
         return True
 
 
-def due_builds(engine: Engine, *, device: Device = "a5") -> list[str]:
+def due_builds(engine: Engine, *, device: Device = "a5", tensor_enabled: bool = False) -> list[str]:
     now = datetime.now(UTC)
     with Session(engine) as session:
         return [
@@ -225,6 +239,9 @@ def due_builds(engine: Engine, *, device: Device = "a5") -> list[str]:
                 .join(Candidate, Candidate.id == BuildState.id)
                 .where(
                     Candidate.manifest["implementation"]["device"].as_string() == device,
+                    Candidate.manifest["implementation"]["build"]["abi"]
+                    .as_string()
+                    .in_(build_abis(tensor_enabled)),
                     BuildState.status.in_(("queued", "building")),
                     or_(
                         BuildState.deadline <= now,
