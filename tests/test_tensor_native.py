@@ -41,7 +41,7 @@ static int aclrtGetCurrentContext(aclrtContext* out) {
 static int aclrtBinaryLoadFromData(const void* data,size_t size,
     const aclrtBinaryLoadOptions* opts,aclrtBinHandle* out) {
   ++loads;
-  if(fault==1 || (fault==5 && loads==2)) return 100+fault;
+  if(fault==1 || ((fault==5 || fault==8) && loads==2)) return 100+fault;
   if(fault==6) return 0;
   if(size<64 || opts->numOpt!=2 || opts->options[0].type!=3 ||
       opts->options[0].value.isLazyLoad!=0 || opts->options[1].type!=2) return 199;
@@ -53,7 +53,7 @@ static int aclrtBinaryGetFunction(aclrtBinHandle binary,const char*,aclrtFuncHan
   if(fault!=7) *out=binary;
   return 0;
 }
-static int aclrtBinaryUnLoad(aclrtBinHandle){++unloads;return 0;}
+static int aclrtBinaryUnLoad(aclrtBinHandle){++unloads;return fault==8 ? 208 : 0;}
 static int aclrtLaunchKernelWithHostArgs(aclrtFuncHandle fn,uint32_t blocks,
     void* stream,void* cfg,void* args,size_t size,void* placeholders,size_t count) {
   if(fault==3) return 103;
@@ -253,3 +253,16 @@ assert all(status==0 and values==[i+2 for i in range(17)] for status,values in r
         capture_output=True,
         timeout=10,
     )
+
+
+def test_failed_partial_unload_is_terminal_and_never_loads_more_handles(bridge, tmp_path):
+    lib = load(bridge, tmp_path)
+    lib.test_fault(8)
+    assert lib.cannery_prepare_tensor_v2() == 208
+    assert lib.test_loads() == 2 and lib.test_unloads() == 1
+    lib.test_fault(0)
+    for _ in range(3):
+        assert lib.cannery_prepare_tensor_v2() == 208
+        assert call(lib)[0] != 0
+    assert lib.test_loads() == 2 and lib.test_unloads() == 1
+    assert lib.test_launches() == 0
