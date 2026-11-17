@@ -2,6 +2,7 @@
 
 import json
 import math
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -336,3 +337,22 @@ def retained(
             },
         )
     return ReleaseManifest(**common, specializations=implementation.build.specializations)
+
+
+def publication_document(
+    engine: Engine, identifier: UUID, snapshots: SnapshotStore | Path | None = None
+) -> ReleaseManifest | TensorReleaseManifest:
+    """Dispatch only from the immutable spec, never a caller-selected schema."""
+    with Session(engine) as db:
+        sub = db.get(Submission, identifier)
+        spec = db.get(SpecVersion, sub.spec_id) if sub else None
+        tensor = spec is not None and spec.manifest.get("schema_version") == 2
+    if tensor:
+        if snapshots is None:
+            raise PublicationUnavailable("retained_spec_required")
+        try:
+            store = SnapshotStore(snapshots) if isinstance(snapshots, Path) else snapshots
+        except OSError:
+            raise PublicationUnavailable("release_snapshot_unavailable") from None
+        return tensor_publication_manifest(engine, identifier, store)
+    return publication_manifest(engine, identifier)

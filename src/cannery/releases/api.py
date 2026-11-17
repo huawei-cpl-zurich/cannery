@@ -10,7 +10,7 @@ from sqlalchemy.orm import Session
 from cannery.accounts.context import identity, role
 from cannery.database import aware
 from cannery.registry.manifest import StrictModel
-from cannery.releases.eligibility import PublicationUnavailable, publication_manifest
+from cannery.releases.eligibility import PublicationUnavailable, publication_document
 from cannery.releases.models import Publication, PublicationJob
 from cannery.releases.state import request_publication, withdraw
 from cannery.settings import Settings
@@ -70,9 +70,11 @@ def publish(settings: Settings, engine: Engine, identifier: UUID) -> dict[str, s
     with Session(engine) as db:
         identifier = owned(settings, db, identifier).id
     try:
-        publication_manifest(engine, identifier)
+        publication_document(engine, identifier, settings.snapshot_root)
     except PublicationUnavailable as error:
-        raise HTTPException(409, str(error)) from None
+        raise HTTPException(
+            503 if str(error) == "release_snapshot_unavailable" else 409, str(error)
+        ) from None
     job = request_publication(
         engine, identifier, {"namespace": identity(settings), "role": role(settings)}
     )

@@ -1,6 +1,5 @@
 """Immutable release evidence and fenced, auditable publication visibility."""
 
-import json
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -21,7 +20,8 @@ from sqlalchemy.orm import Mapped, Mapper, mapped_column, relationship
 
 from cannery.artifacts import ArtifactRef, digest
 from cannery.database import Base
-from cannery.releases.contract import ReleaseManifest, canonical
+from cannery.releases.contract import canonical
+from cannery.releases.document import parse_release_document
 from cannery.submissions.models import Submission
 
 
@@ -110,7 +110,7 @@ class PublicationEvent(Base):
 
 @event.listens_for(Release, "before_insert")
 def bind_release(mapper: Mapper[Any], connection: Connection, target: Release) -> None:
-    manifest = ReleaseManifest.model_validate_json(json.dumps(target.document))
+    manifest = parse_release_document(target.document)
     ref = ArtifactRef.model_validate(target.manifest)
     if (
         ref.repository != "private"
