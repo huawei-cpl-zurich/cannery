@@ -81,7 +81,11 @@ def _conditions(signature: dict[str, Any]) -> str:
     return " && ".join(conditions)
 
 
-def native_tensor_wrapper(variants: list[tuple[dict[str, Any], StaticTensorExport]]) -> str:
+def native_tensor_wrapper(
+    variants: list[tuple[dict[str, Any], StaticTensorExport]],
+    *,
+    triton_grids: list[tuple[int, int, int]] | None = None,
+) -> str:
     """Use the tensor_abi.h from the pinned runtime wheel when compiling this source."""
     try:
         if (
@@ -89,6 +93,10 @@ def native_tensor_wrapper(variants: list[tuple[dict[str, Any], StaticTensorExpor
             or sum(len(v.binary) for _, v in variants) > MAX_OBJECT_BYTES
         ):
             raise ValueError("Native image budget exceeded")
+        if triton_grids is not None and (
+            type(triton_grids) is not list or len(triton_grids) != len(variants)
+        ):
+            raise ValueError("Invalid static Triton grids")
         objects, records, launches, domains = [], [], [], set()
         interface = None
         for index, (signature, export) in enumerate(variants):
@@ -134,10 +142,30 @@ def native_tensor_wrapper(variants: list[tuple[dict[str, Any], StaticTensorExpor
                 + json.dumps(export.entrypoint)
                 + f",ACL_RT_BINARY_MAGIC_ELF_{magic}}}"
             )
+            argument_struct = f"void* args[]={{ {','.join(arguments)} }};"
+            if triton_grids is not None:
+                grid = triton_grids[index]
+                if (
+                    type(grid) is not tuple
+                    or len(grid) != 3
+                    or any(type(value) is not int or not 1 <= value <= 65535 for value in grid)
+                    or math.prod(grid) != export.block_num
+                ):
+                    raise ValueError("Triton grid and native block count differ")
+                # Pinned Ascend950 non-SIMT launcher ABI: sync/workspace, pointers,
+                # three int32 grid extents, then an 8-byte aligned debug pointer.
+                argument_struct = (
+                    f"struct {{ void* sync; void* workspace; void* pointers[{len(arguments)}]; "
+                    "int32_t gx,gy,gz; void* debug; } args={nullptr,nullptr,{"
+                    + ",".join(arguments)
+                    + "},"
+                    + ",".join(map(str, grid))
+                    + ",nullptr};"
+                )
             launches.append(f"""if ({guard}) {{
-    void* args[]={{ {",".join(arguments)} }};
+    {argument_struct}
     return aclrtLaunchKernelWithHostArgs(variants[{index}].function,{export.block_num},
-        stream,nullptr,args,sizeof(args),nullptr,0);
+        stream,nullptr,{"&args" if triton_grids is not None else "args"},sizeof(args),nullptr,0);
   }}""")
         return (
             '#include <acl/acl.h>\n#include <mutex>\n#include "tensor_abi.h"\n'
