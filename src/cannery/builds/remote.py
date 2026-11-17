@@ -9,6 +9,7 @@ import re
 from collections.abc import Callable
 from pathlib import Path, PurePosixPath
 from typing import Any
+from uuid import uuid4
 
 import yaml
 
@@ -26,18 +27,21 @@ class RemoteFailure(Exception):
 
 
 def durable_write(path: Path, data: bytes) -> None:
-    """Atomic journal replacement; same-directory file and directory fsync."""
-    temporary = path.with_suffix(path.suffix + ".tmp")
-    with temporary.open("wb") as stream:
-        stream.write(data)
-        stream.flush()
-        os.fsync(stream.fileno())
-    temporary.replace(path)
-    descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    """Atomic journal replacement with independent staging files for racing writers."""
+    temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
     try:
-        os.fsync(descriptor)
+        with temporary.open("xb") as stream:
+            stream.write(data)
+            stream.flush()
+            os.fsync(stream.fileno())
+        temporary.replace(path)
+        descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+        try:
+            os.fsync(descriptor)
+        finally:
+            os.close(descriptor)
     finally:
-        os.close(descriptor)
+        temporary.unlink(missing_ok=True)
 
 
 def operation_receipts(journal: Path) -> list[Path]:
@@ -148,7 +152,7 @@ class CplRemote:
         runtime: str | None,
         npu: int | None = None,
     ) -> str:
-        """Submit once, then observe the retained handle across coordinator restarts."""
+        """Submit once; checkpoint success and observe unfinished handles after restarts."""
         if not re.fullmatch(r"[a-z][a-z0-9_-]{0,63}", name):
             raise ValueError("Invalid operation name")
         receipt = self.journal / f"{name}.json"
@@ -206,13 +210,27 @@ class CplRemote:
                 raise ValueError("Invalid remote receipt")
         except (OSError, ValueError, KeyError, TypeError):
             raise RemotePending("Dispatch receipt unavailable") from None
+        completion = self.journal / f"{name}.complete"
+        expected = handle.encode() + b"\n"
+        if completion.exists():
+            if completion.read_bytes() != expected:
+                raise RemotePending("Completion checkpoint does not match receipt")
+            return handle
         result = self.call("observe", handle)
+        if (
+            result.get("handle", handle) != handle
+            or result.get("target", self.target) != self.target
+        ):
+            raise RemotePending("Observation does not match dispatch receipt")
         state = result.get("state")
         if state == "missing":
             cancelled = self.call("cancel", handle)
             if cancelled.get("state") == "cancelled":
                 raise RemoteFailure(125)
-        if state == "completed" and result.get("exit") == 0:
+        if state == "completed" and type(result.get("exit")) is int:
+            if result["exit"] != 0:
+                raise RemoteFailure(result["exit"])
+            durable_write(completion, expected)
             return handle
         if state in {"failed", "cancelled"}:
             raise RemoteFailure(result.get("exit"))
