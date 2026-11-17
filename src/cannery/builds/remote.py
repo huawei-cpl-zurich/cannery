@@ -29,8 +29,9 @@ class RemoteFailure(Exception):
 def durable_write(path: Path, data: bytes) -> None:
     """Atomic journal replacement with independent staging files for racing writers."""
     temporary = path.with_name(f".{path.name}.{uuid4().hex}.tmp")
+    stream = temporary.open("xb")
     try:
-        with temporary.open("xb") as stream:
+        with stream:
             stream.write(data)
             stream.flush()
             os.fsync(stream.fileno())

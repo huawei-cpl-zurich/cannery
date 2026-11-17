@@ -4,6 +4,7 @@ import stat
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from threading import Barrier
+from uuid import UUID
 
 import pytest
 
@@ -128,6 +129,24 @@ def test_failed_journal_flush_preserves_previous_value_and_removes_staging(tmp_p
     assert not list(tmp_path.glob("*.tmp"))
     durable_write(destination, b"recovered")
     assert destination.read_bytes() == b"recovered"
+
+
+def test_staging_name_collision_preserves_the_other_writers_file(tmp_path, monkeypatch):
+    from cannery.builds import remote
+
+    destination = tmp_path / "checkpoint"
+    destination.write_bytes(b"previous")
+    other = tmp_path / f".checkpoint.{UUID(int=0).hex}.tmp"
+    other.write_bytes(b"another writer")
+    with monkeypatch.context() as patch:
+        patch.setattr(remote, "uuid4", lambda: UUID(int=0))
+        with pytest.raises(FileExistsError):
+            durable_write(destination, b"replacement")
+    assert destination.read_bytes() == b"previous"
+    assert other.read_bytes() == b"another writer"
+    durable_write(destination, b"recovered")
+    assert destination.read_bytes() == b"recovered"
+    assert other.read_bytes() == b"another writer"
 
 
 def test_lost_launch_response_recovers_same_handle_after_restart(tmp_path):
