@@ -11,8 +11,9 @@ from pathlib import Path
 from uuid import UUID
 
 from cannery.artifacts import ArtifactRef, ArtifactStore, digest, verified
-from cannery.builds.ascendc import BuildError
 from cannery.builds.catlass_compile import adapter_for
+from cannery.builds.library import ExecutionFailure as ExecutionFailure
+from cannery.builds.library import archive_library, check_library
 from cannery.builds.remote import (
     CplRemote,
     RemoteFailure,
@@ -27,25 +28,14 @@ from cannery.submissions.manifest import SubmissionManifest, validate_submission
 from cannery.submissions.models import Candidate
 
 
-class ExecutionFailure(BuildError):
-    def __init__(self, code: str, retryable: bool = False) -> None:
-        self.code, self.retryable = code, retryable
-        super().__init__(code)
-
-
 def binary_package(
     binary: bytes, source: str, profile: WorkerProfile, manifest: SubmissionManifest | None = None
 ) -> bytes:
     if manifest is not None and manifest.implementation.device != profile.device:
         raise ExecutionFailure("worker_device_mismatch")
-    if (
-        not 64 <= len(binary) <= 63 * 1024 * 1024
-        or binary[:6] != b"\x7fELF\x02\x01"
-        or int.from_bytes(binary[16:18], "little") != 3
-        or int.from_bytes(binary[18:20], "little") != 183
-        or not re.fullmatch(r"[a-f0-9]{64}", source)
-    ):
-        raise ExecutionFailure("invalid_compiled_binary")
+    if manifest is not None and manifest.implementation.build.abi == "tensor-v2":
+        raise ExecutionFailure("tensor_package_contract_required")
+    check_library(binary, source)
     metadata = {
         "schema_version": 1,
         "abi": "unary-f32-v1",
@@ -74,16 +64,7 @@ def binary_package(
                 separators=(",", ":"),
             ),
         )
-    encoded = json.dumps(metadata, sort_keys=True, separators=(",", ":")).encode()
-    if len(encoded) > 16384:
-        raise ExecutionFailure("invalid_worker_profile")
-    output = io.BytesIO()
-    with tarfile.open(fileobj=output, mode="w", format=tarfile.USTAR_FORMAT) as archive:
-        for name, value in [("metadata.json", encoded), ("kernel.so", binary)]:
-            item = tarfile.TarInfo(name)
-            item.size, item.mode = len(value), 0o400
-            archive.addfile(item, io.BytesIO(value))
-    return output.getvalue()
+    return archive_library(binary, metadata)
 
 
 def unpack_script(profile: WorkerProfile, attempt: UUID, label: str, checksum: str) -> bytes:
