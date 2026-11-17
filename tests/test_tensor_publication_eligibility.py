@@ -17,6 +17,7 @@ from test_tensor_submission_reader import tensor_files as submission_files
 from cannery.benchmark.contract import Cohort, reference_key
 from cannery.benchmark.scheduling import candidate_key
 from cannery.benchmark.state import PerformanceJob, PerformanceResult
+from cannery.benchmark.tensor_scoring import tensor_score
 from cannery.git_intake import GitSource
 from cannery.git_intake.snapshots import SelectedTree, SnapshotStore
 from cannery.numerics.baseline_state import BaselineState
@@ -77,7 +78,24 @@ def completed(admission, attestation, tmp_path):
         for output in row["outputs"].values():
             output["submission_requested"] = copy.deepcopy(output["spec_default"])
     latency = dict(median_us=2.0, p95_us=2.0, samples=100)
-    row = dict(id="small", shape=[2, 3], reference=latency, candidate=latency, speedup=1.0)
+    # Canonical recipe identity does not depend on input mapping insertion order.
+    suite = frozen.suite.model_copy(
+        update={
+            "cases": tuple(
+                case.model_copy(update={"inputs": dict(reversed(list(case.inputs.items())))})
+                for case in frozen.suite.cases
+            )
+        }
+    )
+    assert suite.sha256 == frozen.suite.sha256
+    assert next(iter(suite.cases[0].inputs.values())).shape == (4, 3)
+    row = tensor_score(
+        suite,
+        frozen.contract,
+        {"small": [2.0] * 100},
+        {"small": [2.0] * 100},
+        first_input=frozen.spec.manifest.spec.interface.inputs[0],
+    )["cases"][0]
     with engine.begin() as c:
         c.execute(
             update(SpecVersion)
@@ -155,6 +173,7 @@ def test_complete_named_mutable_and_integer_evidence_is_read_without_author_impo
     assert result.cases["small"].aliases == {"updated": "cache"}
     assert result.cases["small"].outputs["indices"].dtype == "int32"
     assert result.score.geomean_speedup == 1.0
+    assert result.score.cases[0].shape == (2, 3)
     with pytest.raises(PublicationUnavailable):
         publication_manifest(*completed[:2])
 
