@@ -5,6 +5,11 @@ import inspect
 from cannery.numerics.recipes_v2 import ITEM_BYTES, _float_bytes, _generate_v2, input_sha256_v2
 from cannery.numerics.validation_runtime import RUNTIME
 
+TENSOR_THREADS = """os.environ['OMP_NUM_THREADS']='1'
+os.environ['MKL_NUM_THREADS']='1'
+os.environ['OPENBLAS_NUM_THREADS']='1'
+"""
+
 TENSOR_RUNTIME = r"""
 plan=json.loads(Path('/input/cases.json').read_bytes())
 assert plan['suite']['schema_version']==2
@@ -90,6 +95,7 @@ def tensor_runtime_program() -> str:
         + inspect.getsource(_float_bytes)
         + inspect.getsource(_generate_v2)
         + inspect.getsource(input_sha256_v2)
+        + TENSOR_THREADS
         + bootstrap
         + TENSOR_RUNTIME
     )

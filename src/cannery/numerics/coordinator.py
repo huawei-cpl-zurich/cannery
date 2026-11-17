@@ -27,11 +27,13 @@ from cannery.builds.sandbox import WorkerProfile
 from cannery.builds.state import BuildResult, BuildState
 from cannery.devices import Device
 from cannery.git_intake import SnapshotBinding
-from cannery.numerics.baseline_format import unpack_baseline
+from cannery.numerics.baseline_format import BaselineBundle, unpack_baseline
 from cannery.numerics.baseline_state import BaselineState
+from cannery.numerics.baseline_v2 import BaselineBundleV2, unpack_baseline_v2
 from cannery.numerics.baselines import BaselinePending, BaselineUnavailable, cached_evidence
 from cannery.numerics.executor import NumericalExecutor
-from cannery.numerics.recipes import parse_recipes
+from cannery.numerics.recipes import RecipeSuite, parse_recipes
+from cannery.numerics.recipes_v2 import RecipeSuiteV2
 from cannery.numerics.state import (
     NumericalClaim,
     NumericalResult,
@@ -43,8 +45,9 @@ from cannery.numerics.state import (
     postpone_numerical,
 )
 from cannery.registry.freeze import BaselineEvidence
-from cannery.registry.manifest import RecipeEntrypoint, validate_spec
+from cannery.registry.manifest import RecipeEntrypoint, parse_manifest, validate_spec
 from cannery.registry.models import SpecVersion
+from cannery.registry.tensor_manifest import validate_tensor_spec
 from cannery.submissions.models import Candidate, Submission
 
 
@@ -132,29 +135,48 @@ def retained(engine: Engine, key: UUID, executor: BuildExecutor) -> dict[str, An
             raise ExecutionFailure("admitted_candidate_missing")
         binding = SnapshotBinding.model_validate(frozen.snapshot)
         files = executor.snapshots.read(binding).files
-        spec = validate_spec(files, binding.source.path)
+        prefix = "" if binding.source.path == "." else binding.source.path + "/"
+        manifest = parse_manifest(files[prefix + "cannery.yaml"])
+        suite: RecipeSuite | RecipeSuiteV2
+        contract = None
+        if manifest.schema_version == 2:
+            tensor = validate_tensor_spec(files, binding.source.path)
+            spec, suite, contract = tensor.spec, tensor.suite, tensor.contract
+        else:
+            spec = validate_spec(files, binding.source.path)
+            cases = spec.manifest.spec.cases
+            if not isinstance(cases, RecipeEntrypoint):
+                raise BaselineUnavailable("recipe_baseline_required")
+            suite = parse_recipes(files[prefix + cases.recipe_file])
         if spec.content_sha256 != frozen.content_sha256 or spec.file_sha256 != frozen.file_sha256:
             raise ExecutionFailure("retained_spec_mismatch")
-        cases = spec.manifest.spec.cases
-        if not isinstance(cases, RecipeEntrypoint):
-            raise BaselineUnavailable("recipe_baseline_required")
-        prefix = "" if binding.source.path == "." else binding.source.path + "/"
-        suite = parse_recipes(files[prefix + cases.recipe_file])
         evidence = BaselineEvidence.model_validate(frozen.smoke)
         cache = session.get(BaselineState, evidence.baseline_key)
         if cache is None:
             raise BaselineUnavailable("baseline_missing")
-        checked = cached_evidence(cache, spec, suite, executor.artifacts)
+        checked = cached_evidence(cache, spec, suite, executor.artifacts, contract=contract)
         if checked != evidence:
             raise BaselineUnavailable("baseline_identity_mismatch")
         package = executor.artifacts.get(checked.artifact)
-        baseline = unpack_baseline(
-            package,
-            checked.artifact.sha256,
-            spec_sha256=spec.content_sha256,
-            suite=suite,
-            environment=spec.environment,
-        )
+        baseline: BaselineBundle | BaselineBundleV2
+        if isinstance(suite, RecipeSuiteV2):
+            assert contract is not None
+            baseline = unpack_baseline_v2(
+                package,
+                checked.artifact.sha256,
+                spec_sha256=spec.content_sha256,
+                suite=suite,
+                environment=spec.environment,
+                contract=contract.output_contract(),
+            )
+        else:
+            baseline = unpack_baseline(
+                package,
+                checked.artifact.sha256,
+                spec_sha256=spec.content_sha256,
+                suite=suite,
+                environment=spec.environment,
+            )
         return {
             "candidate": candidate,
             "spec": spec,
@@ -162,6 +184,7 @@ def retained(engine: Engine, key: UUID, executor: BuildExecutor) -> dict[str, An
             "baseline": baseline,
             "binary": ArtifactRef.model_validate(result.artifact),
             "baseline_artifact": checked.artifact,
+            **({"contract": contract} if contract is not None else {}),
         }
 
 
