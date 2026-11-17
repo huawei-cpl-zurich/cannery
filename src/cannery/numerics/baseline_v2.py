@@ -97,17 +97,13 @@ def _json(value: Any) -> bytes:
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode()
 
 
-def _metadata(
-    spec_sha256: str,
+def records_v2(
     suite: RecipeSuiteV2,
-    environment: EnvironmentLock,
-    image_id: str,
     contract: OutputContractV2,
     outputs: dict[str, dict[str, bytes]],
-) -> bytes:
-    key = baseline_key_v2(spec_sha256, suite, environment, contract)
-    if not image_id.startswith("sha256:") or not _digest(image_id[7:]):
-        raise ValueError("Expected immutable oracle image ID")
+) -> list[dict[str, Any]]:
+    if set(contract.cases) != {case.id for case in suite.cases}:
+        raise ValueError("Output contract must cover every recipe case")
     if set(outputs) != set(contract.cases):
         raise ValueError("Baseline must cover every case exactly once")
     cases = []
@@ -134,6 +130,21 @@ def _metadata(
                 "outputs": records,
             }
         )
+    return cases
+
+
+def _metadata(
+    spec_sha256: str,
+    suite: RecipeSuiteV2,
+    environment: EnvironmentLock,
+    image_id: str,
+    contract: OutputContractV2,
+    outputs: dict[str, dict[str, bytes]],
+) -> bytes:
+    key = baseline_key_v2(spec_sha256, suite, environment, contract)
+    if not image_id.startswith("sha256:") or not _digest(image_id[7:]):
+        raise ValueError("Expected immutable oracle image ID")
+    cases = records_v2(suite, contract, outputs)
     encoded = _json(
         {
             "schema_version": 2,
