@@ -14,13 +14,22 @@ from cannery.benchmark.scheduling import candidate_key
 from cannery.benchmark.state import PerformanceJob, PerformanceResult
 from cannery.builds.state import BuildResult, BuildState
 from cannery.git_intake import SnapshotBinding
+from cannery.git_intake.snapshots import SnapshotStore
 from cannery.numerics.baseline_state import BaselineState
+from cannery.numerics.baseline_v2 import OutputTensorV2
 from cannery.numerics.comparison import Comparison
 from cannery.numerics.state import NumericalResult, NumericalState
 from cannery.registry.freeze import BaselineEvidence
 from cannery.registry.manifest import Manifest
 from cannery.registry.models import SpecVersion
-from cannery.releases.contract import ReleaseManifest, Score, Tolerance
+from cannery.registry.tensor_manifest import ValidatedTensorSpec, validate_tensor_spec
+from cannery.releases.contract import CaseScore, ReleaseManifest, Score, Tolerance
+from cannery.releases.tensor_contract import (
+    TensorCaseScore,
+    TensorReleaseCase,
+    TensorReleaseManifest,
+    TensorScore,
+)
 from cannery.submissions.manifest import SubmissionManifest
 from cannery.submissions.models import Candidate, Submission
 
@@ -114,14 +123,46 @@ def check(
 def publication_manifest(engine: Engine, identifier: UUID) -> ReleaseManifest:
     try:
         with Session(engine) as db:
-            return retained(db, identifier)
+            result = retained(db, identifier)
+            assert isinstance(result, ReleaseManifest)
+            return result
     except PublicationUnavailable:
         raise
     except (KeyError, ValueError, TypeError, AttributeError, OverflowError):
         raise PublicationUnavailable("release_evidence_invalid") from None
 
 
-def retained(db: Session, identifier: UUID) -> ReleaseManifest:
+def tensor_publication_manifest(
+    engine: Engine, identifier: UUID, snapshots: SnapshotStore
+) -> TensorReleaseManifest:
+    """Read immutable evidence without running author code or enabling publication."""
+    try:
+        with Session(engine) as db:
+            sub = db.get(Submission, identifier)
+            frozen = db.get(SpecVersion, sub.spec_id) if sub else None
+            require(frozen, "retained_spec_required")
+            assert frozen
+            binding = SnapshotBinding.model_validate(frozen.snapshot)
+            tensor = validate_tensor_spec(snapshots.read(binding).files, binding.source.path)
+            require(
+                tensor.spec.content_sha256 == frozen.content_sha256
+                and tensor.spec.file_sha256 == frozen.file_sha256
+                and tensor.spec.manifest.model_dump(mode="json") == frozen.manifest
+                and tensor.spec.manifest.spec.version == frozen.version,
+                "retained_spec_mismatch",
+            )
+            result = retained(db, identifier, tensor=tensor)
+            assert isinstance(result, TensorReleaseManifest)
+            return result
+    except PublicationUnavailable:
+        raise
+    except (KeyError, ValueError, TypeError, AttributeError, OverflowError, OSError):
+        raise PublicationUnavailable("release_evidence_invalid") from None
+
+
+def retained(
+    db: Session, identifier: UUID, *, tensor: ValidatedTensorSpec | None = None
+) -> ReleaseManifest | TensorReleaseManifest:
     sub = db.get(Submission, identifier)
     candidate = db.get(Candidate, identifier)
     build = db.get(BuildState, identifier)
@@ -192,7 +233,14 @@ def retained(db: Session, identifier: UUID) -> ReleaseManifest:
         and job.identity["binary"] == package.model_dump(mode="json")
         and reference.identity["cohort"] == job.identity["cohort"]
     )
-    score = Score.model_validate_json(
+    is_tensor = evidence.generator == "sha256-tensor-v2"
+    require(is_tensor == (tensor is not None), "tensor_publication_not_enabled")
+    require(
+        (implementation.build.abi == "tensor-v2") == is_tensor
+        and (tensor is not None or implementation.language != "triton")
+    )
+    score_type = TensorScore if is_tensor else Score
+    score = score_type.model_validate_json(
         json.dumps({k: result.report[k] for k in ["protocol", "cases", "geomean_speedup"]})
     )
     default = Tolerance(
@@ -201,7 +249,23 @@ def retained(db: Session, identifier: UUID) -> ReleaseManifest:
     requested = Tolerance(
         rtol=declaration.validation.requested_rtol, atol=declaration.validation.requested_atol
     )
-    check(numerical.report, evidence, score, default, requested, spec.spec.validation.equal_nan)
+
+    def numerical_check(report: dict[str, Any], pair: Tolerance) -> None:
+        if tensor is not None:
+            from cannery.releases.tensor_checks import check_tensor
+
+            check_tensor(report, evidence, tensor, default, pair)
+        else:
+            assert isinstance(score, Score)
+            check(report, evidence, score, default, pair, spec.spec.validation.equal_nan)
+
+    if tensor is not None:
+        require(
+            numerical.report["binary_sha256"] == package.sha256
+            and numerical.report["baseline_sha256"] == evidence.artifact.sha256
+            and numerical.report["candidate_sha256"] == candidate.content_sha256
+        )
+    numerical_check(numerical.report, requested)
     for report, kind, pair in [
         (result.report, "candidate", requested),
         (base.report, "reference", default),
@@ -215,9 +279,10 @@ def retained(db: Session, identifier: UUID) -> ReleaseManifest:
             and len(report["correctness"]) == 2
         )
         for correctness in report["correctness"]:
-            check(correctness, evidence, score, default, pair, spec.spec.validation.equal_nan)
+            numerical_check(correctness, pair)
     require([c["id"] for c in base.report["cases"]] == [c.id for c in score.cases])
-    for case, row in zip(score.cases, base.report["cases"], strict=True):
+    scored_cases: tuple[CaseScore | TensorCaseScore, ...] = score.cases
+    for case, row in zip(scored_cases, base.report["cases"], strict=True):
         expected: dict[str, Any]
         if case.excluded:
             expected = {"id": case.id, "excluded": "empty_correctness_only"}
@@ -227,14 +292,8 @@ def retained(db: Session, identifier: UUID) -> ReleaseManifest:
         require(row == expected)
     require(implementation.build.abi is not None)
     assert implementation.build.abi is not None and numeric.attempt_id is not None
-    if (
-        evidence.generator != "sha256-f32-v1"
-        or implementation.language == "triton"
-        or implementation.build.abi == "tensor-v2"
-    ):
-        raise PublicationUnavailable("tensor_publication_not_enabled")
     pairs = sorted({(default.rtol, default.atol), (requested.rtol, requested.atol)})
-    return ReleaseManifest(
+    common: dict[str, Any] = dict(
         submission_id=identifier,
         spec_id=frozen.id,
         kernel=declaration.kernel,
@@ -247,7 +306,6 @@ def retained(db: Session, identifier: UUID) -> ReleaseManifest:
         device=implementation.device,
         language=implementation.language,
         abi=implementation.build.abi,
-        specializations=implementation.build.specializations,
         package=package,
         numerical_attempt=numeric.attempt_id,
         benchmark_attempt=result.id,
@@ -259,3 +317,20 @@ def retained(db: Session, identifier: UUID) -> ReleaseManifest:
         tolerances=tuple(Tolerance(rtol=r, atol=a) for r, a in pairs),
         score=score,
     )
+    if tensor is not None:
+        assert isinstance(score, TensorScore)
+        return TensorReleaseManifest(
+            **common,
+            interface=tensor.spec.manifest.spec.interface,
+            cases={
+                case.id: TensorReleaseCase(
+                    **tensor.contract.cases[case.id].model_dump(),
+                    inputs={
+                        name: OutputTensorV2(shape=desc.shape, dtype=desc.dtype)
+                        for name, desc in case.inputs.items()
+                    },
+                )
+                for case in tensor.suite.cases
+            },
+        )
+    return ReleaseManifest(**common, specializations=implementation.build.specializations)
