@@ -2,7 +2,6 @@
 
 import io
 import json
-import math
 import tarfile
 from collections.abc import Callable
 from typing import Any
@@ -10,7 +9,10 @@ from typing import Any
 from cannery.artifacts import ArtifactRef, ArtifactStore, digest
 from cannery.benchmark.contract import summarize
 from cannery.registry.manifest import unique_pairs
-from cannery.releases.contract import ReleaseManifest
+from cannery.releases.contract import ReleaseManifest, canonical
+from cannery.releases.tensor_contract import TensorReleaseManifest
+
+ReleaseDocument = ReleaseManifest | TensorReleaseManifest
 
 
 class InvalidReleaseArtifact(ValueError):
@@ -22,15 +24,20 @@ def pinned(raw: bytes, ref: ArtifactRef, limit: int) -> None:
         raise InvalidReleaseArtifact("Release artifact digest or size differs")
 
 
-def verify_package(raw: bytes, manifest: ReleaseManifest) -> None:
+def verify_package(raw: bytes, manifest: ReleaseDocument) -> None:
     pinned(raw, manifest.package, 64 * 1024 * 1024)
+    tensor = isinstance(manifest, TensorReleaseManifest)
     try:
         files = {}
         with tarfile.open(fileobj=io.BytesIO(raw), mode="r:") as archive:
             for member in archive:
                 if member.name not in {"metadata.json", "kernel.so"} or member.name in files:
                     raise ValueError("Unexpected package member")
-                limit = 16384 if member.name == "metadata.json" else 63 * 1024 * 1024
+                limit = (
+                    (256 * 1024 if tensor else 16384)
+                    if member.name == "metadata.json"
+                    else 63 * 1024 * 1024
+                )
                 if not member.isfile() or not 0 < member.size <= limit:
                     raise ValueError("Invalid member")
                 stream = archive.extractfile(member)
@@ -43,7 +50,7 @@ def verify_package(raw: bytes, manifest: ReleaseManifest) -> None:
             raise ValueError("Incomplete package")
         metadata = json.loads(files["metadata.json"], object_pairs_hook=unique_pairs)
         library = files["kernel.so"]
-        static = manifest.language == "catlass"
+        static = not tensor and manifest.language == "catlass"
         expected = {
             "schema_version",
             "device",
@@ -53,12 +60,14 @@ def verify_package(raw: bytes, manifest: ReleaseManifest) -> None:
             "runtime",
             "compiler",
         }
-        if static:
+        if tensor:
+            expected.add("variants")
+        elif static:
             expected.add("specializations")
         if (
             set(metadata) != expected
             or type(metadata["schema_version"]) is not int
-            or metadata["schema_version"] != (2 if static else 1)
+            or metadata["schema_version"] != (3 if tensor else 2 if static else 1)
             or metadata["device"] != manifest.device
             or metadata["abi"] != manifest.abi
             or metadata["runtime"] != manifest.cohort.runtime
@@ -66,22 +75,30 @@ def verify_package(raw: bytes, manifest: ReleaseManifest) -> None:
             or metadata["library_sha256"] != digest(library)
             or not isinstance(metadata["compiler"], str)
             or not metadata["compiler"]
+            or len(metadata["compiler"]) > 8192
             or len(library) < 64
             or library[:6] != b"\x7fELF\x02\x01"
             or int.from_bytes(library[16:18], "little") != 3
             or int.from_bytes(library[18:20], "little") != 183
         ):
             raise ValueError("Package contract differs")
-        if static and metadata["specializations"] != [
-            s.model_dump(mode="json") for s in manifest.specializations or ()
-        ]:
+        if tensor:
+            assert isinstance(manifest, TensorReleaseManifest)
+            if canonical(metadata["variants"]) != canonical(manifest.variants()):
+                raise ValueError("Tensor dispatch variants differ")
+        elif (
+            static
+            and isinstance(manifest, ReleaseManifest)
+            and metadata["specializations"]
+            != [s.model_dump(mode="json") for s in manifest.specializations or ()]
+        ):
             raise ValueError("Specializations differ")
     except (ValueError, KeyError, TypeError, AttributeError, tarfile.TarError, RecursionError):
         raise InvalidReleaseArtifact("Invalid published binary package") from None
 
 
 def timing_statistics(
-    raw: bytes, ref: ArtifactRef, manifest: ReleaseManifest
+    raw: bytes, ref: ArtifactRef, manifest: ReleaseDocument
 ) -> dict[str, dict[str, Any]]:
     pinned(raw, ref, 256 * 1024)
     try:
@@ -90,10 +107,10 @@ def timing_statistics(
             raise ValueError
         timing = value["timing"]
         cases = timing["cases"]
-        expected = [c.id for c in manifest.score.cases if math.prod(c.shape)]
+        expected = [c.id for c in manifest.score.cases if c.excluded is None]
         if (
             set(timing) != {"protocol", "warmup", "cases"}
-            or timing["protocol"] != "sync-call-v1"
+            or timing["protocol"] != manifest.score.protocol
             or type(timing["warmup"]) is not int
             or timing["warmup"] != 20
             or not isinstance(cases, list)
@@ -111,7 +128,7 @@ def timing_statistics(
 
 
 def verify_assets(
-    store: ArtifactStore, manifest: ReleaseManifest, fence: Callable[[], None]
+    store: ArtifactStore, manifest: ReleaseDocument, fence: Callable[[], None]
 ) -> bytes:
     fence()
     package = store.get(manifest.package)
