@@ -9,7 +9,7 @@ from typing import Any
 from cannery.artifacts import ArtifactRef, ArtifactStore, digest
 from cannery.benchmark.contract import summarize
 from cannery.registry.manifest import unique_pairs
-from cannery.releases.contract import ReleaseManifest
+from cannery.releases.contract import ReleaseManifest, canonical
 from cannery.releases.tensor_contract import TensorReleaseManifest
 
 ReleaseDocument = ReleaseManifest | TensorReleaseManifest
@@ -84,7 +84,7 @@ def verify_package(raw: bytes, manifest: ReleaseDocument) -> None:
             raise ValueError("Package contract differs")
         if tensor:
             assert isinstance(manifest, TensorReleaseManifest)
-            if metadata["variants"] != manifest.variants():
+            if canonical(metadata["variants"]) != canonical(manifest.variants()):
                 raise ValueError("Tensor dispatch variants differ")
         elif (
             static
