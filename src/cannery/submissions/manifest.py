@@ -22,6 +22,7 @@ from cannery.registry.manifest import Name, StrictModel, parse_yaml_mapping
 
 KernelPath = Annotated[str, Field(pattern=r"^[a-z][a-z0-9_]{0,63}/[a-z][a-z0-9_]{0,63}$")]
 Language = Literal["ascendc", "catlass"]
+TensorLanguage = Literal["ascendc", "catlass", "triton"]
 Device = Literal["a3", "a5"]
 
 
@@ -54,8 +55,8 @@ class Specialization(StrictModel):
 
 
 class Build(StrictModel):
-    adapter: Language
-    abi: Literal["unary-f32-v1", "catlass-unary-f32-v1"] | None = None
+    adapter: TensorLanguage
+    abi: Literal["unary-f32-v1", "catlass-unary-f32-v1", "tensor-v2"] | None = None
     specializations: tuple[Specialization, ...] | None = Field(
         default=None, min_length=1, max_length=4
     )
@@ -103,7 +104,7 @@ class Build(StrictModel):
 
 class Implementation(StrictModel):
     device: Device
-    language: Language
+    language: TensorLanguage
     entrypoint: str
     build: Build
 
@@ -111,6 +112,12 @@ class Implementation(StrictModel):
     def supported_contract(self) -> Self:
         if self.build.adapter != self.language:
             raise ValueError("Build adapter must match language")
+        if self.language == "triton" and self.build.abi != "tensor-v2":
+            raise ValueError("Triton requires the tensor-v2 ABI")
+        if self.build.abi == "tensor-v2" and (
+            self.device != "a5" or self.build.options.optimization != "release"
+        ):
+            raise ValueError("tensor-v2 requires A5 release builds")
         if self.build.abi == "unary-f32-v1" and self.language != "ascendc":
             raise ValueError("unary-f32-v1 requires Ascend C")
         if self.build.abi == "catlass-unary-f32-v1":
@@ -128,7 +135,7 @@ class Implementation(StrictModel):
         entry = relative_source_path(parts[0])
         extensions = (
             {".py"}
-            if self.language == "catlass"
+            if self.language in {"catlass", "triton"}
             else {".c", ".cc", ".cpp", ".cce", ".asc", ".h", ".hpp"}
         )
         if any(
@@ -146,11 +153,17 @@ class RequestedValidation(StrictModel):
 
 
 class SubmissionManifest(StrictModel):
-    schema_version: int = Field(ge=1, le=1)
+    schema_version: int = Field(ge=1, le=2)
     kernel: KernelPath
     spec_version: int = Field(ge=1)
     implementation: Implementation
     validation: RequestedValidation
+
+    @model_validator(mode="after")
+    def versioned_abi(self) -> Self:
+        if (self.schema_version == 2) != (self.implementation.build.abi == "tensor-v2"):
+            raise ValueError("Submission schema 2 requires tensor-v2 exclusively")
+        return self
 
 
 @dataclass(frozen=True)
@@ -160,13 +173,17 @@ class ValidatedSubmission:
     file_sha256: dict[str, str]
 
 
-def validate_submission(files: dict[str, bytes], source_path: str) -> ValidatedSubmission:
+def _validate_submission(
+    files: dict[str, bytes], source_path: str, *, schema_version: int
+) -> ValidatedSubmission:
     try:
         prefix = "" if source_path == "." else relative_source_path(source_path) + "/"
         if len(files) > MAX_FILES or sum(map(len, files.values())) > MAX_BYTES:
             raise SubmissionError("Source exceeds intake budget")
         manifest_path = prefix + "submission.yaml"
         manifest = SubmissionManifest.model_validate(parse_yaml_mapping(files[manifest_path]))
+        if manifest.schema_version != schema_version:
+            raise SubmissionError("Unsupported submission schema")
         for path in files:
             relative_source_path(path)
             if ".git" in PurePosixPath(path).parts:
@@ -184,3 +201,13 @@ def validate_submission(files: dict[str, bytes], source_path: str) -> ValidatedS
         return ValidatedSubmission(manifest, digest, hashes)
     except (KeyError, ValueError, TypeError, RecursionError):
         raise SubmissionError("Invalid or incomplete submission files") from None
+
+
+def validate_submission(files: dict[str, bytes], source_path: str) -> ValidatedSubmission:
+    """Public intake stays unary until all tensor readers and producers are ready."""
+    return _validate_submission(files, source_path, schema_version=1)
+
+
+def validate_tensor_submission(files: dict[str, bytes], source_path: str) -> ValidatedSubmission:
+    """Read a future tensor submission without enabling public admission."""
+    return _validate_submission(files, source_path, schema_version=2)
