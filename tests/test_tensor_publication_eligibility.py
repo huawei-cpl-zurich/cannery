@@ -1,5 +1,6 @@
 import copy
 import json
+import sys
 from uuid import uuid4
 
 import pytest
@@ -16,11 +17,13 @@ from test_tensor_publication_numerics import tensor_validation as make_validatio
 from test_tensor_spec_reader import tensor_files
 from test_tensor_submission_reader import tensor_files as submission_files
 
+import cannery.git_intake.snapshots as snapshot_module
 from cannery.benchmark.contract import Cohort, reference_key
 from cannery.benchmark.scheduling import candidate_key
 from cannery.benchmark.state import PerformanceJob, PerformanceResult
 from cannery.benchmark.tensor_scoring import tensor_score
 from cannery.git_intake import GitSource
+from cannery.git_intake.process import run
 from cannery.git_intake.snapshots import SelectedTree, SnapshotStore
 from cannery.numerics.baseline_state import BaselineState
 from cannery.numerics.recipes_v2 import input_sha256_v2
@@ -289,3 +292,21 @@ def test_reordering_both_timing_reports_cannot_change_frozen_dispatch_order(comp
             )
     with pytest.raises(PublicationUnavailable):
         tensor_publication_manifest(*completed)
+
+
+@pytest.mark.parametrize("failure", ["exit", "timeout"])
+def test_real_snapshot_subprocess_failure_is_retryable_and_recovers(
+    completed, monkeypatch, failure
+):
+    original = snapshot_module.git
+
+    def unavailable(*args, **kwargs):
+        command = "raise SystemExit(1)" if failure == "exit" else "import time; time.sleep(10)"
+        return run([sys.executable, "-c", command], timeout=0.2)
+
+    monkeypatch.setattr(snapshot_module, "git", unavailable)
+    with pytest.raises(PublicationUnavailable) as error:
+        tensor_publication_manifest(*completed)
+    assert str(error.value) == "release_snapshot_unavailable"
+    monkeypatch.setattr(snapshot_module, "git", original)
+    assert tensor_publication_manifest(*completed).submission_id == completed[1]
