@@ -1,9 +1,14 @@
 import json
+import os
+import stat
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
+from threading import Barrier
+from uuid import UUID
 
 import pytest
 
-from cannery.builds.remote import CplRemote, RemoteFailure, RemotePending
+from cannery.builds.remote import CplRemote, RemoteFailure, RemotePending, durable_write
 
 
 class FakeCpl(CplRemote):
@@ -23,6 +28,125 @@ class FakeCpl(CplRemote):
         if isinstance(reply, Exception):
             raise reply
         return reply
+
+
+def test_success_survives_restart_and_later_transport_loss(tmp_path):
+    first = FakeCpl(tmp_path, [{"state": "running"}, {"state": "completed", "exit": 0}])
+    handle = first.operation("prepare", b"print(1)", workspace="/work", runtime="cann")
+    assert (tmp_path / "prepare.complete").read_bytes() == handle.encode() + b"\n"
+
+    restarted = FakeCpl(tmp_path, [RemotePending("disconnected")])
+    assert restarted.operation("prepare", b"print(1)", workspace="/work", runtime="cann") == handle
+    assert not restarted.calls
+
+
+@pytest.mark.parametrize("code", [1, 75, -9])
+def test_completed_nonzero_exit_is_failure_not_pending(tmp_path, code):
+    remote = FakeCpl(tmp_path, [{"state": "running"}, {"state": "completed", "exit": code}])
+    with pytest.raises(RemoteFailure) as failure:
+        remote.operation("prepare", b"print(1)", workspace="/work", runtime="cann")
+    assert failure.value.exit_code == code
+    assert not (tmp_path / "prepare.complete").exists()
+    assert (tmp_path / "prepare.json").exists()
+
+
+@pytest.mark.parametrize("code", [None, False, 0.0, "0"])
+def test_incomplete_or_malformed_exit_cannot_checkpoint_success(tmp_path, code):
+    remote = FakeCpl(tmp_path, [{"state": "running"}, {"state": "completed", "exit": code}])
+    with pytest.raises(RemotePending):
+        remote.operation("prepare", b"print(1)", workspace="/work", runtime="cann")
+    assert not (tmp_path / "prepare.complete").exists()
+
+
+def test_success_checkpoint_cannot_authorize_a_different_receipt(tmp_path):
+    remote = FakeCpl(tmp_path, [])
+    (tmp_path / "prepare.json").write_text(
+        json.dumps({"target": "test-a5", "handle": "remote:test-a5:job:123"})
+    )
+    (tmp_path / "prepare.complete").write_text("remote:test-a5:job:other\n")
+    with pytest.raises(RemotePending, match="checkpoint"):
+        remote.operation("prepare", b"print(1)", workspace="/work", runtime="cann")
+    assert not remote.calls
+
+
+@pytest.mark.parametrize("mismatch", [{"handle": "remote:test-a5:job:other"}, {"target": "other"}])
+def test_misdirected_observation_cannot_checkpoint_success(tmp_path, mismatch):
+    remote = FakeCpl(
+        tmp_path, [{"state": "running"}, {"state": "completed", "exit": 0, **mismatch}]
+    )
+    with pytest.raises(RemotePending, match="Observation"):
+        remote.operation("prepare", b"print(1)", workspace="/work", runtime="cann")
+    assert not (tmp_path / "prepare.complete").exists()
+
+
+def test_lost_receipt_remains_ambiguous_even_with_success_checkpoint(tmp_path):
+    remote = FakeCpl(tmp_path, [{"state": "running"}, {"state": "completed", "exit": 0}])
+    remote.operation("prepare", b"print(1)", workspace="/work", runtime="cann")
+    (tmp_path / "prepare.json").unlink()
+    restarted = FakeCpl(tmp_path, [])
+    with pytest.raises(RemotePending, match="ambiguous"):
+        restarted.operation("prepare", b"print(1)", workspace="/work", runtime="cann")
+    assert not restarted.calls
+
+
+def test_racing_coordinators_can_checkpoint_the_same_completed_job(tmp_path, monkeypatch):
+    handle = "remote:test-a5:job:123"
+    (tmp_path / "prepare.json").write_text(json.dumps({"target": "test-a5", "handle": handle}))
+    (tmp_path / "prepare.dispatch").write_text("dispatching\n")
+    writers = Barrier(2)
+    original_fsync = os.fsync
+
+    def racing_fsync(descriptor):
+        if stat.S_ISREG(os.fstat(descriptor).st_mode):
+            writers.wait(timeout=5)
+        original_fsync(descriptor)
+
+    monkeypatch.setattr(os, "fsync", racing_fsync)
+    coordinators = [FakeCpl(tmp_path, [{"state": "completed", "exit": 0}]) for _ in range(2)]
+
+    def complete(remote):
+        return remote.operation("prepare", b"print(1)", workspace="/work", runtime="cann")
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        assert list(pool.map(complete, coordinators)) == [handle, handle]
+    assert (tmp_path / "prepare.complete").read_bytes() == handle.encode() + b"\n"
+    assert not list(tmp_path.glob("*.tmp"))
+    assert all(remote.calls == [("observe", handle)] for remote in coordinators)
+
+
+def test_failed_journal_flush_preserves_previous_value_and_removes_staging(tmp_path, monkeypatch):
+    destination = tmp_path / "checkpoint"
+    destination.write_bytes(b"previous")
+
+    def fail_flush(_descriptor):
+        raise OSError("injected journal disk failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(os, "fsync", fail_flush)
+        with pytest.raises(OSError, match="injected"):
+            durable_write(destination, b"replacement")
+    assert destination.read_bytes() == b"previous"
+    assert not list(tmp_path.glob("*.tmp"))
+    durable_write(destination, b"recovered")
+    assert destination.read_bytes() == b"recovered"
+
+
+def test_staging_name_collision_preserves_the_other_writers_file(tmp_path, monkeypatch):
+    from cannery.builds import remote
+
+    destination = tmp_path / "checkpoint"
+    destination.write_bytes(b"previous")
+    other = tmp_path / f".checkpoint.{UUID(int=0).hex}.tmp"
+    other.write_bytes(b"another writer")
+    with monkeypatch.context() as patch:
+        patch.setattr(remote, "uuid4", lambda: UUID(int=0))
+        with pytest.raises(FileExistsError):
+            durable_write(destination, b"replacement")
+    assert destination.read_bytes() == b"previous"
+    assert other.read_bytes() == b"another writer"
+    durable_write(destination, b"recovered")
+    assert destination.read_bytes() == b"recovered"
+    assert other.read_bytes() == b"another writer"
 
 
 def test_lost_launch_response_recovers_same_handle_after_restart(tmp_path):
