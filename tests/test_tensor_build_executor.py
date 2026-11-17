@@ -16,7 +16,7 @@ from test_tensor_submission_reader import tensor_files as submission_files
 from cannery.artifacts import digest
 from cannery.builds.executor import ExecutionFailure, tensor_smoke_program
 from cannery.builds.remote import RemotePending
-from cannery.builds.sandbox import CatlassToolchain
+from cannery.builds.sandbox import CatlassToolchain, TritonToolchain
 from cannery.builds.tensor_signatures import tensor_variants
 from cannery.git_intake import GitSource
 from cannery.git_intake.snapshots import SelectedTree
@@ -24,10 +24,10 @@ from cannery.registry.tensor_manifest import validate_tensor_spec
 from cannery.submissions.manifest import validate_tensor_submission
 
 
-@pytest.fixture
-def tensor_build(setup_executor):
+@pytest.fixture(params=["catlass", "triton"])
+def tensor_build(setup_executor, request):
     executor, candidate, remote, memory = setup_executor
-    files = submission_files("catlass")
+    files = submission_files(request.param)
     valid = validate_tensor_submission(files, "candidate")
     binding = executor.snapshots.commit(
         "d" * 64,
@@ -39,6 +39,18 @@ def tensor_build(setup_executor):
     candidate.content_sha256, candidate.file_sha256 = valid.content_sha256, valid.file_sha256
     pins = catlass_pins() | {"package_sha256": "a" * 64, "aic_bitcode_sha256": "b" * 64}
     executor.profile = executor.profile.model_copy(update={"catlass": CatlassToolchain(**pins)})
+    if request.param == "triton":
+        executor.profile = executor.profile.model_copy(
+            update={
+                "triton": TritonToolchain(
+                    version="3.6.0",
+                    package_root="/home/operator/triton-toolchain/triton",
+                    package_sha256="a" * 64,
+                    bishengir_sha256="b" * 64,
+                    bisheng_sha256="c" * 64,
+                )
+            }
+        )
     with zipfile.ZipFile(executor.wheel, "w") as archive:
         archive.writestr("cannery_kernels/tensor_abi.h", "int cannery_prepare_tensor_v2(void);")
     executor.wheel_sha256 = digest(executor.wheel.read_bytes())
@@ -54,8 +66,9 @@ def test_tensor_compile_package_and_native_smoke_follow_durable_flow(tensor_buil
     assert metadata["schema_version"] == 3 and metadata["abi"] == "tensor-v2"
     assert metadata["variants"] == tensor_variants(frozen)
     compiler = json.loads(metadata["compiler"])
-    assert compiler["catlass"]["package_sha256"] == "a" * 64
-    assert "bitcode_root" not in compiler["catlass"]
+    backend = candidate.manifest["implementation"]["language"]
+    assert compiler[backend]["package_sha256"] == "a" * 64
+    assert "bitcode_root" not in compiler[backend] and "package_root" not in compiler[backend]
     context = json.loads((remote.journal / "context.json").read_bytes())
     assert context["tensor_spec"] == frozen.spec.content_sha256
     assert remote.started == {"prepare", "unpack-source", "compile", "unpack-runtime", "runtime-0"}
