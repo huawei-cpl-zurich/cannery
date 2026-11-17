@@ -36,7 +36,10 @@ def test_standalone_runtime_preserves_generator_and_legacy_program():
     )
 
 
-@pytest.mark.parametrize("fault", [None, "readonly", "rebind", "alias", "shape", "launch", "sync"])
+@pytest.mark.parametrize(
+    "fault",
+    [None, "readonly", "rebind", "alias", "shape", "launch", "sync", "format", "format_cast"],
+)
 def test_cpu_device_simulation_and_faults(tmp_path, fault):
     image = os.environ.get("CANNERY_ORACLE_TEST_IMAGE")
     if not image:
@@ -59,6 +62,8 @@ def test_cpu_device_simulation_and_faults(tmp_path, fault):
         "shape": "result['bf16']=result['bf16'].flatten()",
         "launch": "raise RuntimeError('injected launch failure')",
         "sync": "pass",
+        "format": "pass",
+        "format_cast": "pass",
     }[fault]
     reference = REFERENCE.replace("    assert os.geteuid()==10001\n", "").replace(
         "# INJECT", injection
@@ -69,8 +74,17 @@ def test_cpu_device_simulation_and_faults(tmp_path, fault):
 import torch
 wire=sys.stdout.buffer
 # CPU simulation only: this is not hardware evidence.
-torch_npu=SimpleNamespace(get_npu_format=lambda _:2,
-    empty_with_format=lambda shape,dtype,**_:torch.empty(shape,dtype=dtype))
+formats={}
+def allocate(shape,dtype,**kwargs):
+    value=torch.empty(shape,dtype=dtype)
+    formats[id(value)]=INITIAL_FORMAT
+    return value
+def normalize(value,format):
+    if CAST_FAILURE:raise RuntimeError('injected format conversion device failure')
+    formats[id(value)]=format
+    return value
+torch_npu=SimpleNamespace(get_npu_format=lambda value:formats.get(id(value),2),
+    empty_with_format=allocate,npu_format_cast=normalize)
 def synchronize():
     SYNC
 """.replace(
@@ -78,6 +92,8 @@ def synchronize():
             "    raise RuntimeError('injected device loss')" if fault == "sync" else "    pass",
         )
     )
+    source = source.replace("INITIAL_FORMAT", "0" if fault in ("format", "format_cast") else "2")
+    source = source.replace("CAST_FAILURE", repr(fault == "format_cast"))
     source += "\ntorch.npu=SimpleNamespace(synchronize=synchronize)\n" + reference
     source += """
 class Kernel:
@@ -109,10 +125,10 @@ kernel=Kernel()
             capture_output=True,
             timeout=30,
         )
-        if fault not in (None, "readonly"):
+        if fault not in (None, "readonly", "format"):
             assert result.returncode != 0 and not result.stdout
             assert (
-                b"injected" if fault in ("launch", "sync") else b"AssertionError"
+                b"injected" if fault in ("launch", "sync", "format_cast") else b"AssertionError"
             ) in result.stderr
             return
         assert result.returncode == 0, result.stderr.decode(errors="replace")
