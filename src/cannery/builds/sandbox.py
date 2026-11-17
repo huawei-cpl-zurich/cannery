@@ -21,7 +21,18 @@ class CatlassToolchain(StrictModel):
     bitcode_key: str = Field(pattern=r"^[a-f0-9]{16}$")
     manifest_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
     bitcode_sha256: str = Field(pattern=r"^[a-f0-9]{64}$")
+    aic_bitcode_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
+    package_sha256: str | None = Field(default=None, pattern=r"^[a-f0-9]{64}$")
     bitcode_root: str
+
+    @model_serializer(mode="wrap")
+    def serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        value: dict[str, Any] = handler(self)
+        # Keep existing unary profiles and recovered contexts byte-compatible.
+        for name in ("aic_bitcode_sha256", "package_sha256"):
+            if value.get(name) is None:
+                value.pop(name, None)
+        return value
 
     @model_validator(mode="after")
     def confined_cache(self) -> Self:
