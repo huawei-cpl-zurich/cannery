@@ -11,7 +11,7 @@ from sqlalchemy.orm import Session
 
 from cannery.artifacts import ArtifactRef
 from cannery.database import aware
-from cannery.releases.contract import ReleaseManifest
+from cannery.releases.document import ReleaseDocument
 from cannery.releases.models import (
     Publication,
     PublicationEvent,
@@ -218,7 +218,7 @@ def retry_job(engine: Engine, claim: Claim, error: str, *, permanent: bool = Fal
         return True
 
 
-def complete(engine: Engine, claim: Claim, manifest: ReleaseManifest, pin: ArtifactRef) -> bool:
+def complete(engine: Engine, claim: Claim, manifest: ReleaseDocument, pin: ArtifactRef) -> bool:
     if manifest.submission_id != claim.candidate_id:
         raise ValueError("Publication candidate differs")
     with Session(engine) as db, db.begin():

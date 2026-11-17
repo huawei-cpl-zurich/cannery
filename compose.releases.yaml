@@ -21,6 +21,9 @@ services:
       CANNERY_ARTIFACT_URL: http://artifacts:8000
       CANNERY_ARTIFACT_READ_TOKEN: ${CANNERY_ARTIFACT_READ_TOKEN:?Set a private read token}
       CANNERY_ARTIFACT_WRITE_TOKEN: ${CANNERY_ARTIFACT_WRITE_TOKEN:?Set a private write token}
+      CANNERY_SNAPSHOT_ROOT: /var/lib/cannery/snapshots
+    volumes:
+      - git-snapshots:/var/lib/cannery/snapshots:ro
     command: ["python", "-m", "cannery.releases.worker"]
     depends_on:
       migrate:

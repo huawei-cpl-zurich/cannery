@@ -97,6 +97,7 @@ figcaption { display: flex; flex-wrap: wrap; gap: .6rem 1.5rem; padding: 1rem 1.
 .legend-dot { width: .65rem; height: .65rem; border-radius: 50%; }
 .legend-dot.ascendc { background: #155dc0; }
 .legend-dot.catlass { background: #ae4700; }
+.legend-dot.triton { background: #16836b; }
 .legend-reference { width: 1.4rem; border-top: 2px dashed #687b91; }
 .muted { color: var(--muted); }
 .submission-heading { display: flex; flex-wrap: wrap; gap: .75rem; align-items: center; justify-content: space-between; }

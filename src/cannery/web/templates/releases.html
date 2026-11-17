@@ -48,14 +48,14 @@
 <path class="chart-line" d="{{ curve.line }}"/>
 {% for point in curve.points %}
 <a class="chart-point" href="/releases/{{ point.release_id }}" aria-label="{{ point.language }} · {{ point.geomean_speedup|number }} times PyTorch speed · {{ point.published_at }} · open release">
-<circle cx="{{ point.x }}" cy="{{ point.y }}" r="6" fill="{{ '#155dc0' if point.language == 'ascendc' else '#ae4700' }}"/>
-<g class="chart-tooltip" aria-hidden="true"><rect x="240" y="2" width="320" height="34" rx="4"/><text x="400" y="16" text-anchor="middle">{{ 'Ascend C' if point.language == 'ascendc' else 'CATLASS' }} · {{ point.geomean_speedup|number }}×</text><text x="400" y="29" text-anchor="middle">{{ point.published_at|publication_date }}</text></g>
+<circle cx="{{ point.x }}" cy="{{ point.y }}" r="6" fill="{{ {'ascendc': '#155dc0', 'catlass': '#ae4700', 'triton': '#16836b'}[point.language] }}"/>
+<g class="chart-tooltip" aria-hidden="true"><rect x="240" y="2" width="320" height="34" rx="4"/><text x="400" y="16" text-anchor="middle">{{ {'ascendc': 'Ascend C', 'catlass': 'CATLASS', 'triton': 'Triton'}[point.language] }} · {{ point.geomean_speedup|number }}×</text><text x="400" y="29" text-anchor="middle">{{ point.published_at|publication_date }}</text></g>
 </a>
 {% endfor %}
 {% for tick in curve.dates %}<text class="chart-label" x="{{ tick.x }}" y="246" text-anchor="{{ 'start' if tick.x == 50 else ('end' if tick.x == 750 else 'middle') }}"><tspan x="{{ tick.x }}">{{ tick.date }}</tspan><tspan x="{{ tick.x }}" dy="16">{{ tick.time }}</tspan></text>{% endfor %}
 <text class="chart-label" x="400" y="290" text-anchor="middle">Publication time (UTC)</text>
 </svg></div>
-<figcaption><span class="legend-item"><i class="legend-dot ascendc"></i>Ascend C</span><span class="legend-item"><i class="legend-dot catlass"></i>CATLASS</span><span class="legend-item"><i class="legend-reference"></i>PyTorch · 1×</span><span>One strict best-so-far curve among currently published releases.</span></figcaption>
+<figcaption><span class="legend-item"><i class="legend-dot ascendc"></i>Ascend C</span><span class="legend-item"><i class="legend-dot catlass"></i>CATLASS</span><span class="legend-item"><i class="legend-dot triton"></i>Triton</span><span class="legend-item"><i class="legend-reference"></i>PyTorch · 1×</span><span>One strict best-so-far curve among currently published releases.</span></figcaption>
 </figure>
 {% endif %}
 <div class="table-scroll" role="region" aria-label="Published results" tabindex="0"><table><thead><tr><th>Implementation</th><th>Team</th><th>Language</th><th>Speedup</th><th>Published</th><th>Source</th></tr></thead><tbody>

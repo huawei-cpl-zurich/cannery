@@ -2,6 +2,7 @@
 
 import json
 import math
+from pathlib import Path
 from typing import Any
 from uuid import UUID
 
@@ -14,6 +15,7 @@ from cannery.benchmark.scheduling import candidate_key
 from cannery.benchmark.state import PerformanceJob, PerformanceResult
 from cannery.builds.state import BuildResult, BuildState
 from cannery.git_intake import SnapshotBinding
+from cannery.git_intake.process import IntakeProcessError
 from cannery.git_intake.snapshots import SnapshotStore
 from cannery.numerics.baseline_state import BaselineState
 from cannery.numerics.baseline_v2 import OutputTensorV2
@@ -143,7 +145,11 @@ def tensor_publication_manifest(
             require(frozen, "retained_spec_required")
             assert frozen
             binding = SnapshotBinding.model_validate(frozen.snapshot)
-            tensor = validate_tensor_spec(snapshots.read(binding).files, binding.source.path)
+            try:
+                selected = snapshots.read(binding)
+            except IntakeProcessError:
+                raise PublicationUnavailable("release_snapshot_unavailable") from None
+            tensor = validate_tensor_spec(selected.files, binding.source.path)
             require(
                 tensor.spec.content_sha256 == frozen.content_sha256
                 and tensor.spec.file_sha256 == frozen.file_sha256
@@ -337,3 +343,22 @@ def retained(
             },
         )
     return ReleaseManifest(**common, specializations=implementation.build.specializations)
+
+
+def publication_document(
+    engine: Engine, identifier: UUID, snapshots: SnapshotStore | Path | None = None
+) -> ReleaseManifest | TensorReleaseManifest:
+    """Dispatch only from the immutable spec, never a caller-selected schema."""
+    with Session(engine) as db:
+        sub = db.get(Submission, identifier)
+        spec = db.get(SpecVersion, sub.spec_id) if sub else None
+        tensor = spec is not None and spec.manifest.get("schema_version") == 2
+    if tensor:
+        if snapshots is None:
+            raise PublicationUnavailable("retained_spec_required")
+        try:
+            store = SnapshotStore(snapshots) if isinstance(snapshots, Path) else snapshots
+        except OSError:
+            raise PublicationUnavailable("release_snapshot_unavailable") from None
+        return tensor_publication_manifest(engine, identifier, store)
+    return publication_manifest(engine, identifier)

@@ -12,6 +12,10 @@ class IntakeError(ValueError):
     pass
 
 
+class IntakeProcessError(IntakeError):
+    """A subprocess could not complete; distinct from invalid selected content."""
+
+
 def clean_environment() -> dict[str, str]:
     env = {
         "PATH": "/usr/bin:/bin",
@@ -78,13 +82,14 @@ def run(
             except ProcessLookupError:
                 pass
             process.communicate()
-            raise IntakeError("Intake process interrupted or deadline exceeded") from None
+            raise IntakeProcessError("Intake process interrupted or deadline exceeded") from None
         if (check and process.returncode != 0) or output.tell() > max_output:
             try:
                 os.killpg(os.getpgrp() if nested else process.pid, signal.SIGKILL)
             except ProcessLookupError:
                 pass
-            raise IntakeError("Intake process failed or exceeded output budget")
+            error = IntakeError if output.tell() > max_output else IntakeProcessError
+            raise error("Intake process failed or exceeded output budget")
         output.seek(0)
         return output.read()
 

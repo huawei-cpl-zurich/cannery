@@ -1,11 +1,11 @@
 """Publish verified private blobs before atomically exposing a pinned release."""
 
 import argparse
-import json
 import logging
 import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
+from pathlib import Path
 from uuid import UUID
 
 from sqlalchemy import Engine
@@ -14,9 +14,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from cannery.artifacts import ArtifactError, ArtifactStore, digest
 from cannery.artifacts.factory import make_store
 from cannery.database import make_engine
+from cannery.git_intake.snapshots import SnapshotStore
 from cannery.releases.assets import InvalidReleaseArtifact, verify_assets
-from cannery.releases.contract import ReleaseManifest, read_manifest
-from cannery.releases.eligibility import PublicationUnavailable, publication_manifest
+from cannery.releases.document import parse_release_document, read_release_document
+from cannery.releases.eligibility import PublicationUnavailable, publication_document
 from cannery.releases.state import Claim, claim_job, complete, due_jobs, heartbeat, retry_job
 from cannery.settings import Settings
 from cannery.shutdown import stop_on_term
@@ -53,14 +54,19 @@ def keep_lease(engine: Engine, claim: Claim) -> Iterator[Callable[[], None]]:
         thread.join(timeout=2)
 
 
-def process(engine: Engine, identifier: UUID, store: ArtifactStore) -> None:
+def process(
+    engine: Engine,
+    identifier: UUID,
+    store: ArtifactStore,
+    snapshots: SnapshotStore | Path | None = None,
+) -> None:
     claim = claim_job(engine, identifier)
     if claim is None:
         return
     with keep_lease(engine, claim) as fence:
         try:
             fence()
-            manifest = publication_manifest(engine, claim.candidate_id)
+            manifest = publication_document(engine, claim.candidate_id, snapshots)
             package = verify_assets(store, manifest, fence)
             fence()
             package_ref = store.put(f"releases/{claim.candidate_id}/package.tar", package)
@@ -69,14 +75,14 @@ def process(engine: Engine, identifier: UUID, store: ArtifactStore) -> None:
             data = manifest.model_dump(mode="json") | {
                 "package": package_ref.model_dump(mode="json")
             }
-            manifest = ReleaseManifest.model_validate_json(json.dumps(data))
+            manifest = parse_release_document(data)
             raw = manifest.encoded()
             fence()
             pin = store.put(f"releases/{claim.candidate_id}/manifest.json", raw)
             if pin.sha256 != digest(raw):
                 raise InvalidReleaseArtifact("Manifest changed")
             fence()
-            if read_manifest(store.get(pin), pin.sha256) != manifest:
+            if read_release_document(store.get(pin), pin.sha256) != manifest:
                 raise InvalidReleaseArtifact("Stored manifest changed")
             fence()
             complete(engine, claim, manifest, pin)
@@ -85,7 +91,9 @@ def process(engine: Engine, identifier: UUID, store: ArtifactStore) -> None:
         except ArtifactError:
             retry_job(engine, claim, "release_artifact_unavailable")
         except PublicationUnavailable as error:
-            retry_job(engine, claim, str(error), permanent=True)
+            retry_job(
+                engine, claim, str(error), permanent=str(error) != "release_snapshot_unavailable"
+            )
         except ValueError:
             retry_job(engine, claim, "invalid_release_artifact", permanent=True)
         except SQLAlchemyError:
@@ -114,7 +122,7 @@ def main() -> None:
                 for identifier in due_jobs(engine):
                     if stopped.is_set():
                         break
-                    process(engine, identifier, store)
+                    process(engine, identifier, store, settings.snapshot_root)
             except (SQLAlchemyError, ArtifactError, OSError):
                 logging.warning("Publication worker pending")
             if args.once:
