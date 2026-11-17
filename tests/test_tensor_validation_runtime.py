@@ -131,3 +131,35 @@ kernel=Kernel()
             )
     finally:
         subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=15)
+
+
+def test_tensor_bootstrap_bounds_cpu_threads_before_framework_import():
+    image = os.environ.get("CANNERY_ORACLE_TEST_IMAGE")
+    if not image:
+        pytest.skip("Set CANNERY_ORACLE_TEST_IMAGE for actual CPU thread-budget check")
+    source = tensor_runtime_program().split("# Reserve the result channel", 1)[0]
+    source += "import torch\nassert torch.get_num_threads()==1\nprint('THREAD_BUDGET_PASS')\n"
+    name = "cannery-llm-catalog-thread-budget-" + uuid4().hex
+    try:
+        result = subprocess.run(
+            [
+                "docker",
+                "run",
+                *CPU_FLAGS[1:],
+                "--name",
+                name,
+                "--label",
+                "cannery.task=llm-catalog",
+                image,
+                "python",
+                "-I",
+                "-c",
+                source,
+            ],
+            capture_output=True,
+            timeout=30,
+        )
+        assert result.returncode == 0, result.stderr.decode(errors="replace")
+        assert result.stdout == b"THREAD_BUDGET_PASS\n"
+    finally:
+        subprocess.run(["docker", "rm", "-f", name], capture_output=True, timeout=15)
