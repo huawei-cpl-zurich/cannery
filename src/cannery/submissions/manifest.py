@@ -138,6 +138,8 @@ class Implementation(StrictModel):
             if self.language in {"catlass", "triton"}
             else {".c", ".cc", ".cpp", ".cce", ".asc", ".h", ".hpp"}
         )
+        if self.language == "ascendc" and self.build.abi == "tensor-v2":
+            extensions |= {".py"}
         if any(
             PurePosixPath(path).suffix not in extensions for path in (*self.build.inputs, entry)
         ):
