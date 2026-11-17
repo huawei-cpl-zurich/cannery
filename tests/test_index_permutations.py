@@ -78,3 +78,46 @@ def test_trusted_supervisor_snippet_requires_only_stdlib_and_matches_controller(
     )
     result = subprocess.check_output([sys.executable, "-I", "-c", program], text=True, timeout=5)
     assert result.strip() == generate_v2(recipe, "small", "indices").hex()
+
+
+@pytest.mark.parametrize("dtype,code", [("int32", "i"), ("int64", "q")])
+def test_inclusive_integer_sequence_generates_reproducible_group_prefixes(dtype, code):
+    recipe = TensorRecipeV2(
+        shape=(5,), dtype=dtype, distribution="sequence", seed=0, low=0, high=256
+    )
+    assert generate_v2(recipe, "grouped", "group_list") == struct.pack(
+        "<5" + code, 0, 64, 128, 192, 256
+    )
+    negative = recipe.model_copy(update={"low": -128, "high": 128})
+    assert generate_v2(negative, "grouped", "group_list") == struct.pack(
+        "<5" + code, -128, -64, 0, 64, 128
+    )
+
+
+@pytest.mark.parametrize("count", [0, 1])
+def test_empty_and_singleton_sequences_are_bounded(count):
+    recipe = TensorRecipeV2(
+        shape=(count,), dtype="int64", distribution="sequence", seed=0, low=7, high=7
+    )
+    assert generate_v2(recipe, "case", "indices") == struct.pack("<q", 7) * count
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        {"dtype": "float32"},
+        {"dtype": "int8"},
+        {"shape": (2, 2)},
+        {"low": None},
+        {"high": None},
+        {"low": 5, "high": 0},
+        {"high": 7},
+        {"shape": (1,)},
+    ],
+)
+def test_fractional_invalid_or_unbounded_sequences_are_rejected(change):
+    with pytest.raises(ValueError):
+        TensorRecipeV2.model_validate(
+            dict(shape=(5,), dtype="int64", distribution="sequence", seed=0, low=0, high=256)
+            | change
+        )
