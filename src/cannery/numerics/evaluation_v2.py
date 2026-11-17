@@ -5,7 +5,7 @@ from typing import Any
 
 from cannery.numerics.baseline_v2 import BaselineBundleV2, records_v2
 from cannery.numerics.comparison_v2 import compare_tensor
-from cannery.numerics.recipes_v2 import RecipeSuiteV2
+from cannery.numerics.recipes_v2 import RecipeSuiteV2, input_sha256_v2
 from cannery.numerics.tensor_contract import TensorContractV2
 from cannery.registry.manifest import Validation
 from cannery.submissions.manifest import RequestedValidation
@@ -62,6 +62,11 @@ def evaluate_tensor(
             for name in case.inputs
         }
         unchanged = all(state["mutable"] or state["unchanged"] for state in inputs.values())
+        consistent = all(
+            actual_hashes[input_name]
+            == input_sha256_v2(case.inputs[input_name], outputs[case.id][output_name])
+            for output_name, input_name in definition.aliases.items()
+        )
         compared = {}
         for name, tensor in definition.outputs.items():
             reference, actual = baseline.outputs[case.id][name], outputs[case.id][name]
@@ -98,7 +103,10 @@ def evaluate_tensor(
                     name: s.model_dump(mode="json") for name, s in definition.scalars.items()
                 },
                 "readonly_inputs_unchanged": unchanged,
-                "passed": unchanged and all(value["passed"] for value in compared.values()),
+                "mutable_aliases_consistent": consistent,
+                "passed": unchanged
+                and consistent
+                and all(value["passed"] for value in compared.values()),
             }
         )
     return {
