@@ -157,6 +157,7 @@ def test_global_best_search_and_device_links(releases, monkeypatch):
     assert f'{query}&amp;device=a3&amp;{search}&amp;spec_version=1#kernel-results"' in page.text
     assert f'{query}&amp;device=a5&amp;{search}&amp;spec_version=1#kernel-results"' in page.text
     assert 'aria-current="page"' in page.text
+    assert 'action="/global-best#kernel-results"' in page.text
     for name in ("device", "spec_version", "cohort", "rtol", "atol"):
         assert f'name="{name}"' in page.text
     assert (

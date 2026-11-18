@@ -43,7 +43,7 @@
 {% if kernel %}<section id="kernel-results" aria-label="Kernel results">
 {% endif %}
 {% if kernel %}
-<form method="get" action="/global-best">
+<form method="get" action="/global-best#kernel-results">
 {% if kernel %}<input type="hidden" name="kernel" value="{{ kernel }}">{% endif %}
 <input type="hidden" name="q" value="{{ q }}">
 {% if kernel %}<p>Filters for <strong>{{ kernel }}</strong></p>{% endif %}
