@@ -125,3 +125,37 @@ def test_release_download_menu_pins_commands_and_gates_python_on_hub(published):
     assert f"--release-id {identifier}" in page.text and "--no-detect" in page.text
     disabled = web(engine).get(f"/releases/{identifier}")
     assert "Python · Hugging Face" not in disabled.text and "CLI · download only" in disabled.text
+
+
+def test_global_best_search_and_device_links(releases, monkeypatch):
+    engine, add, _, manifest = releases
+    add(0.5)
+    monkeypatch.setattr(
+        "cannery.web.releases.catalog.kernels",
+        lambda _: [
+            {"kernel": manifest.kernel, "devices": ["a5", "a3"]},
+            {"kernel": "team/other", "devices": ["a5"]},
+        ],
+    )
+    client = web(engine)
+    directory = client.get("/global-best")
+    assert '<th scope="col">Device</th>' in directory.text
+    assert "team/other" in directory.text
+    assert '<select name="kernel">' not in directory.text
+    page = client.get(
+        "/global-best",
+        params={"q": manifest.kernel.upper(), "kernel": manifest.kernel, "spec_version": 1},
+    )
+    assert page.status_code == 200
+    assert "team/other" not in page.text
+    query = f"kernel={manifest.kernel.replace('/', '%2F')}"
+    search = query.upper().replace("KERNEL=", "q=")
+    assert f'{query}&amp;device=a3&amp;{search}"' in page.text
+    assert f'{query}&amp;device=a5&amp;{search}&amp;spec_version=1"' in page.text
+    assert 'aria-current="page"' in page.text
+    for name in ("device", "spec_version", "cohort", "rtol", "atol"):
+        assert f'name="{name}"' in page.text
+    assert (
+        "No kernels match your search."
+        in client.get("/global-best", params={"q": "no-such-kernel"}).text
+    )
