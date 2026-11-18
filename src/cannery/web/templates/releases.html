@@ -40,6 +40,8 @@
 <tr><td colspan="2">No kernels match your search.</td></tr>
 {% endfor %}
 </tbody></table></div>
+{% if kernel %}<section id="kernel-results" aria-label="Kernel results">
+{% endif %}
 {% if kernel %}
 <form method="get" action="/global-best">
 {% if kernel %}<input type="hidden" name="kernel" value="{{ kernel }}">{% endif %}
@@ -83,6 +85,7 @@
 {% for row in ranking.rows %}<tr><td><a href="/releases/{{ row.id }}">{{ row.implementation_name }}</a></td><td>{{ row.team }}</td><td>{{ row.language }}</td><td>{{ row.score.geomean_speedup|number }}×</td><td><time datetime="{{ row.published_at }}" title="{{ row.published_at }}">{{ row.published_at|publication_date }}</time></td><td>{% set links=row.source|source_links %}{% if links %}<a href="{{ links.code or links.repository }}" rel="noreferrer">{{ "Source" if links.code else "Repository" }}</a>{% else %}—{% endif %}</td></tr>{% else %}<tr><td colspan="6">No nonempty performance cases.</td></tr>{% endfor %}
 </tbody></table></div><p>{{ ranking.total|number }} scored releases. Showing up to 50; the API supports pagination.</p>
 {% endif %}
+{% if kernel %}</section>{% endif %}
 {% else %}<p>No published results yet.</p>{% endif %}
 {% endif %}
 {% endblock %}

@@ -154,8 +154,8 @@ def test_global_best_search_and_device_links(releases, monkeypatch):
     assert "team/other" not in page.text
     query = f"kernel={manifest.kernel.replace('/', '%2F')}"
     search = query.upper().replace("KERNEL=", "q=")
-    assert f'{query}&amp;device=a3&amp;{search}&amp;spec_version=1"' in page.text
-    assert f'{query}&amp;device=a5&amp;{search}&amp;spec_version=1"' in page.text
+    assert f'{query}&amp;device=a3&amp;{search}&amp;spec_version=1#kernel-results"' in page.text
+    assert f'{query}&amp;device=a5&amp;{search}&amp;spec_version=1#kernel-results"' in page.text
     assert 'aria-current="page"' in page.text
     for name in ("device", "spec_version", "cohort", "rtol", "atol"):
         assert f'name="{name}"' in page.text
@@ -199,3 +199,19 @@ def test_directory_link_opens_older_published_spec(releases):
     a5_url = url.replace("device=a3&spec_version=1", "device=a5&spec_version=2")
     assert a5_url.replace("&", "&amp;") in client.get("/global-best").text
     assert str(a5_id) in client.get(a5_url).text
+
+
+def test_global_best_recovers_if_publication_changes_during_render(releases, monkeypatch):
+    from cannery.releases.catalog import SelectionError
+
+    engine, add, _, manifest = releases
+    add(0.5)
+
+    def withdrawn(*args):
+        raise SelectionError("no_published_release")
+
+    monkeypatch.setattr("cannery.web.releases.catalog.history", withdrawn)
+    page = web(engine).get("/global-best", params={"kernel": manifest.kernel})
+    assert page.status_code == 200
+    assert "no_published_release" in page.text
+    assert "#kernel-results" in page.text

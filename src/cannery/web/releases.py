@@ -109,9 +109,9 @@ def install_release_web(
                 except ValueError:
                     raise HTTPException(422, "Invalid specification or tolerance") from None
                 try:
-                    values["ranking"] = catalog.leaderboard(db, selection)
-                    values["curve"] = chart(catalog.history(db, selection)["points"])
-                    values["cohorts"] = values["ranking"]["cohorts"]
+                    ranking = catalog.leaderboard(db, selection)
+                    curve = chart(catalog.history(db, selection)["points"])
+                    values.update(ranking=ranking, curve=curve, cohorts=ranking["cohorts"])
                 except catalog.SelectionError as error:
                     values["error"] = str(error)
                     values["cohorts"] = error.cohorts or []
@@ -138,7 +138,7 @@ def install_release_web(
                             "kernel": item["kernel"],
                             "device": row_device,
                             "active": active,
-                            "url": "/global-best?" + urlencode(params),
+                            "url": "/global-best?" + urlencode(params) + "#kernel-results",
                         }
                     )
             values["kernel_rows"] = rows
