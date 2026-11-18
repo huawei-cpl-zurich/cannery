@@ -94,7 +94,7 @@ def install_release_web(
             "atol": atol,
         }
         with Session(engine) as db:
-            values["kernels"] = catalog.kernels(db)
+            values["kernels"] = catalog.kernels(db, include_device_versions=True)
             rows = []
             for item in values["kernels"]:
                 if q.strip().casefold() not in item["kernel"].casefold():
@@ -108,6 +108,8 @@ def install_release_web(
                         for name in ("spec_version", "cohort", "rtol", "atol"):
                             if values[name] not in (None, ""):
                                 params[name] = values[name]
+                    else:
+                        params["spec_version"] = str(item["latest_by_device"][row_device])
                     rows.append(
                         {
                             "kernel": item["kernel"],

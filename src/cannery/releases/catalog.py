@@ -99,7 +99,7 @@ def release_info(db: Session, identifier: UUID) -> tuple[Release, Publication]:
     return row[0], row[1]
 
 
-def kernels(db: Session) -> list[dict[str, Any]]:
+def kernels(db: Session, *, include_device_versions: bool = False) -> list[dict[str, Any]]:
     rows = db.execute(
         select(Kernel.namespace, Kernel.name, SpecVersion.version, Release.device)
         .select_from(Release)
@@ -112,14 +112,19 @@ def kernels(db: Session) -> list[dict[str, Any]]:
     grouped: dict[str, dict[str, Any]] = {}
     for namespace, name, version, device in rows:
         key = f"{namespace}/{name}"
-        entry = grouped.setdefault(key, {"kernel": key, "versions": set(), "devices": set()})
+        entry = grouped.setdefault(
+            key, {"kernel": key, "versions": set(), "devices": set(), "latest_by_device": {}}
+        )
         entry["versions"].add(version)
         entry["devices"].add(device)
+        latest = entry["latest_by_device"]
+        latest[device] = max(version, latest.get(device, version))
     return [
         {
             "kernel": key,
             "versions": sorted(value["versions"], reverse=True),
             "devices": sorted(value["devices"]),
+            **({"latest_by_device": value["latest_by_device"]} if include_device_versions else {}),
         }
         for key, value in sorted(grouped.items())
     ]

@@ -132,9 +132,13 @@ def test_global_best_search_and_device_links(releases, monkeypatch):
     add(0.5)
     monkeypatch.setattr(
         "cannery.web.releases.catalog.kernels",
-        lambda _: [
-            {"kernel": manifest.kernel, "devices": ["a5", "a3"]},
-            {"kernel": "team/other", "devices": ["a5"]},
+        lambda _, **kwargs: [
+            {
+                "kernel": manifest.kernel,
+                "devices": ["a5", "a3"],
+                "latest_by_device": {"a3": 1, "a5": 1},
+            },
+            {"kernel": "team/other", "devices": ["a5"], "latest_by_device": {"a5": 1}},
         ],
     )
     client = web(engine)
@@ -150,7 +154,7 @@ def test_global_best_search_and_device_links(releases, monkeypatch):
     assert "team/other" not in page.text
     query = f"kernel={manifest.kernel.replace('/', '%2F')}"
     search = query.upper().replace("KERNEL=", "q=")
-    assert f'{query}&amp;device=a3&amp;{search}"' in page.text
+    assert f'{query}&amp;device=a3&amp;{search}&amp;spec_version=1"' in page.text
     assert f'{query}&amp;device=a5&amp;{search}&amp;spec_version=1"' in page.text
     assert 'aria-current="page"' in page.text
     for name in ("device", "spec_version", "cohort", "rtol", "atol"):
