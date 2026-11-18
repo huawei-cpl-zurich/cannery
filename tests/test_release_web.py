@@ -172,6 +172,7 @@ def test_directory_link_opens_older_published_spec(releases):
 
     engine, add, _, manifest = releases
     release_id, _, _ = add(0.5, device="a3")
+    add(0.4, device="a5")
     with Session(engine) as db, db.begin():
         frozen = db.get(SpecVersion, manifest.spec_id)
         v2 = SpecVersion(
@@ -192,6 +193,7 @@ def test_directory_link_opens_older_published_spec(releases):
     assert url.replace("&", "&amp;") in client.get("/global-best").text
     failed = client.get(url.removesuffix("&spec_version=1"))
     assert "no_published_release" in failed.text
+    assert f'aria-label="{manifest.kernel} on A3" aria-current=' not in failed.text
     assert url.replace("&", "&amp;") in failed.text
     assert str(release_id) in client.get(url).text
     a5_url = url.replace("device=a3&spec_version=1", "device=a5&spec_version=2")

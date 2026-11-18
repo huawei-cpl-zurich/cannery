@@ -120,11 +120,14 @@ def install_release_web(
                 if q.strip().casefold() not in item["kernel"].casefold():
                     continue
                 for row_device in sorted(item["devices"]):
-                    active = (item["kernel"], row_device) == (kernel, device)
+                    active = "ranking" in values and (item["kernel"], row_device) == (
+                        kernel,
+                        device,
+                    )
                     params = {"kernel": item["kernel"], "device": row_device}
                     if q:
                         params["q"] = q
-                    if active and "ranking" in values:
+                    if active:
                         for name in ("spec_version", "cohort", "rtol", "atol"):
                             if values[name] not in (None, ""):
                                 params[name] = values[name]
