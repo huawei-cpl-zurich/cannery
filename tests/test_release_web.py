@@ -174,17 +174,19 @@ def test_directory_link_opens_older_published_spec(releases):
     release_id, _, _ = add(0.5, device="a3")
     with Session(engine) as db, db.begin():
         frozen = db.get(SpecVersion, manifest.spec_id)
-        db.add(
-            SpecVersion(
-                kernel_id=frozen.kernel_id,
-                version=2,
-                content_sha256="f" * 64,
-                manifest=frozen.manifest,
-                snapshot={},
-                file_sha256={},
-                smoke={},
-            )
+        v2 = SpecVersion(
+            kernel_id=frozen.kernel_id,
+            version=2,
+            content_sha256="f" * 64,
+            manifest=frozen.manifest,
+            snapshot={},
+            file_sha256={},
+            smoke={},
         )
+        db.add(v2)
+        db.flush()
+        v2_id = v2.id
+    a5_id, _, _ = add(0.6, spec_id=v2_id, spec_version=2)
     client = web(engine)
     url = f"/global-best?kernel={manifest.kernel.replace('/', '%2F')}&device=a3&spec_version=1"
     assert url.replace("&", "&amp;") in client.get("/global-best").text
@@ -192,3 +194,6 @@ def test_directory_link_opens_older_published_spec(releases):
     assert "no_published_release" in failed.text
     assert url.replace("&", "&amp;") in failed.text
     assert str(release_id) in client.get(url).text
+    a5_url = url.replace("device=a3&spec_version=1", "device=a5&spec_version=2")
+    assert a5_url.replace("&", "&amp;") in client.get("/global-best").text
+    assert str(a5_id) in client.get(a5_url).text
