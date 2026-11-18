@@ -163,3 +163,29 @@ def test_global_best_search_and_device_links(releases, monkeypatch):
         "No kernels match your search."
         in client.get("/global-best", params={"q": "no-such-kernel"}).text
     )
+
+
+def test_directory_link_opens_older_published_spec(releases):
+    from sqlalchemy.orm import Session
+
+    from cannery.registry.models import SpecVersion
+
+    engine, add, _, manifest = releases
+    release_id, _, _ = add(0.5, device="a3")
+    with Session(engine) as db, db.begin():
+        frozen = db.get(SpecVersion, manifest.spec_id)
+        db.add(
+            SpecVersion(
+                kernel_id=frozen.kernel_id,
+                version=2,
+                content_sha256="f" * 64,
+                manifest=frozen.manifest,
+                snapshot={},
+                file_sha256={},
+                smoke={},
+            )
+        )
+    client = web(engine)
+    url = f"/global-best?kernel={manifest.kernel.replace('/', '%2F')}&device=a3&spec_version=1"
+    assert url.replace("&", "&amp;") in client.get("/global-best").text
+    assert str(release_id) in client.get(url).text

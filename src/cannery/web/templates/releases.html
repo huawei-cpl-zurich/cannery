@@ -35,7 +35,7 @@
 <div class="table-scroll" role="region" aria-label="Published kernels" tabindex="0">
 <table><thead><tr><th scope="col">Kernel</th><th scope="col">Device</th></tr></thead><tbody>
 {% for row in kernel_rows %}
-<tr><td><a href="{{ row.url }}"{% if row.active %} aria-current="page"{% endif %}>{{ row.kernel }}</a></td><td>{{ row.device | upper }}</td></tr>
+<tr><td><a href="{{ row.url }}" aria-label="{{ row.kernel }} on {{ row.device | upper }}"{% if row.active %} aria-current="page"{% endif %}>{{ row.kernel }}</a></td><td>{{ row.device | upper }}</td></tr>
 {% else %}
 <tr><td colspan="2">No kernels match your search.</td></tr>
 {% endfor %}
