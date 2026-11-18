@@ -58,9 +58,9 @@ with a new activation event and publication time.
 
 ## Global Best and saved evidence
 
-Open `/global-best` and select a kernel. The default is its latest frozen spec;
-it never silently falls back to an older published spec. Select an explicit spec
-version to inspect older releases. Multiple measurement cohorts require an
+Open `/global-best`, search for a kernel, and follow its device row. A new row
+selection opens the latest published spec for that device. A blank or omitted
+spec version selects the latest frozen spec. Enter a version to inspect older releases. Multiple measurement cohorts require an
 explicit cohort hash. Cohorts separate the suite, device, runtime, environment,
 driver, image, loader and timing protocol. Only an exact saved default/requested
 `rtol,atol` pair is supported; supply both or leave both blank for spec defaults.

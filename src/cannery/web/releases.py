@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlencode
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request
@@ -81,9 +82,11 @@ def install_release_web(
         cohort: str | None = None,
         rtol: str | None = None,
         atol: str | None = None,
+        q: str = "",
     ) -> HTMLResponse:
         values: dict[str, Any] = {
             "kernel": kernel,
+            "q": q,
             "device": device,
             "spec_version": spec_version,
             "cohort": cohort,
@@ -91,7 +94,7 @@ def install_release_web(
             "atol": atol,
         }
         with Session(engine) as db:
-            values["kernels"] = catalog.kernels(db)
+            values["kernels"] = catalog.kernels(db, include_device_versions=True)
             if kernel:
                 try:
                     selection = selected(
@@ -106,12 +109,39 @@ def install_release_web(
                 except ValueError:
                     raise HTTPException(422, "Invalid specification or tolerance") from None
                 try:
-                    values["ranking"] = catalog.leaderboard(db, selection)
-                    values["curve"] = chart(catalog.history(db, selection)["points"])
-                    values["cohorts"] = values["ranking"]["cohorts"]
+                    ranking = catalog.leaderboard(db, selection)
+                    curve = chart(catalog.history(db, selection)["points"])
+                    values.update(ranking=ranking, curve=curve, cohorts=ranking["cohorts"])
                 except catalog.SelectionError as error:
                     values["error"] = str(error)
                     values["cohorts"] = error.cohorts or []
+            rows = []
+            for item in values["kernels"]:
+                if q.strip().casefold() not in item["kernel"].casefold():
+                    continue
+                for row_device in sorted(item["devices"]):
+                    active = "ranking" in values and (item["kernel"], row_device) == (
+                        kernel,
+                        device,
+                    )
+                    params = {"kernel": item["kernel"], "device": row_device}
+                    if q:
+                        params["q"] = q
+                    if active:
+                        for name in ("spec_version", "cohort", "rtol", "atol"):
+                            if values[name] not in (None, ""):
+                                params[name] = values[name]
+                    else:
+                        params["spec_version"] = str(item["latest_by_device"][row_device])
+                    rows.append(
+                        {
+                            "kernel": item["kernel"],
+                            "device": row_device,
+                            "active": active,
+                            "url": "/global-best?" + urlencode(params) + "#kernel-results",
+                        }
+                    )
+            values["kernel_rows"] = rows
         return templates.TemplateResponse(
             request=request,
             name="releases.html",

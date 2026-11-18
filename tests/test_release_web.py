@@ -125,3 +125,94 @@ def test_release_download_menu_pins_commands_and_gates_python_on_hub(published):
     assert f"--release-id {identifier}" in page.text and "--no-detect" in page.text
     disabled = web(engine).get(f"/releases/{identifier}")
     assert "Python · Hugging Face" not in disabled.text and "CLI · download only" in disabled.text
+
+
+def test_global_best_search_and_device_links(releases, monkeypatch):
+    engine, add, _, manifest = releases
+    add(0.5)
+    monkeypatch.setattr(
+        "cannery.web.releases.catalog.kernels",
+        lambda _, **kwargs: [
+            {
+                "kernel": manifest.kernel,
+                "devices": ["a5", "a3"],
+                "latest_by_device": {"a3": 1, "a5": 1},
+            },
+            {"kernel": "team/other", "devices": ["a5"], "latest_by_device": {"a5": 1}},
+        ],
+    )
+    client = web(engine)
+    directory = client.get("/global-best")
+    assert '<th scope="col">Device</th>' in directory.text
+    assert "team/other" in directory.text
+    assert '<select name="kernel">' not in directory.text
+    page = client.get(
+        "/global-best",
+        params={"q": manifest.kernel.upper(), "kernel": manifest.kernel, "spec_version": 1},
+    )
+    assert page.status_code == 200
+    assert "team/other" not in page.text
+    query = f"kernel={manifest.kernel.replace('/', '%2F')}"
+    search = query.upper().replace("KERNEL=", "q=")
+    assert f'{query}&amp;device=a3&amp;{search}&amp;spec_version=1#kernel-results"' in page.text
+    assert f'{query}&amp;device=a5&amp;{search}&amp;spec_version=1#kernel-results"' in page.text
+    assert 'aria-current="page"' in page.text
+    assert 'action="/global-best#kernel-results"' in page.text
+    for name in ("device", "spec_version", "cohort", "rtol", "atol"):
+        assert f'name="{name}"' in page.text
+    assert (
+        "No kernels match your search."
+        in client.get("/global-best", params={"q": "no-such-kernel"}).text
+    )
+
+
+def test_directory_link_opens_older_published_spec(releases):
+    from sqlalchemy.orm import Session
+
+    from cannery.registry.models import SpecVersion
+
+    engine, add, _, manifest = releases
+    release_id, _, _ = add(0.5, device="a3")
+    add(0.4, device="a5")
+    with Session(engine) as db, db.begin():
+        frozen = db.get(SpecVersion, manifest.spec_id)
+        v2 = SpecVersion(
+            kernel_id=frozen.kernel_id,
+            version=2,
+            content_sha256="f" * 64,
+            manifest=frozen.manifest,
+            snapshot={},
+            file_sha256={},
+            smoke={},
+        )
+        db.add(v2)
+        db.flush()
+        v2_id = v2.id
+    a5_id, _, _ = add(0.6, spec_id=v2_id, spec_version=2)
+    client = web(engine)
+    url = f"/global-best?kernel={manifest.kernel.replace('/', '%2F')}&device=a3&spec_version=1"
+    assert url.replace("&", "&amp;") in client.get("/global-best").text
+    failed = client.get(url.removesuffix("&spec_version=1"))
+    assert "no_published_release" in failed.text
+    assert f'aria-label="{manifest.kernel} on A3" aria-current=' not in failed.text
+    assert url.replace("&", "&amp;") in failed.text
+    assert str(release_id) in client.get(url).text
+    a5_url = url.replace("device=a3&spec_version=1", "device=a5&spec_version=2")
+    assert a5_url.replace("&", "&amp;") in client.get("/global-best").text
+    assert str(a5_id) in client.get(a5_url).text
+
+
+def test_global_best_recovers_if_publication_changes_during_render(releases, monkeypatch):
+    from cannery.releases.catalog import SelectionError
+
+    engine, add, _, manifest = releases
+    add(0.5)
+
+    def withdrawn(*args):
+        raise SelectionError("no_published_release")
+
+    monkeypatch.setattr("cannery.web.releases.catalog.history", withdrawn)
+    page = web(engine).get("/global-best", params={"kernel": manifest.kernel})
+    assert page.status_code == 200
+    assert "no_published_release" in page.text
+    assert "#kernel-results" in page.text

@@ -29,7 +29,14 @@ def releases(admission, records):
     serial = [0]
 
     def add(
-        ratio, language="ascendc", driver=None, empty=False, extra_tolerance=False, device="a5"
+        ratio,
+        language="ascendc",
+        driver=None,
+        empty=False,
+        extra_tolerance=False,
+        device="a5",
+        spec_id=None,
+        spec_version=1,
     ):
         identifier = candidate(records)
         data = template.model_dump(mode="json")
@@ -38,6 +45,8 @@ def releases(admission, records):
             language=language,
             abi="unary-f32-v1" if language == "ascendc" else "catlass-unary-f32-v1",
         )
+        if spec_id is not None:
+            data.update(spec_id=str(spec_id), spec_version=spec_version)
         for case in data["score"]["cases"]:
             if case["excluded"]:
                 continue

@@ -23,8 +23,30 @@
 {% else %}
 <p>Only explicitly published releases appear. Scores compare synchronized call latency with PyTorch within one exact measurement cohort. Slower valid releases remain eligible.</p>
 {% if kernels %}
-<form method="get" action="/global-best">
-<label>Kernel <select name="kernel">{% for item in kernels %}<option value="{{ item.kernel }}"{% if kernel == item.kernel %} selected{% endif %}>{{ item.kernel }}</option>{% endfor %}</select></label>
+<form method="get" action="/global-best" role="search">
+<label>Search kernels <input type="search" name="q" value="{{ q }}"></label>
+{% if kernel %}
+{% for name, value in [('kernel', kernel), ('device', device), ('spec_version', spec_version), ('cohort', cohort), ('rtol', rtol), ('atol', atol)] %}
+{% if value is not none %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endif %}
+{% endfor %}
+{% endif %}
+<button>Search</button>
+</form>
+<div class="table-scroll" role="region" aria-label="Published kernels" tabindex="0">
+<table><thead><tr><th scope="col">Kernel</th><th scope="col">Device</th></tr></thead><tbody>
+{% for row in kernel_rows %}
+<tr><td><a href="{{ row.url }}" aria-label="{{ row.kernel }} on {{ row.device | upper }}"{% if row.active %} aria-current="page"{% endif %}>{{ row.kernel }}</a></td><td>{{ row.device | upper }}</td></tr>
+{% else %}
+<tr><td colspan="2">No kernels match your search.</td></tr>
+{% endfor %}
+</tbody></table></div>
+{% if kernel %}<section id="kernel-results" aria-label="Kernel results">
+{% endif %}
+{% if kernel %}
+<form method="get" action="/global-best#kernel-results">
+{% if kernel %}<input type="hidden" name="kernel" value="{{ kernel }}">{% endif %}
+<input type="hidden" name="q" value="{{ q }}">
+{% if kernel %}<p>Filters for <strong>{{ kernel }}</strong></p>{% endif %}
 <label>Spec version (blank = latest frozen) <input name="spec_version" type="number" min="1" value="{{ spec_version or '' }}"></label>
 <label>Device <select name="device">{% for item in ["a5", "a3"] %}<option{% if device == item %} selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
 <label>Cohort <input name="cohort" value="{{ cohort or '' }}" size="66" list="cohorts"></label>
@@ -33,6 +55,7 @@
 <label>atol <input name="atol" value="{{ atol if atol is not none else '' }}"></label>
 <button>Show results</button>
 </form>
+{% endif %}
 {% if error %}<p role="alert">{{ error }}. Choose an exact published cohort or saved tolerance pair.</p>{% endif %}
 {% if ranking %}
 <p>Spec v{{ ranking.spec_version }} · {{ ranking.device }} · tolerance rtol {{ ranking.tolerance.rtol|number }}, atol {{ ranking.tolerance.atol|number }} · cohort <code>{{ ranking.cohort }}</code>.</p>
@@ -62,6 +85,7 @@
 {% for row in ranking.rows %}<tr><td><a href="/releases/{{ row.id }}">{{ row.implementation_name }}</a></td><td>{{ row.team }}</td><td>{{ row.language }}</td><td>{{ row.score.geomean_speedup|number }}×</td><td><time datetime="{{ row.published_at }}" title="{{ row.published_at }}">{{ row.published_at|publication_date }}</time></td><td>{% set links=row.source|source_links %}{% if links %}<a href="{{ links.code or links.repository }}" rel="noreferrer">{{ "Source" if links.code else "Repository" }}</a>{% else %}—{% endif %}</td></tr>{% else %}<tr><td colspan="6">No nonempty performance cases.</td></tr>{% endfor %}
 </tbody></table></div><p>{{ ranking.total|number }} scored releases. Showing up to 50; the API supports pagination.</p>
 {% endif %}
+{% if kernel %}</section>{% endif %}
 {% else %}<p>No published results yet.</p>{% endif %}
 {% endif %}
 {% endblock %}

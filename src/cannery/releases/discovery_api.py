@@ -26,6 +26,8 @@ def selected(
     atol: Annotated[float | None, Query(ge=0, allow_inf_nan=False)] = None,
 ) -> catalog.Selection:
     allowed = {"kernel", "spec_version", "device", "cohort", "rtol", "atol"}
+    if request.url.path.endswith("/global-best"):
+        allowed.add("q")
     if request.url.path.endswith(("/leaderboard", "/releases")):
         allowed |= {"limit", "offset"}
     if any(
