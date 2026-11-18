@@ -95,30 +95,6 @@ def install_release_web(
         }
         with Session(engine) as db:
             values["kernels"] = catalog.kernels(db, include_device_versions=True)
-            rows = []
-            for item in values["kernels"]:
-                if q.strip().casefold() not in item["kernel"].casefold():
-                    continue
-                for row_device in sorted(item["devices"]):
-                    active = (item["kernel"], row_device) == (kernel, device)
-                    params = {"kernel": item["kernel"], "device": row_device}
-                    if q:
-                        params["q"] = q
-                    if active:
-                        for name in ("spec_version", "cohort", "rtol", "atol"):
-                            if values[name] not in (None, ""):
-                                params[name] = values[name]
-                    else:
-                        params["spec_version"] = str(item["latest_by_device"][row_device])
-                    rows.append(
-                        {
-                            "kernel": item["kernel"],
-                            "device": row_device,
-                            "active": active,
-                            "url": "/global-best?" + urlencode(params),
-                        }
-                    )
-            values["kernel_rows"] = rows
             if kernel:
                 try:
                     selection = selected(
@@ -139,6 +115,30 @@ def install_release_web(
                 except catalog.SelectionError as error:
                     values["error"] = str(error)
                     values["cohorts"] = error.cohorts or []
+            rows = []
+            for item in values["kernels"]:
+                if q.strip().casefold() not in item["kernel"].casefold():
+                    continue
+                for row_device in sorted(item["devices"]):
+                    active = (item["kernel"], row_device) == (kernel, device)
+                    params = {"kernel": item["kernel"], "device": row_device}
+                    if q:
+                        params["q"] = q
+                    if active and "ranking" in values:
+                        for name in ("spec_version", "cohort", "rtol", "atol"):
+                            if values[name] not in (None, ""):
+                                params[name] = values[name]
+                    else:
+                        params["spec_version"] = str(item["latest_by_device"][row_device])
+                    rows.append(
+                        {
+                            "kernel": item["kernel"],
+                            "device": row_device,
+                            "active": active,
+                            "url": "/global-best?" + urlencode(params),
+                        }
+                    )
+            values["kernel_rows"] = rows
         return templates.TemplateResponse(
             request=request,
             name="releases.html",

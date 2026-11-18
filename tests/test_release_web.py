@@ -188,4 +188,7 @@ def test_directory_link_opens_older_published_spec(releases):
     client = web(engine)
     url = f"/global-best?kernel={manifest.kernel.replace('/', '%2F')}&device=a3&spec_version=1"
     assert url.replace("&", "&amp;") in client.get("/global-best").text
+    failed = client.get(url.removesuffix("&spec_version=1"))
+    assert "no_published_release" in failed.text
+    assert url.replace("&", "&amp;") in failed.text
     assert str(release_id) in client.get(url).text
