@@ -2,6 +2,7 @@
 
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import urlencode
 from uuid import UUID
 
 from fastapi import FastAPI, HTTPException, Request
@@ -81,9 +82,11 @@ def install_release_web(
         cohort: str | None = None,
         rtol: str | None = None,
         atol: str | None = None,
+        q: str = "",
     ) -> HTMLResponse:
         values: dict[str, Any] = {
             "kernel": kernel,
+            "q": q,
             "device": device,
             "spec_version": spec_version,
             "cohort": cohort,
@@ -92,6 +95,28 @@ def install_release_web(
         }
         with Session(engine) as db:
             values["kernels"] = catalog.kernels(db)
+            rows = []
+            for item in values["kernels"]:
+                if q.strip().casefold() not in item["kernel"].casefold():
+                    continue
+                for row_device in sorted(item["devices"]):
+                    active = (item["kernel"], row_device) == (kernel, device)
+                    params = {"kernel": item["kernel"], "device": row_device}
+                    if q:
+                        params["q"] = q
+                    if active:
+                        for name in ("spec_version", "cohort", "rtol", "atol"):
+                            if values[name] not in (None, ""):
+                                params[name] = values[name]
+                    rows.append(
+                        {
+                            "kernel": item["kernel"],
+                            "device": row_device,
+                            "active": active,
+                            "url": "/global-best?" + urlencode(params),
+                        }
+                    )
+            values["kernel_rows"] = rows
             if kernel:
                 try:
                     selection = selected(
