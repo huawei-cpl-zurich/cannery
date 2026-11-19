@@ -30,7 +30,7 @@ def test_global_best_empty_partition_chart_and_withdrawal(releases):
     params = {"kernel": m.kernel, "spec_version": "", "cohort": "", "rtol": "", "atol": ""}
     page = client.get("/global-best", params=params)
     assert page.status_code == 200
-    assert "One strict best-so-far curve" in page.text
+    assert "Kernel performance over time" in page.text
     assert str(first[0]) in page.text and str(second[0]) in page.text
     assert "0.7×" in page.text and "CATLASS" in page.text
     state.withdraw(engine, second[1], {"namespace": "team", "role": "user"})
@@ -143,7 +143,7 @@ def test_global_best_search_and_device_links(releases, monkeypatch):
     )
     client = web(engine)
     directory = client.get("/global-best")
-    assert '<th scope="col">Device</th>' in directory.text
+    assert "Sort by device ascending" in directory.text
     assert "team/other" in directory.text
     assert '<select name="kernel">' not in directory.text
     page = client.get(
@@ -211,8 +211,38 @@ def test_global_best_recovers_if_publication_changes_during_render(releases, mon
     def withdrawn(*args):
         raise SelectionError("no_published_release")
 
-    monkeypatch.setattr("cannery.web.releases.catalog.history", withdrawn)
+    monkeypatch.setattr("cannery.web.releases.catalog.evolution", withdrawn)
     page = web(engine).get("/global-best", params={"kernel": manifest.kernel})
     assert page.status_code == 200
     assert "no_published_release" in page.text
     assert "#kernel-results" in page.text
+
+
+def test_device_directory_winner_and_slower_commit_evolution(releases):
+    engine, add, _, manifest = releases
+    winner, _, _ = add(0.9)
+    slower, slower_submission, _ = add(0.6)
+    add(0.8, device="a3")
+    client = web(engine)
+    query = {"q": manifest.kernel.upper(), "device_sort": "desc"}
+    directory = client.get("/global-best", params=query).text
+    assert directory.index(f"{manifest.kernel} on A5") < directory.index(f"{manifest.kernel} on A3")
+    assert f"/releases/{winner}" in directory
+    assert f"/releases/{slower}" not in directory
+    filtered = client.get("/global-best", params=query | {"catalog_device": "a3"}).text
+    assert f"{manifest.kernel} on A3" in filtered
+    assert f"{manifest.kernel} on A5" not in filtered
+    assert 'aria-sort="descending"' in filtered
+
+    route = {"kernel": manifest.kernel, "catalog_device": "a5", "device_sort": "asc"}
+    page = client.get("/global-best", params=route)
+    assert page.status_code == 200
+    assert page.text.count('class="chart-point"') == 2
+    assert f'class="chart-point" href="/releases/{slower}"' in page.text
+    assert manifest.source.commit in page.text
+    assert "<strong>0.9×</strong>" in page.text
+    state.withdraw(engine, slower_submission, {"namespace": "team", "role": "user"})
+    assert client.get("/global-best", params=route).text.count('class="chart-point"') == 1
+
+    add(1.1, driver="other")
+    assert "Select cohort" in client.get("/global-best", params=query).text

@@ -1,7 +1,7 @@
 """Published Global Best partitions, one record curve and immutable release details."""
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlencode
 from uuid import UUID
 
@@ -36,8 +36,13 @@ def chart(points: list[dict[str, Any]]) -> dict[str, Any]:
         for p, t in zip(points, times, strict=True)
     ]
     line = f"M {dots[0]['x']} {dots[0]['y']}"
+    best = dots[0]
     for dot in dots[1:]:
-        line += f" H {dot['x']} V {dot['y']}"
+        if dot["geomean_speedup"] > best["geomean_speedup"]:
+            line += f" H {dot['x']} V {dot['y']}"
+            best = dot
+    if best is not dots[-1]:
+        line += f" H {dots[-1]['x']}"
     ticks = [{"y": 220 - i * 45, "label": number(ceiling * i / 4)} for i in range(5)]
     axis_times = [(50, times[0]), (400, (times[0] + times[-1]) / 2), (750, times[-1])]
     if times[0] == times[-1]:
@@ -53,7 +58,7 @@ def chart(points: list[dict[str, Any]]) -> dict[str, Any]:
     return {
         "ticks": ticks,
         "dates": dates,
-        "best": number(points[-1]["geomean_speedup"]),
+        "best": number(best["geomean_speedup"]),
         "points": dots,
         "line": line,
         "reference_y": 220 - 180 / ceiling,
@@ -83,10 +88,14 @@ def install_release_web(
         rtol: str | None = None,
         atol: str | None = None,
         q: str = "",
+        catalog_device: Literal["", "a3", "a5"] = "",
+        device_sort: Literal["", "asc", "desc"] = "",
     ) -> HTMLResponse:
         values: dict[str, Any] = {
             "kernel": kernel,
             "q": q,
+            "catalog_device": catalog_device,
+            "device_sort": device_sort,
             "device": device,
             "spec_version": spec_version,
             "cohort": cohort,
@@ -110,7 +119,7 @@ def install_release_web(
                     raise HTTPException(422, "Invalid specification or tolerance") from None
                 try:
                     ranking = catalog.leaderboard(db, selection)
-                    curve = chart(catalog.history(db, selection)["points"])
+                    curve = chart(catalog.evolution(db, selection))
                     values.update(ranking=ranking, curve=curve, cohorts=ranking["cohorts"])
                 except catalog.SelectionError as error:
                     values["error"] = str(error)
@@ -120,6 +129,19 @@ def install_release_web(
                 if q.strip().casefold() not in item["kernel"].casefold():
                     continue
                 for row_device in sorted(item["devices"]):
+                    if catalog_device and row_device != catalog_device:
+                        continue
+                    latest = item["latest_by_device"][row_device]
+                    summary = None
+                    summary_error = None
+                    try:
+                        default = catalog.Selection(
+                            kernel=item["kernel"], device=row_device, spec_version=latest
+                        )
+                        winners = catalog.leaderboard(db, default, limit=1)["rows"]
+                        summary = winners[0] if winners else None
+                    except catalog.SelectionError as error:
+                        summary_error = str(error)
                     active = "ranking" in values and (item["kernel"], row_device) == (
                         kernel,
                         device,
@@ -127,21 +149,32 @@ def install_release_web(
                     params = {"kernel": item["kernel"], "device": row_device}
                     if q:
                         params["q"] = q
+                    if catalog_device:
+                        params["catalog_device"] = catalog_device
+                    if device_sort:
+                        params["device_sort"] = device_sort
                     if active:
                         for name in ("spec_version", "cohort", "rtol", "atol"):
                             if values[name] not in (None, ""):
                                 params[name] = values[name]
                     else:
-                        params["spec_version"] = str(item["latest_by_device"][row_device])
+                        params["spec_version"] = str(latest)
                     rows.append(
                         {
                             "kernel": item["kernel"],
                             "device": row_device,
                             "active": active,
+                            "best": summary,
+                            "best_error": summary_error,
                             "url": "/global-best?" + urlencode(params) + "#kernel-results",
                         }
                     )
+            if device_sort:
+                rows.sort(key=lambda row: row["device"], reverse=device_sort == "desc")
             values["kernel_rows"] = rows
+            sort_params = dict(request.query_params)
+            sort_params["device_sort"] = "desc" if device_sort == "asc" else "asc"
+            values["device_sort_url"] = "/global-best?" + urlencode(sort_params)
         return templates.TemplateResponse(
             request=request,
             name="releases.html",

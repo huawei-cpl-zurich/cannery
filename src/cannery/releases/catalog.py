@@ -212,6 +212,25 @@ def listing(db: Session, selection: Selection, limit: int = 50, offset: int = 0)
     }
 
 
+def evolution(db: Session, selection: Selection) -> list[dict[str, Any]]:
+    _, query = context(db, selection)
+    return [
+        {
+            "release_id": str(release.id),
+            "published_at": aware(pub.published_at).isoformat(),
+            "geomean_speedup": release.score,
+            "language": release.language,
+            "implementation_name": label(
+                release.submission.implementation_name, release.candidate_id
+            ),
+            "commit": manifest_of(release).source.commit,
+        }
+        for release, pub in db.execute(
+            query.where(Release.score.is_not(None)).order_by(Publication.published_at, Release.id)
+        )
+    ]
+
+
 def history(db: Session, selection: Selection) -> dict[str, Any]:
     info, query = context(db, selection)
     best = 0.0
