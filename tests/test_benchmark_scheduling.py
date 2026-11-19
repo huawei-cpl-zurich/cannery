@@ -241,7 +241,7 @@ def test_existing_reference_wait_gets_execution_budget_with_same_attempt(queue, 
         assert aware(job.deadline) > expired + timedelta(minutes=30)
 
 
-def test_overdue_candidate_with_cached_reference_still_expires(queue):
+def test_overdue_candidate_with_cached_reference_still_expires(queue, monkeypatch):
     engine, _, memory, _, _, cohort, add = queue
     first = scheduling.candidate_key(add())
     scheduling.discover(engine, cohort)
@@ -255,11 +255,39 @@ def test_overdue_candidate_with_cached_reference_still_expires(queue):
     )
     second = scheduling.candidate_key(add())
     scheduling.discover(engine, cohort)
-    with Session(engine) as db, db.begin():
+    with Session(engine) as db:
         job = db.get(PerformanceJob, second)
         assert job.reference_key == reference_key and job.error is None
-        job.deadline = datetime.now(UTC) - timedelta(seconds=1)
+        after_deadline = aware(job.deadline) + timedelta(seconds=1)
+
+    class Later(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return after_deadline
+
+    monkeypatch.setattr("cannery.benchmark.state.datetime", Later)
     assert claim_job(engine, second) is None
     with Session(engine) as db:
         job = db.get(PerformanceJob, second)
         assert job.attempts == 0 and job.error == "deadline_exceeded"
+
+
+def test_preupgrade_queue_can_claim_after_reference_completes(queue):
+    engine, _, memory, _, _, cohort, add = queue
+    key = scheduling.candidate_key(add())
+    scheduling.discover(engine, cohort)
+    expired = datetime.now(UTC) - timedelta(seconds=1)
+    with Session(engine) as db, db.begin():
+        job = db.get(PerformanceJob, key)
+        reference_key = job.reference_key
+        job.error = None
+        job.deadline = job.due_at = expired
+    assert finish_job(
+        engine,
+        claim_job(engine, reference_key),
+        report={"passed": True},
+        artifact=memory.put("timing.json", b"{}"),
+    )
+    assert claim_job(engine, key) is not None
+    with Session(engine) as db:
+        assert aware(db.get(PerformanceJob, key).deadline) > expired + timedelta(minutes=30)

@@ -161,13 +161,19 @@ def claim_job(engine: Engine, key: str, *, device: Device = "a5") -> Performance
             if aware(row.due_at) > now:
                 return None
             reference = db.get(PerformanceJob, row.reference_key)
-            if (
-                reference is not None
-                and reference.status == "ready"
-                and row.error == "awaiting_reference_timing"
-            ):
-                row.error = None
-                row.deadline = now + timedelta(minutes=30)
+            if reference is not None and reference.status == "ready":
+                result = db.get(PerformanceResult, reference.attempt)
+                # Legacy rows did not record the dependency wait at enqueue.
+                # A renewed deadline starts after this completion timestamp.
+                waited = (
+                    row.attempts <= 1
+                    and result is not None
+                    and aware(result.finished_at) > aware(row.deadline) - timedelta(minutes=30)
+                )
+                if row.error == "awaiting_reference_timing" or waited:
+                    row.error = None
+                    started = max(now, aware(result.finished_at)) if result is not None else now
+                    row.deadline = started + timedelta(minutes=30)
             elif (
                 reference is not None
                 and reference.status in {"queued", "running"}
