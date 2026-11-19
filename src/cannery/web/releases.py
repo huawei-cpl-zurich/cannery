@@ -20,7 +20,6 @@ from cannery.settings import Settings
 from cannery.web.downloads import origin, snippets
 from cannery.web.presentation import configure, number
 
-
 DIRECTORY_COLUMNS = {
     "kernel": "Kernel",
     "device": "Device",
@@ -176,8 +175,8 @@ def install_release_web(
                     )
                 rows = available + [row for row in rows if not row["best"]]
             else:
-                key = "submission_count" if column == "submissions" else column
-                rows.sort(key=lambda row: row[key], reverse=order == "desc")
+                sort_key = "submission_count" if column == "submissions" else column
+                rows.sort(key=lambda row: row[sort_key], reverse=order == "desc")
             values["kernel_rows"] = rows
             sort_params = dict(request.query_params)
             sort_params.pop("device_sort", None)

@@ -211,6 +211,7 @@ def test_directory_link_opens_older_published_spec(releases):
     directory = client.get("/global-best").text
     assert a5_url.replace("&", "&amp;") in directory
     assert str(a5_id) in directory and str(old_a5) not in directory
+    assert "<td>2</td></tr>" in directory
     assert str(a5_id) in client.get(a5_url).text
     old = client.get(a5_url.replace("spec_version=2", "spec_version=1")).text
     assert a5_url.replace("&", "&amp;") in old
@@ -254,13 +255,49 @@ def test_device_directory_winner_and_slower_commit_evolution(releases):
     page = client.get("/global-best", params=route)
     assert page.status_code == 200
     assert page.text.count('class="chart-point"') == 2
+    assert "<td>2</td></tr>" in page.text
     assert f'class="chart-point" href="/releases/{slower}"' in page.text
     assert manifest.source.commit in page.text
     assert "Chart revisions (2)" in page.text
     assert f'href="/releases/{slower}" title="{manifest.source.commit}"' in page.text
     assert "<strong>0.9×</strong>" in page.text
     state.withdraw(engine, slower_submission, {"namespace": "team", "role": "user"})
-    assert client.get("/global-best", params=route).text.count('class="chart-point"') == 1
+    after = client.get("/global-best", params=route).text
+    assert after.count('class="chart-point"') == 1
+    assert "<td>2</td></tr>" not in after
 
     add(1.1, driver="other")
     assert "Select cohort" in client.get("/global-best", params=query).text
+
+
+def test_sortable_directory_columns_preserve_filters_and_place_missing_gains_last(releases):
+    engine, add, _, manifest = releases
+    a5, _, _ = add(2.0)
+    a3, _, _ = add(11.0, device="a3")
+    client = web(engine)
+    route = {"kernel": manifest.kernel, "q": manifest.kernel, "device": "a5"}
+    url = "/global-best"
+    for order, expected in [("asc", (a5, a3)), ("desc", (a3, a5))]:
+        page = client.get(url, params=route | {"sort": "gain", "direction": order})
+        assert page.status_code == 200
+        assert page.text.index(f"/releases/{expected[0]}") < page.text.index(
+            f"/releases/{expected[1]}"
+        )
+    assert "<td>11×</td>" in page.text
+    filter_query = route | {"catalog_device": "a3", "sort": "gain", "direction": "desc"}
+    filtered = client.get(url, params=filter_query).text
+    assert 'aria-label="Sort by gain ascending"' in filtered
+    assert "catalog_device=a3&amp;sort=implementation&amp;direction=asc" in filtered
+    assert 'name="sort" value="gain"' in filtered
+    assert 'name="direction" value="desc"' in filtered
+    assert f"{manifest.kernel} on A5" not in filtered
+
+    add(3.0, driver="other")
+    for order in ("asc", "desc"):
+        for column in ("gain", "implementation"):
+            page = client.get(url, params={"sort": column, "direction": order}).text
+            assert page.index(f"{manifest.kernel} on A3") < page.index(f"{manifest.kernel} on A5")
+    descending = client.get(url, params={"sort": "submissions", "direction": "desc"}).text
+    ascending = client.get(url, params={"sort": "submissions", "direction": "asc"}).text
+    assert descending.index("on A5") < descending.index("on A3")
+    assert ascending.index("on A3") < ascending.index("on A5")
