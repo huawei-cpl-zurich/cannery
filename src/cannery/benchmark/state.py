@@ -154,6 +154,21 @@ def claim_job(engine: Engine, key: str, *, device: Device = "a5") -> Performance
             return None
         if row.lease_until is not None and aware(row.lease_until) > now:
             return None
+        if row.kind == "candidate" and row.attempts == 0 and row.reference_key:
+            if aware(row.due_at) > now:
+                return None
+            reference = db.get(PerformanceJob, row.reference_key)
+            if reference is not None and reference.status == "ready":
+                row.error = None
+                row.deadline = now + timedelta(minutes=30)
+            elif (
+                reference is not None
+                and reference.status in {"queued", "running"}
+                and aware(row.deadline) > now
+            ):
+                row.error = "awaiting_reference_timing"
+                row.due_at = min(aware(row.deadline), now + timedelta(seconds=5))
+                return None
         if aware(row.deadline) <= now or (row.status == "queued" and row.attempts >= 3):
             error = "deadline_exceeded" if aware(row.deadline) <= now else "attempts_exhausted"
             if row.attempt and db.get(PerformanceResult, row.attempt) is None:

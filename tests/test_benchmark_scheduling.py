@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import pytest
@@ -22,6 +23,7 @@ from cannery.benchmark.state import PerformanceJob, claim_job, finish_job
 from cannery.benchmark.tensor_evidence import tensor_timing_artifact
 from cannery.benchmark.tensor_timing import tensor_timed_cases
 from cannery.builds.state import claim_build, finish_build
+from cannery.database import aware
 from cannery.numerics.recipes_v2 import RecipeSuiteV2
 from cannery.numerics.state import NumericalState, claim_numerical, finish_numerical
 from cannery.registry.freeze import BaselineEvidence
@@ -172,3 +174,31 @@ def test_failed_reference_blocks_without_dispatching_candidate(queue):
     assert finish_job(engine, claim_job(engine, job.reference_key), error="unsupported")
     with pytest.raises(scheduling.BenchmarkBlocked, match="reference_timing_failed"):
         scheduling.retained(engine, job, executor)
+
+
+def test_reference_wait_does_not_consume_candidate_attempt_or_budget(queue):
+    engine, _, memory, _, _, cohort, add = queue
+    key = scheduling.candidate_key(add())
+    scheduling.discover(engine, cohort)
+    now = datetime.now(UTC)
+    with Session(engine) as db, db.begin():
+        job = db.get(PerformanceJob, key)
+        reference_key = job.reference_key
+        job.deadline = now + timedelta(seconds=10)
+    assert claim_job(engine, key) is None
+    with Session(engine) as db, db.begin():
+        job = db.get(PerformanceJob, key)
+        assert job.status == "queued" and job.attempts == 0
+        assert job.error == "awaiting_reference_timing"
+        job.due_at = now
+    assert finish_job(
+        engine,
+        claim_job(engine, reference_key),
+        report={"passed": True},
+        artifact=memory.put("timing.json", b"{}"),
+    )
+    assert claim_job(engine, key) is not None
+    with Session(engine) as db:
+        job = db.get(PerformanceJob, key)
+        assert job.attempts == 1 and job.error is None
+        assert aware(job.deadline) >= now + timedelta(minutes=30)
