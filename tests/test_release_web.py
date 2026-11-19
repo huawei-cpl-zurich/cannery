@@ -148,7 +148,15 @@ def test_global_best_search_and_device_links(releases, monkeypatch):
         "cannery.web.releases.catalog.directory",
         lambda db: (
             published_directory(db)
-            + [{"kernel": "team/other", "device": "a5", "version": 1, "submission_count": 1}]
+            + [
+                {
+                    "kernel": "team/other",
+                    "device": "a5",
+                    "version": 1,
+                    "submission_count": 1,
+                    "best": None,
+                }
+            ]
         ),
     )
     client = web(engine)
@@ -301,3 +309,28 @@ def test_sortable_directory_columns_preserve_filters_and_place_missing_gains_las
     ascending = client.get(url, params={"sort": "submissions", "direction": "asc"}).text
     assert descending.index("on A5") < descending.index("on A3")
     assert ascending.index("on A3") < ascending.index("on A5")
+
+
+def test_kernel_and_implementation_sort_text_independently_of_gain(releases, monkeypatch):
+    engine, _, _, _ = releases
+    rows = [
+        {
+            "kernel": kernel,
+            "device": "a5",
+            "version": 1,
+            "submission_count": 1,
+            "best": {"id": gain, "name": implementation, "speedup": gain},
+        }
+        for kernel, implementation, gain in [
+            ("team/a", "zeta", 2),
+            ("team/b", "Alpha", 11),
+        ]
+    ]
+    monkeypatch.setattr("cannery.web.releases.catalog.directory", lambda db: rows)
+    client = web(engine)
+    for column in ("kernel", "implementation"):
+        for direction in ("asc", "desc"):
+            page = client.get("/global-best", params={"sort": column, "direction": direction})
+            assert page.status_code == 200
+            a_before_b = page.text.index("team/a on A5") < page.text.index("team/b on A5")
+            assert a_before_b == ((column == "kernel") == (direction == "asc"))
