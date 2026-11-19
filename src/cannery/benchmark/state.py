@@ -166,9 +166,10 @@ def claim_job(engine: Engine, key: str, *, device: Device = "a5") -> Performance
                 # Reference claims enforce their own deadline. A candidate must
                 # not expire while a successful reference completion can still commit.
                 row.error = "awaiting_reference_timing"
+                row.lease = row.lease_until = None
                 row.due_at = now + timedelta(seconds=5)
                 return None
-            waited = row.error == "awaiting_reference_timing"
+            waited = row.error == "awaiting_reference_timing" and row.lease is None
             if reference is not None and reference.attempt is not None:
                 result = db.get(PerformanceResult, reference.attempt)
                 now = datetime.now(UTC)
