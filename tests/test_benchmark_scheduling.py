@@ -185,7 +185,7 @@ def test_reference_wait_does_not_consume_candidate_attempt_or_budget(queue):
     with Session(engine) as db, db.begin():
         job = db.get(PerformanceJob, key)
         reference_key = job.reference_key
-        job.deadline = now + timedelta(seconds=10)
+        job.deadline = now - timedelta(seconds=1)
     assert claim_job(engine, key) is None
     with Session(engine) as db, db.begin():
         job = db.get(PerformanceJob, key)
