@@ -205,7 +205,10 @@ def test_reference_wait_does_not_consume_candidate_attempt_or_budget(queue):
         assert aware(job.deadline) >= now + timedelta(minutes=30)
 
 
-def test_existing_reference_wait_gets_execution_budget_with_same_attempt(queue):
+@pytest.mark.parametrize(
+    "previous_error", ["awaiting_reference_timing", "artifact_storage_unavailable"]
+)
+def test_existing_reference_wait_gets_execution_budget_with_same_attempt(queue, previous_error):
     engine, _, memory, _, _, cohort, add = queue
     key = scheduling.candidate_key(add())
     scheduling.discover(engine, cohort)
@@ -216,7 +219,13 @@ def test_existing_reference_wait_gets_execution_budget_with_same_attempt(queue):
         attempt = job.attempt = uuid4()
         job.attempts = 1
         job.status = "running"
-        job.error = "awaiting_reference_timing"
+        job.error = previous_error
+        job.due_at = expired
+        job.deadline = datetime.now(UTC) + timedelta(seconds=10)
+    assert claim_job(engine, key) is None
+    with Session(engine) as db, db.begin():
+        job = db.get(PerformanceJob, key)
+        assert job.error == "awaiting_reference_timing"
         job.due_at = job.deadline = expired
     assert finish_job(
         engine,
@@ -230,3 +239,27 @@ def test_existing_reference_wait_gets_execution_budget_with_same_attempt(queue):
         job = db.get(PerformanceJob, key)
         assert job.attempts == 1 and job.error is None
         assert aware(job.deadline) > expired + timedelta(minutes=30)
+
+
+def test_overdue_candidate_with_cached_reference_still_expires(queue):
+    engine, _, memory, _, _, cohort, add = queue
+    first = scheduling.candidate_key(add())
+    scheduling.discover(engine, cohort)
+    with Session(engine) as db:
+        reference_key = db.get(PerformanceJob, first).reference_key
+    assert finish_job(
+        engine,
+        claim_job(engine, reference_key),
+        report={"passed": True},
+        artifact=memory.put("timing.json", b"{}"),
+    )
+    second = scheduling.candidate_key(add())
+    scheduling.discover(engine, cohort)
+    with Session(engine) as db, db.begin():
+        job = db.get(PerformanceJob, second)
+        assert job.reference_key == reference_key and job.error is None
+        job.deadline = datetime.now(UTC) - timedelta(seconds=1)
+    assert claim_job(engine, second) is None
+    with Session(engine) as db:
+        job = db.get(PerformanceJob, second)
+        assert job.attempts == 0 and job.error == "deadline_exceeded"

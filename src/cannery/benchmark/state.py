@@ -107,6 +107,8 @@ def ensure_job(
     try:
         with Session(engine) as db, db.begin():
             if db.get(PerformanceJob, key) is None:
+                reference = db.get(PerformanceJob, reference_key) if reference_key else None
+                waiting = reference is not None and reference.status in {"queued", "running"}
                 db.add(
                     PerformanceJob(
                         key=key,
@@ -116,6 +118,7 @@ def ensure_job(
                         reference_key=reference_key,
                         deadline=now + timedelta(minutes=30),
                         due_at=now,
+                        error="awaiting_reference_timing" if waiting else None,
                     )
                 )
     except IntegrityError:
@@ -154,15 +157,15 @@ def claim_job(engine: Engine, key: str, *, device: Device = "a5") -> Performance
             return None
         if row.lease_until is not None and aware(row.lease_until) > now:
             return None
-        if (
-            row.kind == "candidate"
-            and row.reference_key
-            and (row.attempts == 0 or row.error == "awaiting_reference_timing")
-        ):
+        if row.kind == "candidate" and row.reference_key:
             if aware(row.due_at) > now:
                 return None
             reference = db.get(PerformanceJob, row.reference_key)
-            if reference is not None and reference.status == "ready":
+            if (
+                reference is not None
+                and reference.status == "ready"
+                and row.error == "awaiting_reference_timing"
+            ):
                 row.error = None
                 row.deadline = now + timedelta(minutes=30)
             elif (
