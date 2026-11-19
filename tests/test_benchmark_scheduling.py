@@ -323,3 +323,18 @@ def test_legacy_execution_already_dispatched_keeps_its_deadline(queue):
     with Session(engine) as db:
         job = db.get(PerformanceJob, key)
         assert job.status == "failed" and job.error == "deadline_exceeded"
+
+
+def test_expired_wait_reports_reference_failure(queue):
+    engine, _, _, _, _, cohort, add = queue
+    key = scheduling.candidate_key(add())
+    scheduling.discover(engine, cohort)
+    with Session(engine) as db, db.begin():
+        job = db.get(PerformanceJob, key)
+        reference_key = job.reference_key
+        job.deadline = datetime.now(UTC) - timedelta(seconds=1)
+    assert finish_job(engine, claim_job(engine, reference_key), error="device_failed")
+    assert claim_job(engine, key) is None
+    with Session(engine) as db:
+        job = db.get(PerformanceJob, key)
+        assert job.status == "blocked" and job.error == "reference_timing_failed"
