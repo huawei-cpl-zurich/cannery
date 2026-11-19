@@ -339,8 +339,8 @@ def test_legacy_execution_already_dispatched_keeps_its_deadline(queue):
         assert job.status == "failed" and job.error == "deadline_exceeded"
 
 
-@pytest.mark.parametrize("legacy", [False, True])
-def test_expired_wait_reports_reference_failure(queue, legacy):
+@pytest.mark.parametrize("previous", ["marked", "legacy", "legacy_never_claimed"])
+def test_expired_wait_reports_reference_failure(queue, previous):
     engine, _, _, _, _, cohort, add = queue
     key = scheduling.candidate_key(add())
     scheduling.discover(engine, cohort)
@@ -348,9 +348,15 @@ def test_expired_wait_reports_reference_failure(queue, legacy):
         job = db.get(PerformanceJob, key)
         reference_key = job.reference_key
         job.deadline = datetime.now(UTC) - timedelta(seconds=1)
-        if legacy:
+        if previous != "marked":
             job.error = None
-    assert finish_job(engine, claim_job(engine, reference_key), error="device_failed")
+        if previous == "legacy_never_claimed":
+            db.get(PerformanceJob, reference_key).deadline = job.deadline
+    reference_claim = claim_job(engine, reference_key)
+    if previous == "legacy_never_claimed":
+        assert reference_claim is None
+    else:
+        assert finish_job(engine, reference_claim, error="device_failed")
     assert claim_job(engine, key) is None
     with Session(engine) as db:
         job = db.get(PerformanceJob, key)

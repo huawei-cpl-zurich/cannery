@@ -193,8 +193,8 @@ def claim_job(engine: Engine, key: str, *, device: Device = "a5") -> Performance
             if waited and reference is not None and reference.status == "ready":
                 row.error = None
                 row.deadline = now + timedelta(minutes=30)
-            reference_failed = waited and (
-                reference is None or reference.status in {"failed", "blocked"}
+            reference_failed = (
+                waited if reference is None else reference.status in {"failed", "blocked"}
             )
         if (
             reference_failed
