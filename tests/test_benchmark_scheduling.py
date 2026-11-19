@@ -272,7 +272,8 @@ def test_overdue_candidate_with_cached_reference_still_expires(queue, monkeypatc
         assert job.attempts == 0 and job.error == "deadline_exceeded"
 
 
-def test_preupgrade_queue_can_claim_after_reference_completes(queue):
+@pytest.mark.parametrize("postponed", [False, True])
+def test_preupgrade_queue_can_claim_after_reference_completes(queue, postponed):
     engine, _, memory, _, _, cohort, add = queue
     key = scheduling.candidate_key(add())
     scheduling.discover(engine, cohort)
@@ -282,6 +283,12 @@ def test_preupgrade_queue_can_claim_after_reference_completes(queue):
         reference_key = job.reference_key
         job.error = None
         job.deadline = job.due_at = expired
+        if postponed:
+            job.status = "running"
+            job.attempts = 1
+            job.attempt = uuid4()
+            job.error = "artifact_storage_unavailable"
+            job.lease_until = job.due_at
     assert finish_job(
         engine,
         claim_job(engine, reference_key),

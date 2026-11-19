@@ -165,10 +165,17 @@ def claim_job(engine: Engine, key: str, *, device: Device = "a5") -> Performance
                 result = db.get(PerformanceResult, reference.attempt)
                 # Legacy rows did not record the dependency wait at enqueue.
                 # A renewed deadline starts after this completion timestamp.
-                waited = (
-                    row.attempts == 0
-                    and result is not None
-                    and aware(result.finished_at) > aware(row.deadline) - timedelta(minutes=30)
+                waited = result is not None and (
+                    (
+                        row.attempts == 0
+                        and aware(result.finished_at) > aware(row.deadline) - timedelta(minutes=30)
+                    )
+                    or (
+                        row.status == "running"
+                        and row.lease is None
+                        and row.lease_until == row.due_at
+                        and aware(result.finished_at) > aware(row.due_at)
+                    )
                 )
                 if row.error == "awaiting_reference_timing" or waited:
                     row.error = None
