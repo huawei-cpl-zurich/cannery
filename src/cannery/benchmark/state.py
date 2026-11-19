@@ -166,7 +166,7 @@ def claim_job(engine: Engine, key: str, *, device: Device = "a5") -> Performance
                 # Legacy rows did not record the dependency wait at enqueue.
                 # A renewed deadline starts after this completion timestamp.
                 waited = (
-                    row.attempts <= 1
+                    row.attempts == 0
                     and result is not None
                     and aware(result.finished_at) > aware(row.deadline) - timedelta(minutes=30)
                 )

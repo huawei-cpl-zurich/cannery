@@ -291,3 +291,28 @@ def test_preupgrade_queue_can_claim_after_reference_completes(queue):
     assert claim_job(engine, key) is not None
     with Session(engine) as db:
         assert aware(db.get(PerformanceJob, key).deadline) > expired + timedelta(minutes=30)
+
+
+def test_legacy_execution_already_dispatched_keeps_its_deadline(queue):
+    engine, _, memory, _, _, cohort, add = queue
+    key = scheduling.candidate_key(add())
+    scheduling.discover(engine, cohort)
+    expired = datetime.now(UTC) - timedelta(seconds=1)
+    with Session(engine) as db, db.begin():
+        job = db.get(PerformanceJob, key)
+        reference_key = job.reference_key
+        job.status = "running"
+        job.attempts = 1
+        job.attempt = uuid4()
+        job.error = "worker_control_unavailable"
+        job.due_at = job.deadline = expired
+    assert finish_job(
+        engine,
+        claim_job(engine, reference_key),
+        report={"passed": True},
+        artifact=memory.put("timing.json", b"{}"),
+    )
+    assert claim_job(engine, key) is None
+    with Session(engine) as db:
+        job = db.get(PerformanceJob, key)
+        assert job.status == "failed" and job.error == "deadline_exceeded"
