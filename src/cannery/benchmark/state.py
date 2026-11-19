@@ -162,7 +162,14 @@ def claim_job(engine: Engine, key: str, *, device: Device = "a5") -> Performance
             if aware(row.due_at) > now:
                 return None
             reference = db.get(PerformanceJob, row.reference_key)
-            if reference is not None and reference.status == "ready":
+            if reference is not None and reference.status in {"queued", "running"}:
+                # Reference claims enforce their own deadline. A candidate must
+                # not expire while a successful reference completion can still commit.
+                row.error = "awaiting_reference_timing"
+                row.due_at = now + timedelta(seconds=5)
+                return None
+            waited = row.error == "awaiting_reference_timing"
+            if reference is not None and reference.attempt is not None:
                 result = db.get(PerformanceResult, reference.attempt)
                 now = datetime.now(UTC)
                 # Recover legacy waits only when persisted timestamps prove
@@ -178,21 +185,15 @@ def claim_job(engine: Engine, key: str, *, device: Device = "a5") -> Performance
                         and aware(row.due_at) < aware(row.deadline)
                     ):
                         prior_boundary -= timedelta(seconds=5)
-                waited = (
+                waited = waited or (
                     result is not None
                     and prior_boundary is not None
                     and prior_boundary < aware(result.finished_at) <= now
                 )
-                if row.error == "awaiting_reference_timing" or waited:
-                    row.error = None
-                    row.deadline = now + timedelta(minutes=30)
-            elif reference is not None and reference.status in {"queued", "running"}:
-                # Reference claims enforce their own deadline. A candidate must
-                # not expire while a successful reference completion can still commit.
-                row.error = "awaiting_reference_timing"
-                row.due_at = now + timedelta(seconds=5)
-                return None
-            reference_failed = row.error == "awaiting_reference_timing" and (
+            if waited and reference is not None and reference.status == "ready":
+                row.error = None
+                row.deadline = now + timedelta(minutes=30)
+            reference_failed = waited and (
                 reference is None or reference.status in {"failed", "blocked"}
             )
         if (

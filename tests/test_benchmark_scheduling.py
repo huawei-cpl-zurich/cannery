@@ -272,8 +272,8 @@ def test_overdue_candidate_with_cached_reference_still_expires(queue, monkeypatc
         assert job.attempts == 0 and job.error == "deadline_exceeded"
 
 
-@pytest.mark.parametrize("postponed", [False, True])
-def test_preupgrade_queue_can_claim_after_reference_completes(queue, postponed):
+@pytest.mark.parametrize("previous", ["queued", "postponed", "backoff", "expired_lease"])
+def test_preupgrade_queue_can_claim_after_reference_completes(queue, previous, monkeypatch):
     engine, _, memory, _, _, cohort, add = queue
     key = scheduling.candidate_key(add())
     scheduling.discover(engine, cohort)
@@ -283,18 +283,32 @@ def test_preupgrade_queue_can_claim_after_reference_completes(queue, postponed):
         reference_key = job.reference_key
         job.error = None
         job.deadline = job.due_at = expired
-        if postponed:
+        if previous != "queued":
             job.status = "running"
             job.attempts = 1
             job.attempt = uuid4()
             job.error = "artifact_storage_unavailable"
             job.lease_until = job.due_at
+            if previous == "expired_lease":
+                job.lease = uuid4()
+            if previous == "backoff":
+                job.due_at = job.lease_until = expired + timedelta(seconds=4)
+                job.deadline = expired + timedelta(seconds=5)
     assert finish_job(
         engine,
         claim_job(engine, reference_key),
         report={"passed": True},
         artifact=memory.put("timing.json", b"{}"),
     )
+    if previous == "backoff":
+        after_backoff = expired + timedelta(seconds=6)
+
+        class Later(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return after_backoff
+
+        monkeypatch.setattr("cannery.benchmark.state.datetime", Later)
     assert claim_job(engine, key) is not None
     with Session(engine) as db:
         assert aware(db.get(PerformanceJob, key).deadline) > expired + timedelta(minutes=30)
@@ -325,7 +339,8 @@ def test_legacy_execution_already_dispatched_keeps_its_deadline(queue):
         assert job.status == "failed" and job.error == "deadline_exceeded"
 
 
-def test_expired_wait_reports_reference_failure(queue):
+@pytest.mark.parametrize("legacy", [False, True])
+def test_expired_wait_reports_reference_failure(queue, legacy):
     engine, _, _, _, _, cohort, add = queue
     key = scheduling.candidate_key(add())
     scheduling.discover(engine, cohort)
@@ -333,6 +348,8 @@ def test_expired_wait_reports_reference_failure(queue):
         job = db.get(PerformanceJob, key)
         reference_key = job.reference_key
         job.deadline = datetime.now(UTC) - timedelta(seconds=1)
+        if legacy:
+            job.error = None
     assert finish_job(engine, claim_job(engine, reference_key), error="device_failed")
     assert claim_job(engine, key) is None
     with Session(engine) as db:
