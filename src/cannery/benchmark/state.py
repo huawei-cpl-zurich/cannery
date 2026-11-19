@@ -164,6 +164,7 @@ def claim_job(engine: Engine, key: str, *, device: Device = "a5") -> Performance
             reference = db.get(PerformanceJob, row.reference_key)
             if reference is not None and reference.status == "ready":
                 result = db.get(PerformanceResult, reference.attempt)
+                now = datetime.now(UTC)
                 # Recover legacy waits only when persisted timestamps prove
                 # that reference timing was unavailable to the previous claim.
                 prior_boundary = None
@@ -180,12 +181,11 @@ def claim_job(engine: Engine, key: str, *, device: Device = "a5") -> Performance
                 waited = (
                     result is not None
                     and prior_boundary is not None
-                    and aware(result.finished_at) > prior_boundary
+                    and prior_boundary < aware(result.finished_at) <= now
                 )
                 if row.error == "awaiting_reference_timing" or waited:
                     row.error = None
-                    started = max(now, aware(result.finished_at)) if result is not None else now
-                    row.deadline = started + timedelta(minutes=30)
+                    row.deadline = now + timedelta(minutes=30)
             elif reference is not None and reference.status in {"queued", "running"}:
                 # Reference claims enforce their own deadline. A candidate must
                 # not expire while a successful reference completion can still commit.
