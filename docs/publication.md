@@ -58,8 +58,10 @@ with a new activation event and publication time.
 
 ## Global Best and saved evidence
 
-Open `/global-best`, search for a kernel, and follow its device row. A new row
-selection opens the latest published spec for that device. A blank or omitted
+Open `/global-best` to search for kernels, filter by device, or sort by the
+Device column. Each row opens the latest published spec on that device and shows
+the best scored implementation at the spec defaults when there is one cohort.
+For multiple cohorts the row prompts you to select a cohort. A blank or omitted
 spec version selects the latest frozen spec. Enter a version to inspect older releases. Multiple measurement cohorts require an
 explicit cohort hash. Cohorts separate the suite, device, runtime, environment,
 driver, image, loader and timing protocol. Only an exact saved default/requested
@@ -69,8 +71,10 @@ There is no tolerance inference or on-demand correctness run.
 Rankings use geometric mean speedup over nonempty cases and include slower valid
 kernels. Empty cases remain correctness-only. All-empty releases have no score:
 they appear in release metadata and allow explicit pinned consumption, but never
-win automatic resolution. The chart is one strict best-so-far curve in publication
-time with language markers. Currently withdrawn releases are excluded. This is
+win automatic resolution. The chart marks each scored revision by publication
+time and language, with a strict best-so-far step line. Focus or hover a point
+to see its commit hash, or open Chart revisions to select a release by commit.
+Currently withdrawn releases are excluded. This is
 synchronized call latency (`sync-call-v1`), not device-only kernel latency.
 
 Release pages show pinned Git source, exact runtime/ABI/static shapes, validated

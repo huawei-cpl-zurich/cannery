@@ -47,14 +47,13 @@ def chart(points: list[dict[str, Any]]) -> dict[str, Any]:
     axis_times = [(50, times[0]), (400, (times[0] + times[-1]) / 2), (750, times[-1])]
     if times[0] == times[-1]:
         axis_times = [(400, times[0])]
-    dates = [
-        {
-            "x": x,
-            "date": datetime.fromtimestamp(t, UTC).strftime("%d %b %Y"),
-            "time": datetime.fromtimestamp(t, UTC).strftime("%H:%M:%S"),
-        }
-        for x, t in axis_times
-    ]
+    dates = []
+    for x, t in axis_times:
+        moment = datetime.fromtimestamp(t, UTC)
+        time = moment.strftime("%H:%M:%S")
+        if 0 < span < 2 and moment.microsecond:
+            time += f".{moment.microsecond:06d}".rstrip("0")
+        dates.append({"x": x, "date": moment.strftime("%d %b %Y"), "time": time})
     return {
         "ticks": ticks,
         "dates": dates,

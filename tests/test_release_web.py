@@ -91,6 +91,7 @@ def test_chart_subsecond_range_matches_axis():
     ]
     plotted = chart(points)
     assert [p["x"] for p in plotted["points"]] == [tick["x"] for tick in plotted["dates"]]
+    assert [tick["time"] for tick in plotted["dates"]] == ["00:00:00", "00:00:00.25", "00:00:00.5"]
     assert " V " not in plotted["line"]
 
 

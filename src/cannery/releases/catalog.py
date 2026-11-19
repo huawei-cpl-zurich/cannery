@@ -198,7 +198,7 @@ def directory(db: Session) -> list[dict[str, Any]]:
             latest.c.choose_cohort,
             winners.c.id,
             winners.c.score,
-            winners.c.candidate_id,
+            Submission.id,
             Submission.implementation_name,
         )
         .join_from(latest, Kernel, Kernel.id == latest.c.kernel_id)
@@ -210,7 +210,7 @@ def directory(db: Session) -> list[dict[str, Any]]:
         )
         .outerjoin(Submission, Submission.id == winners.c.candidate_id)
         .order_by(Kernel.namespace, Kernel.name, latest.c.device)
-    )
+    ).tuples()
     return [
         {
             "kernel": f"{namespace}/{name}",
