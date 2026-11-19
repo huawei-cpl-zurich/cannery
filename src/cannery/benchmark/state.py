@@ -154,7 +154,11 @@ def claim_job(engine: Engine, key: str, *, device: Device = "a5") -> Performance
             return None
         if row.lease_until is not None and aware(row.lease_until) > now:
             return None
-        if row.kind == "candidate" and row.attempts == 0 and row.reference_key:
+        if (
+            row.kind == "candidate"
+            and row.reference_key
+            and (row.attempts == 0 or row.error == "awaiting_reference_timing")
+        ):
             if aware(row.due_at) > now:
                 return None
             reference = db.get(PerformanceJob, row.reference_key)

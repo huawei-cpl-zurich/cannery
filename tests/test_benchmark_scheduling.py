@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import select, update
@@ -202,3 +203,30 @@ def test_reference_wait_does_not_consume_candidate_attempt_or_budget(queue):
         job = db.get(PerformanceJob, key)
         assert job.attempts == 1 and job.error is None
         assert aware(job.deadline) >= now + timedelta(minutes=30)
+
+
+def test_existing_reference_wait_gets_execution_budget_with_same_attempt(queue):
+    engine, _, memory, _, _, cohort, add = queue
+    key = scheduling.candidate_key(add())
+    scheduling.discover(engine, cohort)
+    expired = datetime.now(UTC) - timedelta(seconds=1)
+    with Session(engine) as db, db.begin():
+        job = db.get(PerformanceJob, key)
+        reference_key = job.reference_key
+        attempt = job.attempt = uuid4()
+        job.attempts = 1
+        job.status = "running"
+        job.error = "awaiting_reference_timing"
+        job.due_at = job.deadline = expired
+    assert finish_job(
+        engine,
+        claim_job(engine, reference_key),
+        report={"passed": True},
+        artifact=memory.put("timing.json", b"{}"),
+    )
+    claim = claim_job(engine, key)
+    assert claim is not None and claim.attempt == attempt
+    with Session(engine) as db:
+        job = db.get(PerformanceJob, key)
+        assert job.attempts == 1 and job.error is None
+        assert aware(job.deadline) > expired + timedelta(minutes=30)
