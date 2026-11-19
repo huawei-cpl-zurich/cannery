@@ -21,6 +21,15 @@ from cannery.web.downloads import origin, snippets
 from cannery.web.presentation import configure, number
 
 
+DIRECTORY_COLUMNS = {
+    "kernel": "Kernel",
+    "device": "Device",
+    "gain": "Gain",
+    "implementation": "Implementation",
+    "submissions": "Published submissions",
+}
+
+
 def chart(points: list[dict[str, Any]]) -> dict[str, Any]:
     if not points:
         return {"points": [], "line": ""}
@@ -88,13 +97,18 @@ def install_release_web(
         atol: str | None = None,
         q: str = "",
         catalog_device: Literal["", "a3", "a5"] = "",
+        sort: Literal["kernel", "device", "gain", "implementation", "submissions"] | None = None,
+        direction: Literal["asc", "desc"] | None = None,
         device_sort: Literal["", "asc", "desc"] = "",
     ) -> HTMLResponse:
+        column = sort or ("device" if device_sort else "kernel")
+        order = direction or (device_sort if sort is None and device_sort else "asc")
         values: dict[str, Any] = {
             "kernel": kernel,
             "q": q,
             "catalog_device": catalog_device,
-            "device_sort": device_sort,
+            "sort": column,
+            "direction": order,
             "device": device,
             "spec_version": spec_version,
             "cohort": cohort,
@@ -142,8 +156,8 @@ def install_release_web(
                     params["q"] = q
                 if catalog_device:
                     params["catalog_device"] = catalog_device
-                if device_sort:
-                    params["device_sort"] = device_sort
+                if sort or direction or device_sort:
+                    params.update(sort=column, direction=order)
                 params["spec_version"] = str(item["version"])
                 rows.append(
                     item
@@ -152,12 +166,39 @@ def install_release_web(
                         "url": "/global-best?" + urlencode(params) + "#kernel-results",
                     }
                 )
-            if device_sort:
-                rows.sort(key=lambda row: row["device"], reverse=device_sort == "desc")
+            if column in ("gain", "implementation"):
+                available = [row for row in rows if row["best"]]
+                if column == "gain":
+                    available.sort(key=lambda row: row["best"]["speedup"], reverse=order == "desc")
+                else:
+                    available.sort(
+                        key=lambda row: row["best"]["name"].casefold(), reverse=order == "desc"
+                    )
+                rows = available + [row for row in rows if not row["best"]]
+            else:
+                key = "submission_count" if column == "submissions" else column
+                rows.sort(key=lambda row: row[key], reverse=order == "desc")
             values["kernel_rows"] = rows
             sort_params = dict(request.query_params)
-            sort_params["device_sort"] = "desc" if device_sort == "asc" else "asc"
-            values["device_sort_url"] = "/global-best?" + urlencode(sort_params)
+            sort_params.pop("device_sort", None)
+            headers = []
+            for key, title in DIRECTORY_COLUMNS.items():
+                active = key == column
+                next_order = "desc" if active and order == "asc" else "asc"
+                if key in ("gain", "submissions") and not active:
+                    next_order = "desc"
+                params = sort_params | {"sort": key, "direction": next_order}
+                headers.append(
+                    {
+                        "title": title,
+                        "current": ("ascending" if order == "asc" else "descending")
+                        if active
+                        else "",
+                        "next": "ascending" if next_order == "asc" else "descending",
+                        "url": "/global-best?" + urlencode(params),
+                    }
+                )
+            values["directory_headers"] = headers
         return templates.TemplateResponse(
             request=request,
             name="releases.html",

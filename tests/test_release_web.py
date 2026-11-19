@@ -147,7 +147,8 @@ def test_global_best_search_and_device_links(releases, monkeypatch):
     monkeypatch.setattr(
         "cannery.web.releases.catalog.directory",
         lambda db: (
-            published_directory(db) + [{"kernel": "team/other", "device": "a5", "version": 1}]
+            published_directory(db)
+            + [{"kernel": "team/other", "device": "a5", "version": 1, "submission_count": 1}]
         ),
     )
     client = web(engine)

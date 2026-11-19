@@ -29,7 +29,8 @@
 <option value=""{% if not catalog_device %} selected{% endif %}>All devices</option>
 {% for item in ["a3", "a5"] %}<option value="{{ item }}"{% if catalog_device == item %} selected{% endif %}>{{ item | upper }}</option>{% endfor %}
 </select></label>
-<input type="hidden" name="device_sort" value="{{ device_sort }}">
+<input type="hidden" name="sort" value="{{ sort }}">
+<input type="hidden" name="direction" value="{{ direction }}">
 {% if kernel %}
 {% for name, value in [('kernel', kernel), ('device', device), ('spec_version', spec_version), ('cohort', cohort), ('rtol', rtol), ('atol', atol)] %}
 {% if value is not none %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endif %}
@@ -38,14 +39,18 @@
 <button>Search</button>
 </form>
 <div class="table-scroll" role="region" aria-label="Published kernels" tabindex="0">
-<table><thead><tr><th scope="col">Kernel</th><th scope="col"{% if device_sort %} aria-sort="{{ 'ascending' if device_sort == 'asc' else 'descending' }}"{% endif %}><a href="{{ device_sort_url }}" aria-label="Sort by device {{ 'descending' if device_sort == 'asc' else 'ascending' }}">Device{% if device_sort %} {{ '↑' if device_sort == 'asc' else '↓' }}{% endif %}</a></th><th scope="col">Current best</th></tr></thead><tbody>
+<table><thead><tr>
+{% for header in directory_headers %}
+<th scope="col"{% if header.current %} aria-sort="{{ header.current }}"{% endif %}><a href="{{ header.url }}" aria-label="Sort by {{ header.title|lower }} {{ header.next }}">{{ header.title }}{% if header.current %} {{ '↑' if header.current == 'ascending' else '↓' }}{% endif %}</a></th>
+{% endfor %}
+</tr></thead><tbody>
 {% for row in kernel_rows %}
-<tr><td><a href="{{ row.url }}" aria-label="{{ row.kernel }} on {{ row.device | upper }}"{% if row.active %} aria-current="page"{% endif %}>{{ row.kernel }}</a></td><td>{{ row.device | upper }}</td><td>
-{% if row.best %}<a href="/releases/{{ row.best.id }}">{{ row.best.name }}</a> · {{ row.best.speedup|number }}×
-{% elif row.choose_cohort %}Select cohort
-{% else %}—{% endif %}</td></tr>
+<tr><td><a href="{{ row.url }}" aria-label="{{ row.kernel }} on {{ row.device | upper }}"{% if row.active %} aria-current="page"{% endif %}>{{ row.kernel }}</a></td><td>{{ row.device | upper }}</td>
+<td>{{ (row.best.speedup|number ~ '×') if row.best else '—' }}</td>
+<td>{% if row.best %}<a href="/releases/{{ row.best.id }}">{{ row.best.name }}</a>{% elif row.choose_cohort %}Select cohort{% else %}—{% endif %}</td>
+<td>{{ row.submission_count|number }}</td></tr>
 {% else %}
-<tr><td colspan="3">No kernels match your search.</td></tr>
+<tr><td colspan="5">No kernels match your search.</td></tr>
 {% endfor %}
 </tbody></table></div>
 {% if kernel %}<section id="kernel-results" aria-label="Kernel results">
@@ -55,7 +60,8 @@
 {% if kernel %}<input type="hidden" name="kernel" value="{{ kernel }}">{% endif %}
 <input type="hidden" name="q" value="{{ q }}">
 <input type="hidden" name="catalog_device" value="{{ catalog_device }}">
-<input type="hidden" name="device_sort" value="{{ device_sort }}">
+<input type="hidden" name="sort" value="{{ sort }}">
+<input type="hidden" name="direction" value="{{ direction }}">
 {% if kernel %}<p>Filters for <strong>{{ kernel }}</strong></p>{% endif %}
 <label>Spec version (blank = latest frozen) <input name="spec_version" type="number" min="1" value="{{ spec_version or '' }}"></label>
 <label>Device <select name="device">{% for item in ["a5", "a3"] %}<option{% if device == item %} selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
