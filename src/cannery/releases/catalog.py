@@ -198,7 +198,7 @@ def directory(db: Session) -> list[dict[str, Any]]:
             latest.c.choose_cohort,
             winners.c.id,
             winners.c.score,
-            Submission.id,
+            winners.c.candidate_id,
             Submission.implementation_name,
         )
         .join_from(latest, Kernel, Kernel.id == latest.c.kernel_id)
@@ -210,32 +210,22 @@ def directory(db: Session) -> list[dict[str, Any]]:
         )
         .outerjoin(Submission, Submission.id == winners.c.candidate_id)
         .order_by(Kernel.namespace, Kernel.name, latest.c.device)
-    ).tuples()
+    )
     return [
         {
-            "kernel": f"{namespace}/{name}",
-            "device": device,
-            "version": version,
-            "choose_cohort": choose_cohort,
+            "kernel": f"{row.namespace}/{row.name}",
+            "device": row.device,
+            "version": row.version,
+            "choose_cohort": row.choose_cohort,
             "best": {
-                "id": release_id,
-                "name": label(implementation_name, candidate_id),
-                "speedup": score,
+                "id": row.id,
+                "name": label(row.implementation_name, row.candidate_id),
+                "speedup": row.score,
             }
-            if release_id is not None
+            if row.id is not None
             else None,
         }
-        for (
-            namespace,
-            name,
-            device,
-            version,
-            choose_cohort,
-            release_id,
-            score,
-            candidate_id,
-            implementation_name,
-        ) in rows
+        for row in rows
     ]
 
 

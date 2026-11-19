@@ -83,7 +83,7 @@
 <a class="chart-point" href="/releases/{{ point.release_id }}" aria-label="{{ point.implementation_name }} · {{ point.commit }} · {{ point.language }} · {{ point.geomean_speedup|number }} times PyTorch speed · {{ point.published_at }} · open release">
 <title>{{ point.implementation_name }} · {{ point.commit }} · {{ point.geomean_speedup|number }}×</title>
 <circle cx="{{ point.x }}" cy="{{ point.y }}" r="6" fill="{{ {'ascendc': '#155dc0', 'catlass': '#ae4700', 'triton': '#16836b'}[point.language] }}"/>
-<g class="chart-tooltip" aria-hidden="true"><rect x="160" y="2" width="480" height="34" rx="4"/><text x="400" y="16" text-anchor="middle">{{ point.implementation_name }} · {{ point.geomean_speedup|number }}×</text><text x="400" y="29" text-anchor="middle">{{ point.commit }}</text></g>
+<g class="chart-tooltip" aria-hidden="true"><rect x="160" y="2" width="480" height="34" rx="4"/><text x="400" y="16" text-anchor="middle">{{ point.implementation_name|truncate(30, true, "…", 0) }} · {{ point.geomean_speedup|number }}×</text><text x="400" y="29" text-anchor="middle">{{ point.commit }}</text></g>
 </a>
 {% endfor %}
 {% for tick in curve.dates %}<text class="chart-label" x="{{ tick.x }}" y="246" text-anchor="{{ 'start' if tick.x == 50 else ('end' if tick.x == 750 else 'middle') }}"><tspan x="{{ tick.x }}">{{ tick.date }}</tspan><tspan x="{{ tick.x }}" dy="16">{{ tick.time }}</tspan></text>{% endfor %}

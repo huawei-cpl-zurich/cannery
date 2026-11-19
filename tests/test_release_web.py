@@ -211,6 +211,10 @@ def test_directory_link_opens_older_published_spec(releases):
     assert a5_url.replace("&", "&amp;") in directory
     assert str(a5_id) in directory and str(old_a5) not in directory
     assert str(a5_id) in client.get(a5_url).text
+    old = client.get(a5_url.replace("spec_version=2", "spec_version=1")).text
+    assert a5_url.replace("&", "&amp;") in old
+    assert f'aria-label="{manifest.kernel} on A5" aria-current=' not in old
+    assert "Spec v1 · a5" in old
 
 
 def test_global_best_recovers_if_publication_changes_during_render(releases, monkeypatch):

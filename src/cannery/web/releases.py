@@ -131,9 +131,11 @@ def install_release_web(
                 row_device = item["device"]
                 if catalog_device and row_device != catalog_device:
                     continue
-                active = "ranking" in values and (item["kernel"], row_device) == (
-                    kernel,
-                    device,
+                active = (
+                    "ranking" in values
+                    and (item["kernel"], row_device) == (kernel, device)
+                    and values["ranking"]["spec_version"] == item["version"]
+                    and not (cohort or rtol or atol)
                 )
                 params = {"kernel": item["kernel"], "device": row_device}
                 if q:
@@ -142,12 +144,7 @@ def install_release_web(
                     params["catalog_device"] = catalog_device
                 if device_sort:
                     params["device_sort"] = device_sort
-                if active:
-                    for name in ("spec_version", "cohort", "rtol", "atol"):
-                        if values[name] not in (None, ""):
-                            params[name] = values[name]
-                else:
-                    params["spec_version"] = str(item["version"])
+                params["spec_version"] = str(item["version"])
                 rows.append(
                     item
                     | {
