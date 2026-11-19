@@ -103,11 +103,11 @@ def ensure_job(
         kind == "reference" and (candidate_id is not None or reference_key is not None)
     ):
         raise ValueError("Candidate jobs require candidate and reference identities")
-    now = datetime.now(UTC)
     try:
         with Session(engine) as db, db.begin():
             if db.get(PerformanceJob, key) is None:
                 reference = db.get(PerformanceJob, reference_key) if reference_key else None
+                now = datetime.now(UTC)
                 waiting = reference is not None and reference.status in {"queued", "running"}
                 db.add(
                     PerformanceJob(
