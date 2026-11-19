@@ -58,8 +58,9 @@ with a new activation event and publication time.
 
 ## Global Best and saved evidence
 
-Open `/global-best` to search for kernels, filter by device, or sort by the
-Device column. Each row opens the latest published spec on that device and shows
+Open `/global-best` to search for kernels, filter by device, or click any column header to sort. Gain and Implementation
+show the best result, and Published submissions counts published revisions across
+spec versions for that kernel and device. Each row opens the latest published spec on that device and shows
 the best scored implementation at the spec defaults when there is one cohort.
 For multiple cohorts the row prompts you to select a cohort. A blank or omitted
 spec version selects the latest frozen spec. Enter a version to inspect older releases. Multiple measurement cohorts require an

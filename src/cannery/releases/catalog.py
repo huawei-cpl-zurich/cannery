@@ -142,6 +142,7 @@ def directory(db: Session) -> list[dict[str, Any]]:
             Release.score,
             Publication.published_at,
             func.max(SpecVersion.version).over(partition_by=partition).label("latest"),
+            func.count().over(partition_by=partition).label("submission_count"),
         )
         .join(SpecVersion, SpecVersion.id == Release.spec_id)
         .cte()
@@ -151,12 +152,13 @@ def directory(db: Session) -> list[dict[str, Any]]:
         select(
             *keys,
             recent.c.version,
+            recent.c.submission_count,
             (func.min(recent.c.cohort_sha256) != func.max(recent.c.cohort_sha256)).label(
                 "choose_cohort"
             ),
         )
         .where(recent.c.version == recent.c.latest)
-        .group_by(*keys, recent.c.version)
+        .group_by(*keys, recent.c.version, recent.c.submission_count)
         .cte()
     )
     validation = SpecVersion.manifest["spec"]["validation"]
@@ -196,6 +198,7 @@ def directory(db: Session) -> list[dict[str, Any]]:
             latest.c.device,
             latest.c.version,
             latest.c.choose_cohort,
+            latest.c.submission_count,
             winners.c.id,
             winners.c.score,
             winners.c.candidate_id,
@@ -217,6 +220,7 @@ def directory(db: Session) -> list[dict[str, Any]]:
             "device": row.device,
             "version": row.version,
             "choose_cohort": row.choose_cohort,
+            "submission_count": row.submission_count,
             "best": {
                 "id": row.id,
                 "name": label(row.implementation_name, row.candidate_id),
