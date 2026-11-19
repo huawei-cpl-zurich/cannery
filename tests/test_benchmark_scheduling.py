@@ -294,6 +294,15 @@ def test_preupgrade_queue_can_claim_after_reference_completes(queue, previous, m
             if previous == "backoff":
                 job.due_at = job.lease_until = expired + timedelta(seconds=4)
                 job.deadline = expired + timedelta(seconds=5)
+    if previous == "backoff":
+        current = expired + timedelta(seconds=1)
+
+        class Later(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return current
+
+        monkeypatch.setattr("cannery.benchmark.state.datetime", Later)
     assert finish_job(
         engine,
         claim_job(engine, reference_key),
@@ -301,14 +310,7 @@ def test_preupgrade_queue_can_claim_after_reference_completes(queue, previous, m
         artifact=memory.put("timing.json", b"{}"),
     )
     if previous == "backoff":
-        after_backoff = expired + timedelta(seconds=6)
-
-        class Later(datetime):
-            @classmethod
-            def now(cls, tz=None):
-                return after_backoff
-
-        monkeypatch.setattr("cannery.benchmark.state.datetime", Later)
+        current = expired + timedelta(seconds=6)
     assert claim_job(engine, key) is not None
     with Session(engine) as db:
         assert aware(db.get(PerformanceJob, key).deadline) > expired + timedelta(minutes=30)
