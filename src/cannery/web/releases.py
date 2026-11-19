@@ -1,7 +1,7 @@
 """Published Global Best partitions, one record curve and immutable release details."""
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from urllib.parse import urlencode
 from uuid import UUID
 
@@ -25,35 +25,39 @@ def chart(points: list[dict[str, Any]]) -> dict[str, Any]:
     if not points:
         return {"points": [], "line": ""}
     times = [datetime.fromisoformat(p["published_at"]).timestamp() for p in points]
-    span = max(times[-1] - times[0], 1.0)
+    span = times[-1] - times[0]
     ceiling = max(1.0, max(p["geomean_speedup"] for p in points)) * 1.1
     dots = [
         p
         | {
-            "x": 50 + (t - times[0]) / span * 700 if times[-1] > times[0] else 400,
+            "x": 50 + (t - times[0]) / span * 700 if span else 400,
             "y": 220 - p["geomean_speedup"] / ceiling * 180,
         }
         for p, t in zip(points, times, strict=True)
     ]
     line = f"M {dots[0]['x']} {dots[0]['y']}"
+    best = dots[0]
     for dot in dots[1:]:
-        line += f" H {dot['x']} V {dot['y']}"
+        if dot["geomean_speedup"] > best["geomean_speedup"]:
+            line += f" H {dot['x']} V {dot['y']}"
+            best = dot
+    if best is not dots[-1]:
+        line += f" H {dots[-1]['x']}"
     ticks = [{"y": 220 - i * 45, "label": number(ceiling * i / 4)} for i in range(5)]
     axis_times = [(50, times[0]), (400, (times[0] + times[-1]) / 2), (750, times[-1])]
     if times[0] == times[-1]:
         axis_times = [(400, times[0])]
-    dates = [
-        {
-            "x": x,
-            "date": datetime.fromtimestamp(t, UTC).strftime("%d %b %Y"),
-            "time": datetime.fromtimestamp(t, UTC).strftime("%H:%M:%S"),
-        }
-        for x, t in axis_times
-    ]
+    dates = []
+    for x, t in axis_times:
+        moment = datetime.fromtimestamp(t, UTC)
+        time = moment.strftime("%H:%M:%S")
+        if 0 < span < 2 and moment.microsecond:
+            time += f".{moment.microsecond:06d}".rstrip("0")
+        dates.append({"x": x, "date": moment.strftime("%d %b %Y"), "time": time})
     return {
         "ticks": ticks,
         "dates": dates,
-        "best": number(points[-1]["geomean_speedup"]),
+        "best": number(best["geomean_speedup"]),
         "points": dots,
         "line": line,
         "reference_y": 220 - 180 / ceiling,
@@ -83,10 +87,14 @@ def install_release_web(
         rtol: str | None = None,
         atol: str | None = None,
         q: str = "",
+        catalog_device: Literal["", "a3", "a5"] = "",
+        device_sort: Literal["", "asc", "desc"] = "",
     ) -> HTMLResponse:
         values: dict[str, Any] = {
             "kernel": kernel,
             "q": q,
+            "catalog_device": catalog_device,
+            "device_sort": device_sort,
             "device": device,
             "spec_version": spec_version,
             "cohort": cohort,
@@ -94,7 +102,8 @@ def install_release_web(
             "atol": atol,
         }
         with Session(engine) as db:
-            values["kernels"] = catalog.kernels(db, include_device_versions=True)
+            directory = catalog.directory(db)
+            values["kernels"] = bool(directory)
             if kernel:
                 try:
                     selection = selected(
@@ -110,38 +119,45 @@ def install_release_web(
                     raise HTTPException(422, "Invalid specification or tolerance") from None
                 try:
                     ranking = catalog.leaderboard(db, selection)
-                    curve = chart(catalog.history(db, selection)["points"])
+                    curve = chart(catalog.evolution(db, selection))
                     values.update(ranking=ranking, curve=curve, cohorts=ranking["cohorts"])
                 except catalog.SelectionError as error:
                     values["error"] = str(error)
                     values["cohorts"] = error.cohorts or []
             rows = []
-            for item in values["kernels"]:
+            for item in directory:
                 if q.strip().casefold() not in item["kernel"].casefold():
                     continue
-                for row_device in sorted(item["devices"]):
-                    active = "ranking" in values and (item["kernel"], row_device) == (
-                        kernel,
-                        device,
-                    )
-                    params = {"kernel": item["kernel"], "device": row_device}
-                    if q:
-                        params["q"] = q
-                    if active:
-                        for name in ("spec_version", "cohort", "rtol", "atol"):
-                            if values[name] not in (None, ""):
-                                params[name] = values[name]
-                    else:
-                        params["spec_version"] = str(item["latest_by_device"][row_device])
-                    rows.append(
-                        {
-                            "kernel": item["kernel"],
-                            "device": row_device,
-                            "active": active,
-                            "url": "/global-best?" + urlencode(params) + "#kernel-results",
-                        }
-                    )
+                row_device = item["device"]
+                if catalog_device and row_device != catalog_device:
+                    continue
+                active = (
+                    "ranking" in values
+                    and (item["kernel"], row_device) == (kernel, device)
+                    and values["ranking"]["spec_version"] == item["version"]
+                    and not (cohort or rtol or atol)
+                )
+                params = {"kernel": item["kernel"], "device": row_device}
+                if q:
+                    params["q"] = q
+                if catalog_device:
+                    params["catalog_device"] = catalog_device
+                if device_sort:
+                    params["device_sort"] = device_sort
+                params["spec_version"] = str(item["version"])
+                rows.append(
+                    item
+                    | {
+                        "active": active,
+                        "url": "/global-best?" + urlencode(params) + "#kernel-results",
+                    }
+                )
+            if device_sort:
+                rows.sort(key=lambda row: row["device"], reverse=device_sort == "desc")
             values["kernel_rows"] = rows
+            sort_params = dict(request.query_params)
+            sort_params["device_sort"] = "desc" if device_sort == "asc" else "asc"
+            values["device_sort_url"] = "/global-best?" + urlencode(sort_params)
         return templates.TemplateResponse(
             request=request,
             name="releases.html",

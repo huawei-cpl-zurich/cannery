@@ -30,7 +30,7 @@ def test_global_best_empty_partition_chart_and_withdrawal(releases):
     params = {"kernel": m.kernel, "spec_version": "", "cohort": "", "rtol": "", "atol": ""}
     page = client.get("/global-best", params=params)
     assert page.status_code == 200
-    assert "One strict best-so-far curve" in page.text
+    assert "Kernel performance over time" in page.text
     assert str(first[0]) in page.text and str(second[0]) in page.text
     assert "0.7×" in page.text and "CATLASS" in page.text
     state.withdraw(engine, second[1], {"namespace": "team", "role": "user"})
@@ -84,6 +84,17 @@ def test_chart_uses_publication_times_and_includes_reference_line():
     assert chart([])["points"] == []
 
 
+def test_chart_subsecond_range_matches_axis():
+    points = [
+        {"published_at": f"2026-01-01T00:00:00.{ms}+00:00", "geomean_speedup": 1.0}
+        for ms in ("000", "250", "500")
+    ]
+    plotted = chart(points)
+    assert [p["x"] for p in plotted["points"]] == [tick["x"] for tick in plotted["dates"]]
+    assert [tick["time"] for tick in plotted["dates"]] == ["00:00:00", "00:00:00.25", "00:00:00.5"]
+    assert " V " not in plotted["line"]
+
+
 def test_single_publication_is_centered_with_one_utc_date_and_readable_scale():
     result = chart(
         [
@@ -130,20 +141,18 @@ def test_release_download_menu_pins_commands_and_gates_python_on_hub(published):
 def test_global_best_search_and_device_links(releases, monkeypatch):
     engine, add, _, manifest = releases
     add(0.5)
+    add(0.4, device="a3")
+    from cannery.releases.catalog import directory as published_directory
+
     monkeypatch.setattr(
-        "cannery.web.releases.catalog.kernels",
-        lambda _, **kwargs: [
-            {
-                "kernel": manifest.kernel,
-                "devices": ["a5", "a3"],
-                "latest_by_device": {"a3": 1, "a5": 1},
-            },
-            {"kernel": "team/other", "devices": ["a5"], "latest_by_device": {"a5": 1}},
-        ],
+        "cannery.web.releases.catalog.directory",
+        lambda db: (
+            published_directory(db) + [{"kernel": "team/other", "device": "a5", "version": 1}]
+        ),
     )
     client = web(engine)
     directory = client.get("/global-best")
-    assert '<th scope="col">Device</th>' in directory.text
+    assert "Sort by device ascending" in directory.text
     assert "team/other" in directory.text
     assert '<select name="kernel">' not in directory.text
     page = client.get(
@@ -173,7 +182,7 @@ def test_directory_link_opens_older_published_spec(releases):
 
     engine, add, _, manifest = releases
     release_id, _, _ = add(0.5, device="a3")
-    add(0.4, device="a5")
+    old_a5, _, _ = add(0.9, device="a5")
     with Session(engine) as db, db.begin():
         frozen = db.get(SpecVersion, manifest.spec_id)
         v2 = SpecVersion(
@@ -198,8 +207,14 @@ def test_directory_link_opens_older_published_spec(releases):
     assert url.replace("&", "&amp;") in failed.text
     assert str(release_id) in client.get(url).text
     a5_url = url.replace("device=a3&spec_version=1", "device=a5&spec_version=2")
-    assert a5_url.replace("&", "&amp;") in client.get("/global-best").text
+    directory = client.get("/global-best").text
+    assert a5_url.replace("&", "&amp;") in directory
+    assert str(a5_id) in directory and str(old_a5) not in directory
     assert str(a5_id) in client.get(a5_url).text
+    old = client.get(a5_url.replace("spec_version=2", "spec_version=1")).text
+    assert a5_url.replace("&", "&amp;") in old
+    assert f'aria-label="{manifest.kernel} on A5" aria-current=' not in old
+    assert "Spec v1 · a5" in old
 
 
 def test_global_best_recovers_if_publication_changes_during_render(releases, monkeypatch):
@@ -211,8 +226,40 @@ def test_global_best_recovers_if_publication_changes_during_render(releases, mon
     def withdrawn(*args):
         raise SelectionError("no_published_release")
 
-    monkeypatch.setattr("cannery.web.releases.catalog.history", withdrawn)
+    monkeypatch.setattr("cannery.web.releases.catalog.evolution", withdrawn)
     page = web(engine).get("/global-best", params={"kernel": manifest.kernel})
     assert page.status_code == 200
     assert "no_published_release" in page.text
     assert "#kernel-results" in page.text
+
+
+def test_device_directory_winner_and_slower_commit_evolution(releases):
+    engine, add, _, manifest = releases
+    winner, _, _ = add(0.9)
+    slower, slower_submission, _ = add(0.6)
+    add(0.8, device="a3")
+    client = web(engine)
+    query = {"q": manifest.kernel.upper(), "device_sort": "desc"}
+    directory = client.get("/global-best", params=query).text
+    assert directory.index(f"{manifest.kernel} on A5") < directory.index(f"{manifest.kernel} on A3")
+    assert f"/releases/{winner}" in directory
+    assert f"/releases/{slower}" not in directory
+    filtered = client.get("/global-best", params=query | {"catalog_device": "a3"}).text
+    assert f"{manifest.kernel} on A3" in filtered
+    assert f"{manifest.kernel} on A5" not in filtered
+    assert 'aria-sort="descending"' in filtered
+
+    route = {"kernel": manifest.kernel, "catalog_device": "a5", "device_sort": "asc"}
+    page = client.get("/global-best", params=route)
+    assert page.status_code == 200
+    assert page.text.count('class="chart-point"') == 2
+    assert f'class="chart-point" href="/releases/{slower}"' in page.text
+    assert manifest.source.commit in page.text
+    assert "Chart revisions (2)" in page.text
+    assert f'href="/releases/{slower}" title="{manifest.source.commit}"' in page.text
+    assert "<strong>0.9×</strong>" in page.text
+    state.withdraw(engine, slower_submission, {"namespace": "team", "role": "user"})
+    assert client.get("/global-best", params=route).text.count('class="chart-point"') == 1
+
+    add(1.1, driver="other")
+    assert "Select cohort" in client.get("/global-best", params=query).text

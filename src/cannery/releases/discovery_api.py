@@ -27,7 +27,7 @@ def selected(
 ) -> catalog.Selection:
     allowed = {"kernel", "spec_version", "device", "cohort", "rtol", "atol"}
     if request.url.path.endswith("/global-best"):
-        allowed.add("q")
+        allowed |= {"q", "catalog_device", "device_sort"}
     if request.url.path.endswith(("/leaderboard", "/releases")):
         allowed |= {"limit", "offset"}
     if any(

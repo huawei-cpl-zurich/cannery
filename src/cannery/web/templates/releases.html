@@ -25,6 +25,11 @@
 {% if kernels %}
 <form method="get" action="/global-best" role="search">
 <label>Search kernels <input type="search" name="q" value="{{ q }}"></label>
+<label>Catalog device <select name="catalog_device">
+<option value=""{% if not catalog_device %} selected{% endif %}>All devices</option>
+{% for item in ["a3", "a5"] %}<option value="{{ item }}"{% if catalog_device == item %} selected{% endif %}>{{ item | upper }}</option>{% endfor %}
+</select></label>
+<input type="hidden" name="device_sort" value="{{ device_sort }}">
 {% if kernel %}
 {% for name, value in [('kernel', kernel), ('device', device), ('spec_version', spec_version), ('cohort', cohort), ('rtol', rtol), ('atol', atol)] %}
 {% if value is not none %}<input type="hidden" name="{{ name }}" value="{{ value }}">{% endif %}
@@ -33,11 +38,14 @@
 <button>Search</button>
 </form>
 <div class="table-scroll" role="region" aria-label="Published kernels" tabindex="0">
-<table><thead><tr><th scope="col">Kernel</th><th scope="col">Device</th></tr></thead><tbody>
+<table><thead><tr><th scope="col">Kernel</th><th scope="col"{% if device_sort %} aria-sort="{{ 'ascending' if device_sort == 'asc' else 'descending' }}"{% endif %}><a href="{{ device_sort_url }}" aria-label="Sort by device {{ 'descending' if device_sort == 'asc' else 'ascending' }}">Device{% if device_sort %} {{ '↑' if device_sort == 'asc' else '↓' }}{% endif %}</a></th><th scope="col">Current best</th></tr></thead><tbody>
 {% for row in kernel_rows %}
-<tr><td><a href="{{ row.url }}" aria-label="{{ row.kernel }} on {{ row.device | upper }}"{% if row.active %} aria-current="page"{% endif %}>{{ row.kernel }}</a></td><td>{{ row.device | upper }}</td></tr>
+<tr><td><a href="{{ row.url }}" aria-label="{{ row.kernel }} on {{ row.device | upper }}"{% if row.active %} aria-current="page"{% endif %}>{{ row.kernel }}</a></td><td>{{ row.device | upper }}</td><td>
+{% if row.best %}<a href="/releases/{{ row.best.id }}">{{ row.best.name }}</a> · {{ row.best.speedup|number }}×
+{% elif row.choose_cohort %}Select cohort
+{% else %}—{% endif %}</td></tr>
 {% else %}
-<tr><td colspan="2">No kernels match your search.</td></tr>
+<tr><td colspan="3">No kernels match your search.</td></tr>
 {% endfor %}
 </tbody></table></div>
 {% if kernel %}<section id="kernel-results" aria-label="Kernel results">
@@ -46,6 +54,8 @@
 <form method="get" action="/global-best#kernel-results">
 {% if kernel %}<input type="hidden" name="kernel" value="{{ kernel }}">{% endif %}
 <input type="hidden" name="q" value="{{ q }}">
+<input type="hidden" name="catalog_device" value="{{ catalog_device }}">
+<input type="hidden" name="device_sort" value="{{ device_sort }}">
 {% if kernel %}<p>Filters for <strong>{{ kernel }}</strong></p>{% endif %}
 <label>Spec version (blank = latest frozen) <input name="spec_version" type="number" min="1" value="{{ spec_version or '' }}"></label>
 <label>Device <select name="device">{% for item in ["a5", "a3"] %}<option{% if device == item %} selected{% endif %}>{{ item }}</option>{% endfor %}</select></label>
@@ -61,28 +71,37 @@
 <p>Spec v{{ ranking.spec_version }} · {{ ranking.device }} · tolerance rtol {{ ranking.tolerance.rtol|number }}, atol {{ ranking.tolerance.atol|number }} · cohort <code>{{ ranking.cohort }}</code>.</p>
 {% if curve.points %}
 <figure class="chart-panel">
-<div class="chart-heading"><h2>Best published speedup</h2><p><strong>{{ curve.best }}×</strong> vs PyTorch</p></div>
+<div class="chart-heading"><h2>Kernel performance over time</h2><p><strong>{{ curve.best }}×</strong> best vs PyTorch</p></div>
 <div class="chart-scroll" role="region" aria-label="Speedup chart, scroll horizontally on small screens" tabindex="0">
 <svg viewBox="0 0 800 300" role="group" aria-labelledby="chart-title chart-desc">
-<title id="chart-title">Best published speedup over publication time</title>
-<desc id="chart-desc">One strict best-so-far curve among currently published releases. The dashed line is the PyTorch baseline at 1×. Focus or hover a point for details; activate it to open the release.</desc>
+<title id="chart-title">Published revisions over time</title>
+<desc id="chart-desc">Points show published revisions and their source commits. The step line shows the best-so-far speedup. The dashed line is the PyTorch baseline at 1×. Focus or hover a point for details; activate it to open the release.</desc>
 {% for tick in curve.ticks %}<line class="chart-grid" x1="50" y1="{{ tick.y }}" x2="750" y2="{{ tick.y }}"/><text class="chart-label" x="40" y="{{ tick.y + 4 }}" text-anchor="end">{{ tick.label }}×</text>{% endfor %}
 <line class="chart-reference" x1="50" y1="{{ curve.reference_y }}" x2="750" y2="{{ curve.reference_y }}"/>
 <path class="chart-line" d="{{ curve.line }}"/>
 {% for point in curve.points %}
-<a class="chart-point" href="/releases/{{ point.release_id }}" aria-label="{{ point.language }} · {{ point.geomean_speedup|number }} times PyTorch speed · {{ point.published_at }} · open release">
+<a class="chart-point" href="/releases/{{ point.release_id }}" aria-label="{{ point.implementation_name }} · {{ point.commit }} · {{ point.language }} · {{ point.geomean_speedup|number }} times PyTorch speed · {{ point.published_at }} · open release">
+<title>{{ point.implementation_name }} · {{ point.commit }} · {{ point.geomean_speedup|number }}×</title>
 <circle cx="{{ point.x }}" cy="{{ point.y }}" r="6" fill="{{ {'ascendc': '#155dc0', 'catlass': '#ae4700', 'triton': '#16836b'}[point.language] }}"/>
-<g class="chart-tooltip" aria-hidden="true"><rect x="240" y="2" width="320" height="34" rx="4"/><text x="400" y="16" text-anchor="middle">{{ {'ascendc': 'Ascend C', 'catlass': 'CATLASS', 'triton': 'Triton'}[point.language] }} · {{ point.geomean_speedup|number }}×</text><text x="400" y="29" text-anchor="middle">{{ point.published_at|publication_date }}</text></g>
+<g class="chart-tooltip" aria-hidden="true"><rect x="160" y="2" width="480" height="34" rx="4"/><text x="400" y="16" text-anchor="middle">{{ point.implementation_name|truncate(30, true, "…", 0) }} · {{ point.geomean_speedup|number }}×</text><text x="400" y="29" text-anchor="middle">{{ point.commit }}</text></g>
 </a>
 {% endfor %}
 {% for tick in curve.dates %}<text class="chart-label" x="{{ tick.x }}" y="246" text-anchor="{{ 'start' if tick.x == 50 else ('end' if tick.x == 750 else 'middle') }}"><tspan x="{{ tick.x }}">{{ tick.date }}</tspan><tspan x="{{ tick.x }}" dy="16">{{ tick.time }}</tspan></text>{% endfor %}
 <text class="chart-label" x="400" y="290" text-anchor="middle">Publication time (UTC)</text>
 </svg></div>
-<figcaption><span class="legend-item"><i class="legend-dot ascendc"></i>Ascend C</span><span class="legend-item"><i class="legend-dot catlass"></i>CATLASS</span><span class="legend-item"><i class="legend-dot triton"></i>Triton</span><span class="legend-item"><i class="legend-reference"></i>PyTorch · 1×</span><span>One strict best-so-far curve among currently published releases.</span></figcaption>
+<figcaption><span class="legend-item"><i class="legend-dot ascendc"></i>Ascend C</span><span class="legend-item"><i class="legend-dot catlass"></i>CATLASS</span><span class="legend-item"><i class="legend-dot triton"></i>Triton</span><span class="legend-item"><i class="legend-reference"></i>PyTorch · 1×</span><span>Step line · best so far</span></figcaption>
 </figure>
+<details>
+<summary>Chart revisions ({{ curve.points|length|number }})</summary>
+<ul>
+{% for point in curve.points %}
+<li><a href="/releases/{{ point.release_id }}" title="{{ point.commit }}"><code>{{ point.commit[:8] }}</code> · {{ point.implementation_name }}</a> · {{ point.geomean_speedup|number }}× · <time datetime="{{ point.published_at }}" title="{{ point.published_at }}">{{ point.published_at|publication_date }}</time></li>
+{% endfor %}
+</ul>
+</details>
 {% endif %}
-<div class="table-scroll" role="region" aria-label="Published results" tabindex="0"><table><thead><tr><th>Implementation</th><th>Team</th><th>Language</th><th>Speedup</th><th>Published</th><th>Source</th></tr></thead><tbody>
-{% for row in ranking.rows %}<tr><td><a href="/releases/{{ row.id }}">{{ row.implementation_name }}</a></td><td>{{ row.team }}</td><td>{{ row.language }}</td><td>{{ row.score.geomean_speedup|number }}×</td><td><time datetime="{{ row.published_at }}" title="{{ row.published_at }}">{{ row.published_at|publication_date }}</time></td><td>{% set links=row.source|source_links %}{% if links %}<a href="{{ links.code or links.repository }}" rel="noreferrer">{{ "Source" if links.code else "Repository" }}</a>{% else %}—{% endif %}</td></tr>{% else %}<tr><td colspan="6">No nonempty performance cases.</td></tr>{% endfor %}
+<div class="table-scroll" role="region" aria-label="Published results" tabindex="0"><table><thead><tr><th>Implementation</th><th>Team</th><th>Language</th><th>Speedup</th><th>Published</th><th>Commit</th><th>Source</th></tr></thead><tbody>
+{% for row in ranking.rows %}<tr><td><a href="/releases/{{ row.id }}">{{ row.implementation_name }}</a></td><td>{{ row.team }}</td><td>{{ row.language }}</td><td>{{ row.score.geomean_speedup|number }}×</td><td><time datetime="{{ row.published_at }}" title="{{ row.published_at }}">{{ row.published_at|publication_date }}</time></td><td><a href="/releases/{{ row.id }}" title="{{ row.source.commit }}"><code>{{ row.source.commit[:8] }}</code></a></td><td>{% set links=row.source|source_links %}{% if links %}<a href="{{ links.code or links.repository }}" rel="noreferrer">{{ "Source" if links.code else "Repository" }}</a>{% else %}—{% endif %}</td></tr>{% else %}<tr><td colspan="7">No nonempty performance cases.</td></tr>{% endfor %}
 </tbody></table></div><p>{{ ranking.total|number }} scored releases. Showing up to 50; the API supports pagination.</p>
 {% endif %}
 {% if kernel %}</section>{% endif %}
