@@ -41,8 +41,8 @@
 <table><thead><tr><th scope="col">Kernel</th><th scope="col"{% if device_sort %} aria-sort="{{ 'ascending' if device_sort == 'asc' else 'descending' }}"{% endif %}><a href="{{ device_sort_url }}" aria-label="Sort by device {{ 'descending' if device_sort == 'asc' else 'ascending' }}">Device{% if device_sort %} {{ '↑' if device_sort == 'asc' else '↓' }}{% endif %}</a></th><th scope="col">Current best</th></tr></thead><tbody>
 {% for row in kernel_rows %}
 <tr><td><a href="{{ row.url }}" aria-label="{{ row.kernel }} on {{ row.device | upper }}"{% if row.active %} aria-current="page"{% endif %}>{{ row.kernel }}</a></td><td>{{ row.device | upper }}</td><td>
-{% if row.best %}<a href="/releases/{{ row.best.id }}">{{ row.best.implementation_name }}</a> · {{ row.best.score.geomean_speedup|number }}×
-{% elif row.best_error == "cohort_required" %}Select cohort
+{% if row.best %}<a href="/releases/{{ row.best.id }}">{{ row.best.name }}</a> · {{ row.best.speedup|number }}×
+{% elif row.choose_cohort %}Select cohort
 {% else %}—{% endif %}</td></tr>
 {% else %}
 <tr><td colspan="3">No kernels match your search.</td></tr>
@@ -83,7 +83,6 @@
 <a class="chart-point" href="/releases/{{ point.release_id }}" aria-label="{{ point.implementation_name }} · {{ point.commit }} · {{ point.language }} · {{ point.geomean_speedup|number }} times PyTorch speed · {{ point.published_at }} · open release">
 <title>{{ point.implementation_name }} · {{ point.commit }} · {{ point.geomean_speedup|number }}×</title>
 <circle cx="{{ point.x }}" cy="{{ point.y }}" r="6" fill="{{ {'ascendc': '#155dc0', 'catlass': '#ae4700', 'triton': '#16836b'}[point.language] }}"/>
-<text class="chart-label" x="{{ point.x }}" y="{{ point.y - 10 }}" text-anchor="middle">{{ point.commit[:8] }}</text>
 <g class="chart-tooltip" aria-hidden="true"><rect x="160" y="2" width="480" height="34" rx="4"/><text x="400" y="16" text-anchor="middle">{{ point.implementation_name }} · {{ point.geomean_speedup|number }}×</text><text x="400" y="29" text-anchor="middle">{{ point.commit }}</text></g>
 </a>
 {% endfor %}
@@ -92,6 +91,14 @@
 </svg></div>
 <figcaption><span class="legend-item"><i class="legend-dot ascendc"></i>Ascend C</span><span class="legend-item"><i class="legend-dot catlass"></i>CATLASS</span><span class="legend-item"><i class="legend-dot triton"></i>Triton</span><span class="legend-item"><i class="legend-reference"></i>PyTorch · 1×</span><span>Step line · best so far</span></figcaption>
 </figure>
+<details>
+<summary>Chart revisions ({{ curve.points|length|number }})</summary>
+<ul>
+{% for point in curve.points %}
+<li><a href="/releases/{{ point.release_id }}" title="{{ point.commit }}"><code>{{ point.commit[:8] }}</code> · {{ point.implementation_name }}</a> · {{ point.geomean_speedup|number }}× · <time datetime="{{ point.published_at }}" title="{{ point.published_at }}">{{ point.published_at|publication_date }}</time></li>
+{% endfor %}
+</ul>
+</details>
 {% endif %}
 <div class="table-scroll" role="region" aria-label="Published results" tabindex="0"><table><thead><tr><th>Implementation</th><th>Team</th><th>Language</th><th>Speedup</th><th>Published</th><th>Commit</th><th>Source</th></tr></thead><tbody>
 {% for row in ranking.rows %}<tr><td><a href="/releases/{{ row.id }}">{{ row.implementation_name }}</a></td><td>{{ row.team }}</td><td>{{ row.language }}</td><td>{{ row.score.geomean_speedup|number }}×</td><td><time datetime="{{ row.published_at }}" title="{{ row.published_at }}">{{ row.published_at|publication_date }}</time></td><td><a href="/releases/{{ row.id }}" title="{{ row.source.commit }}"><code>{{ row.source.commit[:8] }}</code></a></td><td>{% set links=row.source|source_links %}{% if links %}<a href="{{ links.code or links.repository }}" rel="noreferrer">{{ "Source" if links.code else "Repository" }}</a>{% else %}—{% endif %}</td></tr>{% else %}<tr><td colspan="7">No nonempty performance cases.</td></tr>{% endfor %}

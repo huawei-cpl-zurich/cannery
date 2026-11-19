@@ -25,12 +25,12 @@ def chart(points: list[dict[str, Any]]) -> dict[str, Any]:
     if not points:
         return {"points": [], "line": ""}
     times = [datetime.fromisoformat(p["published_at"]).timestamp() for p in points]
-    span = max(times[-1] - times[0], 1.0)
+    span = times[-1] - times[0]
     ceiling = max(1.0, max(p["geomean_speedup"] for p in points)) * 1.1
     dots = [
         p
         | {
-            "x": 50 + (t - times[0]) / span * 700 if times[-1] > times[0] else 400,
+            "x": 50 + (t - times[0]) / span * 700 if span else 400,
             "y": 220 - p["geomean_speedup"] / ceiling * 180,
         }
         for p, t in zip(points, times, strict=True)
@@ -103,7 +103,8 @@ def install_release_web(
             "atol": atol,
         }
         with Session(engine) as db:
-            values["kernels"] = catalog.kernels(db, include_device_versions=True)
+            directory = catalog.directory(db)
+            values["kernels"] = bool(directory)
             if kernel:
                 try:
                     selection = selected(
@@ -125,50 +126,36 @@ def install_release_web(
                     values["error"] = str(error)
                     values["cohorts"] = error.cohorts or []
             rows = []
-            for item in values["kernels"]:
+            for item in directory:
                 if q.strip().casefold() not in item["kernel"].casefold():
                     continue
-                for row_device in sorted(item["devices"]):
-                    if catalog_device and row_device != catalog_device:
-                        continue
-                    latest = item["latest_by_device"][row_device]
-                    summary = None
-                    summary_error = None
-                    try:
-                        default = catalog.Selection(
-                            kernel=item["kernel"], device=row_device, spec_version=latest
-                        )
-                        winners = catalog.leaderboard(db, default, limit=1)["rows"]
-                        summary = winners[0] if winners else None
-                    except catalog.SelectionError as error:
-                        summary_error = str(error)
-                    active = "ranking" in values and (item["kernel"], row_device) == (
-                        kernel,
-                        device,
-                    )
-                    params = {"kernel": item["kernel"], "device": row_device}
-                    if q:
-                        params["q"] = q
-                    if catalog_device:
-                        params["catalog_device"] = catalog_device
-                    if device_sort:
-                        params["device_sort"] = device_sort
-                    if active:
-                        for name in ("spec_version", "cohort", "rtol", "atol"):
-                            if values[name] not in (None, ""):
-                                params[name] = values[name]
-                    else:
-                        params["spec_version"] = str(latest)
-                    rows.append(
-                        {
-                            "kernel": item["kernel"],
-                            "device": row_device,
-                            "active": active,
-                            "best": summary,
-                            "best_error": summary_error,
-                            "url": "/global-best?" + urlencode(params) + "#kernel-results",
-                        }
-                    )
+                row_device = item["device"]
+                if catalog_device and row_device != catalog_device:
+                    continue
+                active = "ranking" in values and (item["kernel"], row_device) == (
+                    kernel,
+                    device,
+                )
+                params = {"kernel": item["kernel"], "device": row_device}
+                if q:
+                    params["q"] = q
+                if catalog_device:
+                    params["catalog_device"] = catalog_device
+                if device_sort:
+                    params["device_sort"] = device_sort
+                if active:
+                    for name in ("spec_version", "cohort", "rtol", "atol"):
+                        if values[name] not in (None, ""):
+                            params[name] = values[name]
+                else:
+                    params["spec_version"] = str(item["version"])
+                rows.append(
+                    item
+                    | {
+                        "active": active,
+                        "url": "/global-best?" + urlencode(params) + "#kernel-results",
+                    }
+                )
             if device_sort:
                 rows.sort(key=lambda row: row["device"], reverse=device_sort == "desc")
             values["kernel_rows"] = rows

@@ -17,6 +17,7 @@ from cannery.releases.document import ReleaseDocument, parse_release_document
 from cannery.releases.models import Publication, Release, ReleaseTolerance
 from cannery.releases.tensor_contract import TensorReleaseManifest
 from cannery.submissions.manifest import KernelPath
+from cannery.submissions.models import Submission
 from cannery.submissions.names import label
 
 
@@ -99,7 +100,7 @@ def release_info(db: Session, identifier: UUID) -> tuple[Release, Publication]:
     return row[0], row[1]
 
 
-def kernels(db: Session, *, include_device_versions: bool = False) -> list[dict[str, Any]]:
+def kernels(db: Session) -> list[dict[str, Any]]:
     rows = db.execute(
         select(Kernel.namespace, Kernel.name, SpecVersion.version, Release.device)
         .select_from(Release)
@@ -112,21 +113,129 @@ def kernels(db: Session, *, include_device_versions: bool = False) -> list[dict[
     grouped: dict[str, dict[str, Any]] = {}
     for namespace, name, version, device in rows:
         key = f"{namespace}/{name}"
-        entry = grouped.setdefault(
-            key, {"kernel": key, "versions": set(), "devices": set(), "latest_by_device": {}}
-        )
+        entry = grouped.setdefault(key, {"kernel": key, "versions": set(), "devices": set()})
         entry["versions"].add(version)
         entry["devices"].add(device)
-        latest = entry["latest_by_device"]
-        latest[device] = max(version, latest.get(device, version))
     return [
         {
             "kernel": key,
             "versions": sorted(value["versions"], reverse=True),
             "devices": sorted(value["devices"]),
-            **({"latest_by_device": value["latest_by_device"]} if include_device_versions else {}),
         }
         for key, value in sorted(grouped.items())
+    ]
+
+
+def directory(db: Session) -> list[dict[str, Any]]:
+    """Summarize the latest published spec on each device in one query."""
+    partition = (SpecVersion.kernel_id, Release.device)
+    recent = (
+        published()
+        .with_only_columns(
+            SpecVersion.kernel_id,
+            Release.device,
+            SpecVersion.version,
+            Release.spec_id,
+            Release.id,
+            Release.candidate_id,
+            Release.cohort_sha256,
+            Release.score,
+            Publication.published_at,
+            func.max(SpecVersion.version).over(partition_by=partition).label("latest"),
+        )
+        .join(SpecVersion, SpecVersion.id == Release.spec_id)
+        .cte()
+    )
+    keys = (recent.c.kernel_id, recent.c.device)
+    latest = (
+        select(
+            *keys,
+            recent.c.version,
+            (func.min(recent.c.cohort_sha256) != func.max(recent.c.cohort_sha256)).label(
+                "choose_cohort"
+            ),
+        )
+        .where(recent.c.version == recent.c.latest)
+        .group_by(*keys, recent.c.version)
+        .cte()
+    )
+    validation = SpecVersion.manifest["spec"]["validation"]
+    winners = (
+        select(
+            *keys,
+            recent.c.id,
+            recent.c.candidate_id,
+            recent.c.score,
+            func.row_number()
+            .over(
+                partition_by=keys,
+                order_by=(recent.c.score.desc(), recent.c.published_at, recent.c.id),
+            )
+            .label("rank"),
+        )
+        .join(
+            latest,
+            (latest.c.kernel_id == recent.c.kernel_id)
+            & (latest.c.device == recent.c.device)
+            & (latest.c.version == recent.c.version),
+        )
+        .join(SpecVersion, SpecVersion.id == recent.c.spec_id)
+        .join(ReleaseTolerance, ReleaseTolerance.release_id == recent.c.id)
+        .where(
+            ~latest.c.choose_cohort,
+            recent.c.score.is_not(None),
+            ReleaseTolerance.rtol == validation["default_rtol"].as_float(),
+            ReleaseTolerance.atol == validation["default_atol"].as_float(),
+        )
+        .cte()
+    )
+    rows = db.execute(
+        select(
+            Kernel.namespace,
+            Kernel.name,
+            latest.c.device,
+            latest.c.version,
+            latest.c.choose_cohort,
+            winners.c.id,
+            winners.c.score,
+            winners.c.candidate_id,
+            Submission.implementation_name,
+        )
+        .join_from(latest, Kernel, Kernel.id == latest.c.kernel_id)
+        .outerjoin(
+            winners,
+            (winners.c.kernel_id == latest.c.kernel_id)
+            & (winners.c.device == latest.c.device)
+            & (winners.c.rank == 1),
+        )
+        .outerjoin(Submission, Submission.id == winners.c.candidate_id)
+        .order_by(Kernel.namespace, Kernel.name, latest.c.device)
+    )
+    return [
+        {
+            "kernel": f"{namespace}/{name}",
+            "device": device,
+            "version": version,
+            "choose_cohort": choose_cohort,
+            "best": {
+                "id": release_id,
+                "name": label(implementation_name, candidate_id),
+                "speedup": score,
+            }
+            if release_id is not None
+            else None,
+        }
+        for (
+            namespace,
+            name,
+            device,
+            version,
+            choose_cohort,
+            release_id,
+            score,
+            candidate_id,
+            implementation_name,
+        ) in rows
     ]
 
 
@@ -214,21 +323,24 @@ def listing(db: Session, selection: Selection, limit: int = 50, offset: int = 0)
 
 def evolution(db: Session, selection: Selection) -> list[dict[str, Any]]:
     _, query = context(db, selection)
-    return [
-        {
-            "release_id": str(release.id),
-            "published_at": aware(pub.published_at).isoformat(),
-            "geomean_speedup": release.score,
-            "language": release.language,
-            "implementation_name": label(
-                release.submission.implementation_name, release.candidate_id
-            ),
-            "commit": manifest_of(release).source.commit,
-        }
-        for release, pub in db.execute(
-            query.where(Release.score.is_not(None)).order_by(Publication.published_at, Release.id)
+    points = []
+    for release, pub in db.execute(
+        query.where(Release.score.is_not(None)).order_by(Publication.published_at, Release.id)
+    ):
+        assert release.score is not None and pub.published_at is not None
+        points.append(
+            {
+                "release_id": str(release.id),
+                "published_at": aware(pub.published_at).isoformat(),
+                "geomean_speedup": release.score,
+                "language": release.language,
+                "implementation_name": label(
+                    release.submission.implementation_name, release.candidate_id
+                ),
+                "commit": manifest_of(release).source.commit,
+            }
         )
-    ]
+    return points
 
 
 def history(db: Session, selection: Selection) -> dict[str, Any]:

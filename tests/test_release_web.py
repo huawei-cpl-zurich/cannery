@@ -84,6 +84,16 @@ def test_chart_uses_publication_times_and_includes_reference_line():
     assert chart([])["points"] == []
 
 
+def test_chart_subsecond_range_matches_axis():
+    points = [
+        {"published_at": f"2026-01-01T00:00:00.{ms}+00:00", "geomean_speedup": 1.0}
+        for ms in ("000", "250", "500")
+    ]
+    plotted = chart(points)
+    assert [p["x"] for p in plotted["points"]] == [tick["x"] for tick in plotted["dates"]]
+    assert " V " not in plotted["line"]
+
+
 def test_single_publication_is_centered_with_one_utc_date_and_readable_scale():
     result = chart(
         [
@@ -130,16 +140,14 @@ def test_release_download_menu_pins_commands_and_gates_python_on_hub(published):
 def test_global_best_search_and_device_links(releases, monkeypatch):
     engine, add, _, manifest = releases
     add(0.5)
+    add(0.4, device="a3")
+    from cannery.releases.catalog import directory as published_directory
+
     monkeypatch.setattr(
-        "cannery.web.releases.catalog.kernels",
-        lambda _, **kwargs: [
-            {
-                "kernel": manifest.kernel,
-                "devices": ["a5", "a3"],
-                "latest_by_device": {"a3": 1, "a5": 1},
-            },
-            {"kernel": "team/other", "devices": ["a5"], "latest_by_device": {"a5": 1}},
-        ],
+        "cannery.web.releases.catalog.directory",
+        lambda db: (
+            published_directory(db) + [{"kernel": "team/other", "device": "a5", "version": 1}]
+        ),
     )
     client = web(engine)
     directory = client.get("/global-best")
@@ -173,7 +181,7 @@ def test_directory_link_opens_older_published_spec(releases):
 
     engine, add, _, manifest = releases
     release_id, _, _ = add(0.5, device="a3")
-    add(0.4, device="a5")
+    old_a5, _, _ = add(0.9, device="a5")
     with Session(engine) as db, db.begin():
         frozen = db.get(SpecVersion, manifest.spec_id)
         v2 = SpecVersion(
@@ -198,7 +206,9 @@ def test_directory_link_opens_older_published_spec(releases):
     assert url.replace("&", "&amp;") in failed.text
     assert str(release_id) in client.get(url).text
     a5_url = url.replace("device=a3&spec_version=1", "device=a5&spec_version=2")
-    assert a5_url.replace("&", "&amp;") in client.get("/global-best").text
+    directory = client.get("/global-best").text
+    assert a5_url.replace("&", "&amp;") in directory
+    assert str(a5_id) in directory and str(old_a5) not in directory
     assert str(a5_id) in client.get(a5_url).text
 
 
@@ -240,6 +250,8 @@ def test_device_directory_winner_and_slower_commit_evolution(releases):
     assert page.text.count('class="chart-point"') == 2
     assert f'class="chart-point" href="/releases/{slower}"' in page.text
     assert manifest.source.commit in page.text
+    assert "Chart revisions (2)" in page.text
+    assert f'href="/releases/{slower}" title="{manifest.source.commit}"' in page.text
     assert "<strong>0.9×</strong>" in page.text
     state.withdraw(engine, slower_submission, {"namespace": "team", "role": "user"})
     assert client.get("/global-best", params=route).text.count('class="chart-point"') == 1
