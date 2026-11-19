@@ -41,6 +41,6 @@ loss. Jobs begin with a 30-minute deadline and allow at most three attempts.
 Reference timing has its own deadline. Candidates waiting for it preserve
 their attempt count.
 When the reference is ready, the candidate’s next claim starts a fresh 30-minute execution
-budget. Older running jobs retain their original deadline when recorded state
+budget. Pre-upgrade jobs retain their original deadline when recorded state
 cannot establish a reference wait. Each remote execution is bounded to 180 seconds. Preserve control/artifact volumes across upgrades and
 drain active remote work before changing the supervision contract.
