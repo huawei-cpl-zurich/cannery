@@ -1,4 +1,6 @@
+from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import select, update
@@ -22,6 +24,7 @@ from cannery.benchmark.state import PerformanceJob, claim_job, finish_job
 from cannery.benchmark.tensor_evidence import tensor_timing_artifact
 from cannery.benchmark.tensor_timing import tensor_timed_cases
 from cannery.builds.state import claim_build, finish_build
+from cannery.database import aware
 from cannery.numerics.recipes_v2 import RecipeSuiteV2
 from cannery.numerics.state import NumericalState, claim_numerical, finish_numerical
 from cannery.registry.freeze import BaselineEvidence
@@ -172,3 +175,195 @@ def test_failed_reference_blocks_without_dispatching_candidate(queue):
     assert finish_job(engine, claim_job(engine, job.reference_key), error="unsupported")
     with pytest.raises(scheduling.BenchmarkBlocked, match="reference_timing_failed"):
         scheduling.retained(engine, job, executor)
+
+
+def test_reference_wait_does_not_consume_candidate_attempt_or_budget(queue):
+    engine, _, memory, _, _, cohort, add = queue
+    key = scheduling.candidate_key(add())
+    scheduling.discover(engine, cohort)
+    now = datetime.now(UTC)
+    with Session(engine) as db, db.begin():
+        job = db.get(PerformanceJob, key)
+        reference_key = job.reference_key
+        job.deadline = now - timedelta(seconds=1)
+    assert claim_job(engine, key) is None
+    with Session(engine) as db, db.begin():
+        job = db.get(PerformanceJob, key)
+        assert job.status == "queued" and job.attempts == 0
+        assert job.error == "awaiting_reference_timing"
+        job.due_at = now
+    assert finish_job(
+        engine,
+        claim_job(engine, reference_key),
+        report={"passed": True},
+        artifact=memory.put("timing.json", b"{}"),
+    )
+    assert claim_job(engine, key) is not None
+    with Session(engine) as db:
+        job = db.get(PerformanceJob, key)
+        assert job.attempts == 1 and job.error is None
+        assert aware(job.deadline) >= now + timedelta(minutes=30)
+
+
+@pytest.mark.parametrize(
+    "previous_error", ["awaiting_reference_timing", "artifact_storage_unavailable"]
+)
+def test_existing_reference_wait_gets_execution_budget_with_same_attempt(queue, previous_error):
+    engine, _, memory, _, _, cohort, add = queue
+    key = scheduling.candidate_key(add())
+    scheduling.discover(engine, cohort)
+    expired = datetime.now(UTC) - timedelta(seconds=1)
+    with Session(engine) as db, db.begin():
+        job = db.get(PerformanceJob, key)
+        reference_key = job.reference_key
+        attempt = job.attempt = uuid4()
+        job.attempts = 1
+        job.status = "running"
+        job.error = previous_error
+        job.due_at = expired
+        job.deadline = datetime.now(UTC) + timedelta(seconds=10)
+    assert claim_job(engine, key) is None
+    with Session(engine) as db, db.begin():
+        job = db.get(PerformanceJob, key)
+        assert job.error == "awaiting_reference_timing"
+        job.due_at = job.deadline = expired
+    assert finish_job(
+        engine,
+        claim_job(engine, reference_key),
+        report={"passed": True},
+        artifact=memory.put("timing.json", b"{}"),
+    )
+    claim = claim_job(engine, key)
+    assert claim is not None and claim.attempt == attempt
+    with Session(engine) as db:
+        job = db.get(PerformanceJob, key)
+        assert job.attempts == 1 and job.error is None
+        assert aware(job.deadline) > expired + timedelta(minutes=30)
+
+
+def test_overdue_candidate_with_cached_reference_still_expires(queue, monkeypatch):
+    engine, _, memory, _, _, cohort, add = queue
+    first = scheduling.candidate_key(add())
+    scheduling.discover(engine, cohort)
+    with Session(engine) as db:
+        reference_key = db.get(PerformanceJob, first).reference_key
+    assert finish_job(
+        engine,
+        claim_job(engine, reference_key),
+        report={"passed": True},
+        artifact=memory.put("timing.json", b"{}"),
+    )
+    second = scheduling.candidate_key(add())
+    scheduling.discover(engine, cohort)
+    with Session(engine) as db:
+        job = db.get(PerformanceJob, second)
+        assert job.reference_key == reference_key and job.error is None
+        after_deadline = aware(job.deadline) + timedelta(seconds=1)
+
+    class Later(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return after_deadline
+
+    monkeypatch.setattr("cannery.benchmark.state.datetime", Later)
+    assert claim_job(engine, second) is None
+    with Session(engine) as db:
+        job = db.get(PerformanceJob, second)
+        assert job.attempts == 0 and job.error == "deadline_exceeded"
+
+
+@pytest.mark.parametrize("previous", ["queued", "postponed", "backoff", "expired_lease"])
+def test_preupgrade_queue_can_claim_after_reference_completes(queue, previous, monkeypatch):
+    engine, _, memory, _, _, cohort, add = queue
+    key = scheduling.candidate_key(add())
+    scheduling.discover(engine, cohort)
+    expired = datetime.now(UTC) - timedelta(seconds=1)
+    with Session(engine) as db, db.begin():
+        job = db.get(PerformanceJob, key)
+        reference_key = job.reference_key
+        job.error = None
+        job.deadline = job.due_at = expired
+        if previous != "queued":
+            job.status = "running"
+            job.attempts = 1
+            job.attempt = uuid4()
+            job.error = "artifact_storage_unavailable"
+            job.lease_until = job.due_at
+            if previous == "expired_lease":
+                job.lease = uuid4()
+            if previous == "backoff":
+                job.due_at = job.lease_until = expired + timedelta(seconds=4)
+                job.deadline = expired + timedelta(seconds=5)
+    if previous == "backoff":
+        current = expired + timedelta(seconds=1)
+
+        class Later(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return current
+
+        monkeypatch.setattr("cannery.benchmark.state.datetime", Later)
+    assert finish_job(
+        engine,
+        claim_job(engine, reference_key),
+        report={"passed": True},
+        artifact=memory.put("timing.json", b"{}"),
+    )
+    if previous == "backoff":
+        current = expired + timedelta(seconds=6)
+    assert claim_job(engine, key) is not None
+    with Session(engine) as db:
+        assert aware(db.get(PerformanceJob, key).deadline) > expired + timedelta(minutes=30)
+
+
+@pytest.mark.parametrize(
+    "previous_error", ["worker_control_unavailable", "awaiting_reference_timing"]
+)
+def test_legacy_execution_already_dispatched_keeps_its_deadline(queue, previous_error):
+    engine, _, memory, _, _, cohort, add = queue
+    key = scheduling.candidate_key(add())
+    scheduling.discover(engine, cohort)
+    expired = datetime.now(UTC) - timedelta(seconds=1)
+    with Session(engine) as db, db.begin():
+        job = db.get(PerformanceJob, key)
+        reference_key = job.reference_key
+        job.status = "running"
+        job.attempts = 1
+        job.attempt = uuid4()
+        job.error = previous_error
+        job.lease = uuid4()
+        job.due_at = job.deadline = expired
+    assert finish_job(
+        engine,
+        claim_job(engine, reference_key),
+        report={"passed": True},
+        artifact=memory.put("timing.json", b"{}"),
+    )
+    assert claim_job(engine, key) is None
+    with Session(engine) as db:
+        job = db.get(PerformanceJob, key)
+        assert job.status == "failed" and job.error == "deadline_exceeded"
+
+
+@pytest.mark.parametrize("previous", ["marked", "legacy", "legacy_never_claimed"])
+def test_expired_wait_reports_reference_failure(queue, previous):
+    engine, _, _, _, _, cohort, add = queue
+    key = scheduling.candidate_key(add())
+    scheduling.discover(engine, cohort)
+    with Session(engine) as db, db.begin():
+        job = db.get(PerformanceJob, key)
+        reference_key = job.reference_key
+        job.deadline = datetime.now(UTC) - timedelta(seconds=1)
+        if previous != "marked":
+            job.error = None
+        if previous == "legacy_never_claimed":
+            db.get(PerformanceJob, reference_key).deadline = job.deadline
+    reference_claim = claim_job(engine, reference_key)
+    if previous == "legacy_never_claimed":
+        assert reference_claim is None
+    else:
+        assert finish_job(engine, reference_claim, error="device_failed")
+    assert claim_job(engine, key) is None
+    with Session(engine) as db:
+        job = db.get(PerformanceJob, key)
+        assert job.status == "blocked" and job.error == "reference_timing_failed"

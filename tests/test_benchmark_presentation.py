@@ -33,6 +33,9 @@ def report(records):
         engine, claim_numerical(engine, identifier), report={"passed": True, "cases": []}
     )
     ensure_job(engine, "b" * 64, "reference", {})
+    assert finish_job(
+        engine, claim_job(engine, "b" * 64), report={"passed": True}, artifact=artifact
+    )
     ensure_job(
         engine,
         "c" * 64,

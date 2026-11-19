@@ -103,10 +103,12 @@ def ensure_job(
         kind == "reference" and (candidate_id is not None or reference_key is not None)
     ):
         raise ValueError("Candidate jobs require candidate and reference identities")
-    now = datetime.now(UTC)
     try:
         with Session(engine) as db, db.begin():
             if db.get(PerformanceJob, key) is None:
+                reference = db.get(PerformanceJob, reference_key) if reference_key else None
+                now = datetime.now(UTC)
+                waiting = reference is not None and reference.status in {"queued", "running"}
                 db.add(
                     PerformanceJob(
                         key=key,
@@ -116,6 +118,7 @@ def ensure_job(
                         reference_key=reference_key,
                         deadline=now + timedelta(minutes=30),
                         due_at=now,
+                        error="awaiting_reference_timing" if waiting else None,
                     )
                 )
     except IntegrityError:
@@ -154,20 +157,68 @@ def claim_job(engine: Engine, key: str, *, device: Device = "a5") -> Performance
             return None
         if row.lease_until is not None and aware(row.lease_until) > now:
             return None
-        if aware(row.deadline) <= now or (row.status == "queued" and row.attempts >= 3):
-            error = "deadline_exceeded" if aware(row.deadline) <= now else "attempts_exhausted"
+        reference_failed = False
+        if row.kind == "candidate" and row.reference_key:
+            if aware(row.due_at) > now:
+                return None
+            reference = db.get(PerformanceJob, row.reference_key)
+            if reference is not None and reference.status in {"queued", "running"}:
+                # Reference claims enforce their own deadline. A candidate must
+                # not expire while a successful reference completion can still commit.
+                row.error = "awaiting_reference_timing"
+                row.lease = row.lease_until = None
+                row.due_at = now + timedelta(seconds=5)
+                return None
+            waited = row.error == "awaiting_reference_timing" and row.lease is None
+            if reference is not None and reference.attempt is not None:
+                result = db.get(PerformanceResult, reference.attempt)
+                now = datetime.now(UTC)
+                # Recover legacy waits only when persisted timestamps prove
+                # that reference timing was unavailable to the previous claim.
+                prior_boundary = None
+                if row.attempts == 0:
+                    prior_boundary = aware(row.deadline) - timedelta(minutes=30)
+                elif row.status == "running" and row.lease_until is not None:
+                    prior_boundary = aware(row.lease_until)
+                    if (
+                        row.lease is None
+                        and row.lease_until == row.due_at
+                        and aware(row.due_at) < aware(row.deadline)
+                    ):
+                        prior_boundary -= timedelta(seconds=5)
+                waited = waited or (
+                    result is not None
+                    and prior_boundary is not None
+                    and prior_boundary < aware(result.finished_at) <= now
+                )
+            if waited and reference is not None and reference.status == "ready":
+                row.error = None
+                row.deadline = now + timedelta(minutes=30)
+            reference_failed = (
+                waited if reference is None else reference.status in {"failed", "blocked"}
+            )
+        if (
+            reference_failed
+            or aware(row.deadline) <= now
+            or (row.status == "queued" and row.attempts >= 3)
+        ):
+            status = "blocked" if reference_failed else "failed"
+            if reference_failed:
+                error = "reference_timing_failed"
+            else:
+                error = "deadline_exceeded" if aware(row.deadline) <= now else "attempts_exhausted"
             if row.attempt and db.get(PerformanceResult, row.attempt) is None:
                 db.add(
                     PerformanceResult(
                         id=row.attempt,
                         job_key=key,
                         number=row.attempts,
-                        status="failed",
+                        status=status,
                         error=error,
                         finished_at=now,
                     )
                 )
-            row.status, row.error, row.lease, row.lease_until = "failed", error, None, None
+            row.status, row.error, row.lease, row.lease_until = status, error, None, None
             return None
         if aware(row.due_at) > now:
             return None

@@ -37,6 +37,10 @@ shared device lease. Busy devices defer; changed cohorts block rather than mix
 measurements. Reference-cache outages never rerun a completed baseline.
 
 Retained receipts/checkpoints resume the same attempt after restart or transport
-loss. Jobs have a 30-minute deadline and at most three attempts; remote execution
-is bounded to 180 seconds. Preserve control/artifact volumes across upgrades and
+loss. Jobs begin with a 30-minute deadline and allow at most three attempts.
+Reference timing has its own deadline. Candidates waiting for it preserve
+their attempt count.
+When the reference is ready, the candidate’s next claim starts a fresh 30-minute execution
+budget. Pre-upgrade jobs retain their original deadline when recorded state
+cannot establish a reference wait. Each remote execution is bounded to 180 seconds. Preserve control/artifact volumes across upgrades and
 drain active remote work before changing the supervision contract.
