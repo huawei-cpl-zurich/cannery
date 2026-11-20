@@ -25,9 +25,9 @@ from cannery.builds.state import (
 from cannery.submissions.models import Candidate
 
 
-def candidate(records, *, native=True, namespace="team"):
+def candidate(records, *, native=True):
     engine, _ = records
-    key = initial(records, commit=uuid4().hex + "0" * 8, namespace=namespace)
+    key = initial(records, commit=uuid4().hex + "0" * 8)
     manifest = yaml.safe_load(submission_files("ascendc")["candidate/submission.yaml"])
     if native:
         manifest["implementation"]["device"] = "a5"
