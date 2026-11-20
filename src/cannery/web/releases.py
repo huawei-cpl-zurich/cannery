@@ -25,6 +25,7 @@ DIRECTORY_COLUMNS = {
     "device": "Device",
     "gain": "Gain",
     "implementation": "Implementation",
+    "team": "Team",
     "submissions": "Published submissions",
 }
 
@@ -96,7 +97,8 @@ def install_release_web(
         atol: str | None = None,
         q: str = "",
         catalog_device: Literal["", "a3", "a5"] = "",
-        sort: Literal["kernel", "device", "gain", "implementation", "submissions"] | None = None,
+        sort: Literal["kernel", "device", "gain", "implementation", "team", "submissions"]
+        | None = None,
         direction: Literal["asc", "desc"] | None = None,
         device_sort: Literal["", "asc", "desc"] = "",
     ) -> HTMLResponse:
@@ -165,13 +167,14 @@ def install_release_web(
                         "url": "/global-best?" + urlencode(params) + "#kernel-results",
                     }
                 )
-            if column in ("gain", "implementation"):
+            if column in ("gain", "implementation", "team"):
                 available = [row for row in rows if row["best"]]
                 if column == "gain":
                     available.sort(key=lambda row: row["best"]["speedup"], reverse=order == "desc")
                 else:
+                    best_key = "name" if column == "implementation" else "team"
                     available.sort(
-                        key=lambda row: row["best"]["name"].casefold(), reverse=order == "desc"
+                        key=lambda row: row["best"][best_key].casefold(), reverse=order == "desc"
                     )
                 rows = available + [row for row in rows if not row["best"]]
             else:

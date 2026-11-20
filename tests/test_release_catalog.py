@@ -9,6 +9,7 @@ from release_fixtures import arguments as arguments
 from release_fixtures import benchmark as benchmark
 from release_fixtures import records as records
 from release_fixtures import setup_executor as setup_executor
+from sqlalchemy import update
 from sqlalchemy.orm import Session
 from test_build_state import candidate
 
@@ -19,6 +20,7 @@ from cannery.releases.discovery_api import install_discovery
 from cannery.releases.eligibility import publication_manifest
 from cannery.releases.models import Publication, Release, ReleaseTolerance
 from cannery.settings import Settings
+from cannery.submissions.models import Submission
 
 
 @pytest.fixture
@@ -37,8 +39,15 @@ def releases(admission, records):
         device="a5",
         spec_id=None,
         spec_version=1,
+        team="team",
     ):
         identifier = candidate(records)
+        if team != "team":
+            # Seed synthetic metadata independently of kernel and publication ownership.
+            with engine.begin() as db:
+                db.execute(
+                    update(Submission).where(Submission.id == identifier).values(namespace=team)
+                )
         data = template.model_dump(mode="json")
         data.update(
             submission_id=str(identifier),
@@ -233,10 +242,6 @@ def test_a3_a5_rankings_histories_and_cohorts_are_disjoint(releases):
 
 
 def test_public_name_and_owner_are_independent_of_publishing_actor(releases):
-    from sqlalchemy import update
-
-    from cannery.submissions.models import Submission
-
     engine, add, client, template = releases
     identifier, candidate_id, _ = add(1.23456789)
     with engine.begin() as connection:

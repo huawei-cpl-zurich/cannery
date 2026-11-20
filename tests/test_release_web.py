@@ -302,13 +302,32 @@ def test_sortable_directory_columns_preserve_filters_and_place_missing_gains_las
 
     add(3.0, driver="other")
     for order in ("asc", "desc"):
-        for column in ("gain", "implementation"):
+        for column in ("gain", "implementation", "team"):
             page = client.get(url, params={"sort": column, "direction": order}).text
             assert page.index(f"{manifest.kernel} on A3") < page.index(f"{manifest.kernel} on A5")
     descending = client.get(url, params={"sort": "submissions", "direction": "desc"}).text
     ascending = client.get(url, params={"sort": "submissions", "direction": "asc"}).text
     assert descending.index("on A5") < descending.index("on A3")
     assert ascending.index("on A3") < ascending.index("on A5")
+
+
+def test_directory_shows_and_sorts_winning_submission_teams(releases):
+    engine, add, _, manifest = releases
+    add(1, team="runner-up")
+    winner, _, _ = add(2, team="Zulu")
+    other, _, _ = add(3, device="a3", team="alpha")
+    client = web(engine)
+    for direction, expected in (("asc", (other, winner)), ("desc", (winner, other))):
+        page = client.get(
+            "/global-best",
+            params={"q": manifest.kernel, "sort": "team", "direction": direction},
+        )
+        assert page.status_code == 200
+        assert "<td>Zulu</td>" in page.text and "<td>alpha</td>" in page.text
+        assert "runner-up" not in page.text
+        assert page.text.index(f"/releases/{expected[0]}") < page.text.index(
+            f"/releases/{expected[1]}"
+        )
 
 
 def test_kernel_and_implementation_sort_text_independently_of_gain(releases, monkeypatch):
@@ -319,7 +338,7 @@ def test_kernel_and_implementation_sort_text_independently_of_gain(releases, mon
             "device": "a5",
             "version": 1,
             "submission_count": 1,
-            "best": {"id": gain, "name": implementation, "speedup": gain},
+            "best": {"id": gain, "name": implementation, "speedup": gain, "team": "team"},
         }
         for kernel, implementation, gain in [
             ("team/a", "zeta", 2),
