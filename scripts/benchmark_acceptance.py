@@ -214,11 +214,101 @@ engine=make_engine(Settings())
             assert terminal["attempt"] == failed["attempt"] and terminal["attempts"] == 1
             assert terminal["error"] == "simulated_device_failure"
             assert terminal["results"] == 1 and terminal["pruned"]
+            recovery = query("""from datetime import UTC,datetime,timedelta
+from uuid import uuid4
+from sqlalchemy import text
+from sqlalchemy.exc import DBAPIError
+from time import monotonic,sleep
+from cannery.registry.models import Kernel,SpecVersion
+from cannery.submissions.models import Candidate,Submission
+sid,cid=uuid4(),uuid4()
+ref,candidate='c'*64,'d'*64
+finished=datetime.now(UTC)-timedelta(minutes=1)
+def rejected(statement,params):
+ try:
+  with engine.begin() as db:db.execute(text(statement),params)
+ except DBAPIError:
+  return
+ raise AssertionError('Invalid recovery succeeded')
+with Session(engine) as db,db.begin():
+ db.add(Kernel(id='simulation/rms',namespace='simulation',name='rms'));db.flush()
+ db.add(SpecVersion(id=sid,kernel_id='simulation/rms',version=1,content_sha256='1'*64,
+   manifest={},snapshot={},file_sha256={},smoke={}));db.flush()
+ db.add(Submission(id=cid,namespace='simulation',spec_id=sid,source={},target={}));db.flush()
+ db.add(Candidate(id=cid,binding_id=cid,binding={},manifest={},snapshot={},
+   file_sha256={},content_sha256='2'*64));db.flush()
+ attempt=uuid4()
+ db.add(PerformanceJob(key=ref,kind='reference',identity={},status='failed',attempts=1,
+  attempt=attempt,error='deadline_exceeded',deadline=finished,due_at=finished));db.flush()
+ db.add(PerformanceResult(id=attempt,job_key=ref,number=1,status='failed',
+  error='deadline_exceeded',finished_at=finished))
+ db.add(PerformanceJob(key=candidate,kind='candidate',candidate_id=cid,reference_key=ref,
+  identity={},status='queued',attempts=0,deadline=datetime.now(UTC)+timedelta(minutes=30),
+  due_at=finished))
+from cannery.benchmark.state import claim_job
+deadline=monotonic()+10
+while True:
+ assert claim_job(engine,candidate) is None
+ with Session(engine) as db:
+  if db.get(PerformanceJob,candidate).error=='reference_timing_failed':
+   break
+ assert monotonic()<deadline,'Candidate did not commit the blocked transition'
+ sleep(0.05)
+rejected("UPDATE performance_jobs SET status='queued' WHERE key=:key",{'key':candidate})
+with engine.begin() as db:
+ assert db.scalar(text('SELECT recover_expired_performance(:id)'),{'id':cid})==candidate
+rejected('SELECT recover_expired_performance(:id)',{'id':cid})
+rejected('DELETE FROM performance_recoveries WHERE job_key=:key',{'key':candidate})
+with engine.connect() as db:
+ snapshots=db.execute(text('SELECT previous_job FROM performance_recoveries')).scalars().all()
+ assert sorted(row['status'] for row in snapshots)==['blocked','failed']
+ assert sorted(row['error'] for row in snapshots)==['deadline_exceeded','reference_timing_failed']
+ print(json.dumps({'archived_jobs':len(snapshots)}))
+""")
+            reference_recovery = wait("c" * 64, lambda r: r["status"] == "ready" and r["pruned"])
+            candidate_recovery = wait("d" * 64, lambda r: r["status"] == "ready" and r["pruned"])
+            assert reference_recovery["attempts"] == reference_recovery["results"] == 2
+            assert candidate_recovery["attempts"] == candidate_recovery["results"] == 1
+            repeated_recovery = query("""from datetime import UTC,datetime,timedelta
+from uuid import uuid4
+from sqlalchemy import text
+from cannery.benchmark.state import claim_job
+from cannery.registry.models import SpecVersion
+from cannery.submissions.models import Candidate,Submission
+cid,attempt=uuid4(),uuid4()
+key='e'*64
+finished=datetime.now(UTC)-timedelta(minutes=1)
+operation=text('SELECT recover_expired_performance(:id)')
+with Session(engine) as db,db.begin():
+ sid=db.scalar(select(SpecVersion.id))
+ db.add(Submission(id=cid,namespace='simulation',spec_id=sid,source={},target={}));db.flush()
+ db.add(Candidate(id=cid,binding_id=cid,binding={},manifest={},snapshot={},
+   file_sha256={},content_sha256='3'*64));db.flush()
+ db.add(PerformanceJob(key=key,kind='candidate',candidate_id=cid,reference_key='a'*64,
+   identity={},status='failed',attempts=1,attempt=attempt,error='deadline_exceeded',
+   deadline=finished,due_at=finished));db.flush()
+ db.add(PerformanceResult(id=attempt,job_key=key,number=1,status='failed',
+   error='deadline_exceeded',finished_at=finished));db.flush()
+ assert db.scalar(operation,{'id':cid})==key
+ db.execute(text('UPDATE performance_jobs SET deadline=:deadline WHERE key=:key'),
+   {'deadline':finished,'key':key})
+assert claim_job(engine,key) is None
+with engine.begin() as db:
+ assert db.scalar(operation,{'id':cid})==key
+ snapshots=db.execute(text('SELECT previous_job FROM performance_recoveries WHERE job_key=:key'),
+   {'key':key}).scalars().all()
+ assert len(snapshots)==2 and all(row['attempts']==1 for row in snapshots)
+print(json.dumps({'archived_expiries_at_same_attempt_count':len(snapshots)}))
+""")
+            repeated = wait("e" * 64, lambda r: r["status"] == "ready" and r["pruned"])
+            assert repeated["attempts"] == repeated["results"] == 2
             result = {
                 "simulation": "CPU only",
                 "nodes": 2,
                 "retained_success": ready,
                 "failure_after_cleanup_outage": terminal,
+                "expired_reference_and_candidate_recovery": recovery,
+                "repeated_expired_candidate_recovery": repeated_recovery,
             }
             if args.evidence:
                 args.evidence.write_text(json.dumps(result, indent=2) + "\n")

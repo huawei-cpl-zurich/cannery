@@ -19,6 +19,7 @@ from sqlalchemy import (
     or_,
     select,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Connection
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Mapped, Mapper, Session, mapped_column
@@ -69,6 +70,16 @@ class PerformanceResult(Base):
     artifact: Mapped[dict[str, Any] | None] = mapped_column(JSON(none_as_null=True))
     error: Mapped[str | None]
     finished_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class PerformanceRecovery(Base):
+    __tablename__ = "performance_recoveries"
+
+    job_key: Mapped[str] = mapped_column(ForeignKey("performance_jobs.key"), primary_key=True)
+    previous_attempts: Mapped[int]
+    previous_job: Mapped[dict[str, Any]] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
+    recovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), primary_key=True)
+    new_deadline: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 
 
 @event.listens_for(PerformanceResult, "before_update")

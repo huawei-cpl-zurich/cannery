@@ -44,3 +44,22 @@ When the reference is ready, the candidate’s next claim starts a fresh 30-minu
 budget. Pre-upgrade jobs retain their original deadline when recorded state
 cannot establish a reference wait. Each remote execution is bounded to 180 seconds. Preserve control/artifact volumes across upgrades and
 drain active remote work before changing the supervision contract.
+
+## Recover an expired timing job
+
+After restoring the worker and confirming the old device operation is terminal,
+the PostgreSQL role that owns the migration objects can requeue an expired
+benchmark. With migration 0018 or later, use the original submission UUID
+that owns the failed timing job. Reused submissions have an existing ready
+result and are ineligible for recovery.
+
+```sql
+SELECT recover_expired_performance('00000000-0000-0000-0000-000000000000'::uuid);
+```
+
+The operation archives the expired job record and retains every timing result.
+It keeps the candidate, numerical evidence, device cohort, and attempt limit.
+A ready reference is reused. An expired reference with attempts remaining is
+recovered in the same transaction. A candidate blocked by that reference
+expiry can resume through the same operation. Already active and successful
+jobs are rejected.
