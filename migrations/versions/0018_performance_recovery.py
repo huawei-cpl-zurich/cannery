@@ -79,7 +79,9 @@ def upgrade() -> None:
           queued_at timestamptz;
         BEGIN
           SELECT * INTO STRICT candidate FROM performance_jobs
-          WHERE candidate_id = submission_id FOR UPDATE;
+          WHERE candidate_id = coalesce(
+            (SELECT original_id FROM submission_reuse WHERE id = submission_id), submission_id
+          ) FOR UPDATE;
           SELECT * INTO STRICT reference FROM performance_jobs
           WHERE key = candidate.reference_key AND kind = 'reference' FOR UPDATE;
           queued_at := clock_timestamp();

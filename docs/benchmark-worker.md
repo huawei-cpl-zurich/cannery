@@ -48,8 +48,9 @@ drain active remote work before changing the supervision contract.
 ## Recover an expired timing job
 
 After restoring the worker and confirming the old device operation is terminal,
-a database owner can requeue an expired benchmark for an existing submission.
-Use the submission UUID with PostgreSQL migration 0018 or later.
+the PostgreSQL role that owns the migration objects can requeue an expired
+benchmark. Use the submission UUID with migration 0018 or later. If the
+submission reused a candidate, the operation recovers the original timing job.
 
 ```sql
 SELECT recover_expired_performance('00000000-0000-0000-0000-000000000000'::uuid);
