@@ -322,7 +322,7 @@ for number in range(1,4):
   db.execute(update(BuildState).where(BuildState.id==cid).values(due_at=datetime.now(UTC)))
  claim=claim_build(engine,cid)
  assert claim and finish_build(engine,claim,error='runtime_failed',retryable=True,
-  evidence={'logs':{'runtime-0':{'sha256':digest}}})
+  evidence={'logs':{'runtime-1':{'sha256':digest},'compile':{'sha256':'5'*64}}})
 assert claim_build(engine,cid) is None
 recover=text('SELECT recover_failed_build(:id,:digest)')
 try:

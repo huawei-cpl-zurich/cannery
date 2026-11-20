@@ -46,7 +46,12 @@ def upgrade() -> None:
               SELECT FROM build_attempts a JOIN build_results r USING (id)
               WHERE a.id = job.attempt_id AND a.candidate_id = job.id AND a.number = 3
                 AND r.status = 'failed' AND r.error = 'runtime_failed'
-                AND r.evidence->'logs'->'runtime-0'->>'sha256' = runtime_log
+                AND (
+                  SELECT log.value->>'sha256'
+                  FROM json_each(r.evidence->'logs') AS log
+                  WHERE log.key ~ '^runtime-[0-9]+$'
+                  ORDER BY length(log.key) DESC, log.key DESC LIMIT 1
+                ) = runtime_log
             )
           THEN RAISE EXCEPTION 'Build has no matching recoverable runtime failure';
           END IF;

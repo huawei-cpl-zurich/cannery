@@ -105,7 +105,7 @@ cannery submit team/helloworld --spec-version 1 --device a5 --lang ascendc \
 `--wait-build` also waits for intake. A CLI timeout leaves the admission job
 running; inspect the printed submission ID rather than submitting a duplicate. Inspect build status in the API, CLI or web
 submission view. Logs and worker coordinates stay in private evidence, not public
-status. There are at most three attempts and a 30-minute admission deadline.
+status. The automatic limit is three attempts and a 30-minute admission deadline.
 Transport uncertainty resumes the same retained handle; it never blindly repeats
 compilation. Busy/unhealthy devices are deferred. Lost ownership fences new work.
 An uncertain container removal preserves the device lease and scratch for recovery.
@@ -121,7 +121,9 @@ After restoring the device, inspect the last failed attempt's retained runtime
 log. Once it confirms that device startup failed before the candidate ran, the
 PostgreSQL role that owns the migration objects can open one additional build
 attempt. Use the original submission UUID and that runtime log's SHA-256 with
-migration 0019 or later.
+migration 0019 or later. Apply the migration, then replace or stop every older
+builder for the submission’s device class before opening the recovery window.
+Start a builder running the recovery-capable version so it can claim the job.
 
 ```sql
 SELECT recover_failed_build(
