@@ -37,8 +37,9 @@ def releases(admission, records):
         device="a5",
         spec_id=None,
         spec_version=1,
+        team="team",
     ):
-        identifier = candidate(records)
+        identifier = candidate(records, namespace=team)
         data = template.model_dump(mode="json")
         data.update(
             submission_id=str(identifier),

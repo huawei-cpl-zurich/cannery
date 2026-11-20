@@ -35,7 +35,7 @@ def records(tmp_path):
     engine.dispose()
 
 
-def initial(records, *, commit="a" * 40):
+def initial(records, *, commit="a" * 40, namespace="team"):
     engine, key = records
     source = GitSource(
         url="https://example.com/repo.git",
@@ -44,7 +44,7 @@ def initial(records, *, commit="a" * 40):
         dependencies=("shared",),
     )
     target = RequestedTarget(device="a5", language="catlass")
-    return new_submission(engine, "team", key, source, target)
+    return new_submission(engine, namespace, key, source, target)
 
 
 def test_revision_inherits_request_and_does_not_change_parent(records):

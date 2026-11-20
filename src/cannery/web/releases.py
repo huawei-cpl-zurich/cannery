@@ -97,7 +97,8 @@ def install_release_web(
         atol: str | None = None,
         q: str = "",
         catalog_device: Literal["", "a3", "a5"] = "",
-        sort: Literal["kernel", "device", "gain", "implementation", "team", "submissions"] | None = None,
+        sort: Literal["kernel", "device", "gain", "implementation", "team", "submissions"]
+        | None = None,
         direction: Literal["asc", "desc"] | None = None,
         device_sort: Literal["", "asc", "desc"] = "",
     ) -> HTMLResponse:
