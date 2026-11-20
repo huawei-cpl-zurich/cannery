@@ -203,6 +203,7 @@ def directory(db: Session) -> list[dict[str, Any]]:
             winners.c.score,
             winners.c.candidate_id,
             Submission.implementation_name,
+            Submission.namespace.label("submission_team"),
         )
         .join_from(latest, Kernel, Kernel.id == latest.c.kernel_id)
         .outerjoin(
@@ -224,6 +225,7 @@ def directory(db: Session) -> list[dict[str, Any]]:
             "best": {
                 "id": row.id,
                 "name": label(row.implementation_name, row.candidate_id),
+                "team": row.submission_team,
                 "speedup": row.score,
             }
             if row.id is not None

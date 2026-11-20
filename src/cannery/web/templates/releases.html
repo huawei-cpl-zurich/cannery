@@ -48,9 +48,10 @@
 <tr><td><a href="{{ row.url }}" aria-label="{{ row.kernel }} on {{ row.device | upper }}"{% if row.active %} aria-current="page"{% endif %}>{{ row.kernel }}</a></td><td>{{ row.device | upper }}</td>
 <td>{{ (row.best.speedup|number ~ '×') if row.best else '—' }}</td>
 <td>{% if row.best %}<a href="/releases/{{ row.best.id }}">{{ row.best.name }}</a>{% elif row.choose_cohort %}Select cohort{% else %}—{% endif %}</td>
+<td>{{ row.best.team if row.best else '—' }}</td>
 <td>{{ row.submission_count|number }}</td></tr>
 {% else %}
-<tr><td colspan="5">No kernels match your search.</td></tr>
+<tr><td colspan="6">No kernels match your search.</td></tr>
 {% endfor %}
 </tbody></table></div>
 {% if kernel %}<section id="kernel-results" aria-label="Kernel results">
