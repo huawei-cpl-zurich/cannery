@@ -274,18 +274,16 @@ from uuid import uuid4
 from sqlalchemy import text
 from cannery.benchmark.state import claim_job
 from cannery.registry.models import SpecVersion
-from cannery.submissions.models import Candidate,Submission,SubmissionReuse
-cid,alias,attempt=uuid4(),uuid4(),uuid4()
+from cannery.submissions.models import Candidate,Submission
+cid,attempt=uuid4(),uuid4()
 key='e'*64
 finished=datetime.now(UTC)-timedelta(minutes=1)
 operation=text('SELECT recover_expired_performance(:id)')
 with Session(engine) as db,db.begin():
  sid=db.scalar(select(SpecVersion.id))
- for submission_id in (cid,alias):
-  db.add(Submission(id=submission_id,namespace='simulation',spec_id=sid,source={},target={}));db.flush()
-  db.add(Candidate(id=submission_id,binding_id=submission_id,binding={},manifest={},snapshot={},
-    file_sha256={},content_sha256='3'*64));db.flush()
- db.add(SubmissionReuse(id=alias,original_id=cid));db.flush()
+ db.add(Submission(id=cid,namespace='simulation',spec_id=sid,source={},target={}));db.flush()
+ db.add(Candidate(id=cid,binding_id=cid,binding={},manifest={},snapshot={},
+   file_sha256={},content_sha256='3'*64));db.flush()
  db.add(PerformanceJob(key=key,kind='candidate',candidate_id=cid,reference_key='a'*64,
    identity={},status='failed',attempts=1,attempt=attempt,error='deadline_exceeded',
    deadline=finished,due_at=finished));db.flush()
@@ -296,7 +294,7 @@ with Session(engine) as db,db.begin():
    {'deadline':finished,'key':key})
 assert claim_job(engine,key) is None
 with engine.begin() as db:
- assert db.scalar(operation,{'id':alias})==key
+ assert db.scalar(operation,{'id':cid})==key
  snapshots=db.execute(text('SELECT previous_job FROM performance_recoveries WHERE job_key=:key'),
    {'key':key}).scalars().all()
  assert len(snapshots)==2 and all(row['attempts']==1 for row in snapshots)
