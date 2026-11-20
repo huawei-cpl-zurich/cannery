@@ -105,7 +105,7 @@ cannery submit team/helloworld --spec-version 1 --device a5 --lang ascendc \
 `--wait-build` also waits for intake. A CLI timeout leaves the admission job
 running; inspect the printed submission ID rather than submitting a duplicate. Inspect build status in the API, CLI or web
 submission view. Logs and worker coordinates stay in private evidence, not public
-status. There are at most three attempts and a 30-minute admission deadline.
+status. The automatic limit is three attempts and a 30-minute admission deadline.
 Transport uncertainty resumes the same retained handle; it never blindly repeats
 compilation. Busy/unhealthy devices are deferred. Lost ownership fences new work.
 An uncertain container removal preserves the device lease and scratch for recovery.
@@ -114,3 +114,42 @@ After terminal recovery, the cleanup sweep removes owned containers and remote
 scratch, retains private evidence and prunes bulky local inputs. Do not manually
 delete an owner marker or dispatch journal while a retained job may still run.
 Use the registered client's observe/cancel operations and reconcile that handle.
+
+## Recover after a device startup failure
+
+After restoring the device, inspect the last failed attempt's retained runtime
+log. Once it confirms that device startup failed before the candidate ran, the
+PostgreSQL role that owns the migration objects can open one additional build
+attempt. Use the original submission UUID and that runtime log's SHA-256 with
+migration 0019 or later. Apply the migration, then replace or stop every older
+builder for the submission’s device class before opening the recovery window.
+Start a builder running the recovery-capable version so it can claim the job.
+
+Find the latest retained runtime log's artifact reference with this query:
+
+```sql
+SELECT log.value AS artifact
+FROM submission_builds AS job
+JOIN build_results AS result ON result.id = job.attempt_id
+CROSS JOIN LATERAL json_each(result.evidence->'logs') AS log
+WHERE job.id = '00000000-0000-0000-0000-000000000000'::uuid
+  AND log.key ~ '^runtime-[0-9]+$'
+ORDER BY length(log.key) DESC, log.key DESC
+LIMIT 1;
+```
+
+Use authorized [private artifact storage](private-artifacts.md) to retrieve the
+blob by its SHA-256 and verify its bytes before inspecting the log. Pass the
+verified SHA-256 from the artifact reference to the recovery operation.
+
+```sql
+SELECT recover_failed_build(
+  '00000000-0000-0000-0000-000000000000'::uuid,
+  '<64-character runtime log SHA-256>'
+);
+```
+
+The operation requires three exhausted build attempts and matches the runtime log to
+the last attempt's immutable evidence. It archives the original failed state
+and preserves all build attempts and results. The fourth attempt is terminal on
+failure.
