@@ -58,5 +58,6 @@ SELECT recover_expired_performance('00000000-0000-0000-0000-000000000000'::uuid)
 The operation archives the expired job record and retains every timing result.
 It keeps the candidate, numerical evidence, device cohort, and attempt limit.
 A ready reference is reused. An expired reference with attempts remaining is
-recovered in the same transaction. Already active jobs, successful jobs, and
-failures other than deadline expiry are rejected.
+recovered in the same transaction. A candidate blocked by that reference
+expiry can resume through the same operation. Already active and successful
+jobs are rejected.
