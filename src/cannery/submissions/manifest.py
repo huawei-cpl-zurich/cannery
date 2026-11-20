@@ -32,6 +32,14 @@ class SubmissionError(ValueError):
 
 class BuildOptions(StrictModel):
     optimization: Literal["release", "debug"] = "release"
+    triton_compile_mode: Literal["simd"] | None = None
+
+    @model_serializer(mode="wrap")
+    def serialize(self, handler: SerializerFunctionWrapHandler) -> dict[str, Any]:
+        value: dict[str, Any] = handler(self)
+        if self.triton_compile_mode is None:
+            value.pop("triton_compile_mode", None)
+        return value
 
 
 class Specialization(StrictModel):
@@ -112,6 +120,8 @@ class Implementation(StrictModel):
     def supported_contract(self) -> Self:
         if self.build.adapter != self.language:
             raise ValueError("Build adapter must match language")
+        if self.build.options.triton_compile_mode is not None and self.language != "triton":
+            raise ValueError("triton_compile_mode requires Triton tensor-v2")
         if self.language == "triton" and self.build.abi != "tensor-v2":
             raise ValueError("Triton requires the tensor-v2 ABI")
         if self.build.abi == "tensor-v2" and (

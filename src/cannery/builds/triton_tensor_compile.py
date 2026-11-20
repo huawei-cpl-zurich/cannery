@@ -16,6 +16,9 @@ class TritonTensorAdapter:
         self, manifest: SubmissionManifest, frozen: ValidatedTensorSpec, abi_header: str
     ) -> BuildPlan:
         parameters = tensor_build_parameters(manifest, frozen, abi_header, "triton")
+        mode = manifest.implementation.build.options.triton_compile_mode
+        if mode is not None:
+            parameters["compile_mode"] = mode
         helpers = "\n".join(
             inspect.getsource(value)
             for value in (
@@ -102,8 +105,11 @@ def compile_triton(plan,source,output):
             dtype={'float32':'fp32','float16':'fp16','bfloat16':'bf16','int8':'i8',
                    'int32':'i32','int64':'i64','bool':'i1'}[tensor['dtype']]
             types[name]='*'+dtype
+        compiler_options={}
+        if 'compile_mode' in PARAMETERS:
+            compiler_options['options']={'compile_mode':PARAMETERS['compile_mode']}
         compiled=triton.compile(ASTSource(fn,signature=types,constexprs=constants),
-                                target=GPUTarget('npu',arch,0))
+                                target=GPUTarget('npu',arch,0),**compiler_options)
         metadata=compiled.metadata._asdict()
         if type(metadata.get('cluster_dims')) is tuple:
             metadata['cluster_dims']=list(metadata['cluster_dims'])

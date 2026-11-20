@@ -153,3 +153,8 @@ The operation requires three exhausted build attempts and matches the runtime lo
 the last attempt's immutable evidence. It archives the original failed state
 and preserves all build attempts and results. The fourth attempt is terminal on
 failure.
+
+A Triton tensor submission can set `implementation.build.options.triton_compile_mode`
+to `simd` to request the pinned Ascend backend's SIMD compiler path. The option
+is part of the candidate identity. Every resulting binary must still pass the
+same static export and admission checks.
