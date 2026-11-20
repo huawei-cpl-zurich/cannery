@@ -114,3 +114,23 @@ After terminal recovery, the cleanup sweep removes owned containers and remote
 scratch, retains private evidence and prunes bulky local inputs. Do not manually
 delete an owner marker or dispatch journal while a retained job may still run.
 Use the registered client's observe/cancel operations and reconcile that handle.
+
+## Recover after a device startup failure
+
+After restoring the device, inspect the last failed attempt's retained runtime
+log. Once it confirms that device startup failed before the candidate ran, the
+PostgreSQL role that owns the migration objects can open one additional build
+attempt. Use the original submission UUID and that runtime log's SHA-256 with
+migration 0019 or later.
+
+```sql
+SELECT recover_failed_build(
+  '00000000-0000-0000-0000-000000000000'::uuid,
+  '<64-character runtime log SHA-256>'
+);
+```
+
+The operation requires three exhausted build attempts and matches the runtime log to
+the last attempt's immutable evidence. It archives the original failed state
+and preserves all build attempts and results. The fourth attempt is terminal on
+failure.
