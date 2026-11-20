@@ -302,6 +302,52 @@ print(json.dumps({'archived_expiries_at_same_attempt_count':len(snapshots)}))
 """)
             repeated = wait("e" * 64, lambda r: r["status"] == "ready" and r["pruned"])
             assert repeated["attempts"] == repeated["results"] == 2
+            build_recovery = query("""from datetime import UTC,datetime,timedelta
+from uuid import uuid4
+from sqlalchemy import text,update
+from sqlalchemy.exc import DBAPIError
+from cannery.builds.state import BuildAttempt,BuildResult,BuildState,claim_build,finish_build
+from cannery.registry.models import SpecVersion
+from cannery.submissions.models import Candidate,Submission
+cid=uuid4()
+digest='4'*64
+with Session(engine) as db,db.begin():
+ sid=db.scalar(select(SpecVersion.id))
+ db.add(Submission(id=cid,namespace='simulation',spec_id=sid,source={},target={}));db.flush()
+ db.add(Candidate(id=cid,binding_id=cid,binding={},snapshot={},file_sha256={},content_sha256='4'*64,
+   manifest={'implementation':{'device':'a5','build':{'abi':'unary-f32-v1'}}}));db.flush()
+ db.add(BuildState(id=cid))
+for number in range(1,4):
+ with engine.begin() as db:
+  db.execute(update(BuildState).where(BuildState.id==cid).values(due_at=datetime.now(UTC)))
+ claim=claim_build(engine,cid)
+ logs={'runtime-0':{'sha256':str(number)*64},'compile':{'sha256':'5'*64}}
+ if number==3:
+  logs.update({'runtime-9':{'sha256':'6'*64},'runtime-10':{'sha256':digest}})
+ assert claim and finish_build(engine,claim,error='runtime_failed',retryable=True,
+  evidence={'logs':logs})
+assert claim_build(engine,cid) is None
+recover=text('SELECT recover_failed_build(:id,:digest)')
+for incorrect in ('1'*64,'3'*64,'5'*64,'6'*64):
+ try:
+  with engine.begin() as db:db.execute(recover,{'id':cid,'digest':incorrect})
+ except DBAPIError:
+  pass
+ else:
+  raise AssertionError('Incorrect log pin allowed recovery')
+with engine.begin() as db:
+ assert db.scalar(recover,{'id':cid,'digest':digest})==cid
+ archive=text("SELECT previous_build->>'attempts' FROM build_recoveries WHERE candidate_id=:id")
+ assert db.scalar(archive,{'id':cid})=='3'
+claim=claim_build(engine,cid)
+assert claim and finish_build(engine,claim,error='runtime_failed',retryable=True)
+assert claim_build(engine,cid) is None
+with Session(engine) as db:
+ attempts=db.scalars(select(BuildAttempt).where(BuildAttempt.candidate_id==cid)).all()
+ assert {a.number for a in attempts}=={1,2,3,4}
+ assert all(db.get(BuildResult,a.id).error=='runtime_failed' for a in attempts)
+print(json.dumps({'retained_attempts':len(attempts)}))
+""")
             result = {
                 "simulation": "CPU only",
                 "nodes": 2,
@@ -309,6 +355,7 @@ print(json.dumps({'archived_expiries_at_same_attempt_count':len(snapshots)}))
                 "failure_after_cleanup_outage": terminal,
                 "expired_reference_and_candidate_recovery": recovery,
                 "repeated_expired_candidate_recovery": repeated_recovery,
+                "device_admission_recovery": build_recovery,
             }
             if args.evidence:
                 args.evidence.write_text(json.dumps(result, indent=2) + "\n")
