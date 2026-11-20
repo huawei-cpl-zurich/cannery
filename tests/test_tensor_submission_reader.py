@@ -76,3 +76,31 @@ def test_tensor_reader_does_not_admit_legacy_sources_and_target_can_describe_tri
         altered["implementation"]["build"]["abi"] = abi
         with pytest.raises(ValueError):
             SubmissionManifest.model_validate(altered)
+
+
+@pytest.mark.parametrize(
+    ("language", "mode", "accepted"),
+    [
+        ("triton", "simd", True),
+        ("triton", "simt", False),
+        ("ascendc", "simd", False),
+        ("catlass", "simd", False),
+    ],
+)
+def test_simd_option_is_opt_in_and_triton_only(language, mode, accepted):
+    files = tensor_files(language)
+    default = validate_tensor_submission(files, "candidate")
+    original = default.manifest.model_dump(mode="json")["implementation"]["build"]["options"]
+    assert original == {"optimization": "release"}
+    manifest = yaml.safe_load(files["candidate/submission.yaml"])
+    manifest["implementation"]["build"]["options"]["triton_compile_mode"] = mode
+    files["candidate/submission.yaml"] = yaml.safe_dump(manifest).encode()
+    if accepted:
+        explicit = validate_tensor_submission(files, "candidate")
+        assert explicit.manifest.implementation.build.options.triton_compile_mode == "simd"
+        assert explicit.content_sha256 != default.content_sha256
+        build = explicit.manifest.model_dump(mode="json")["implementation"]["build"]
+        assert build["options"]["triton_compile_mode"] == "simd"
+    else:
+        with pytest.raises(SubmissionError):
+            validate_tensor_submission(files, "candidate")

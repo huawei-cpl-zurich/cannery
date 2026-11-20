@@ -114,3 +114,8 @@ After terminal recovery, the cleanup sweep removes owned containers and remote
 scratch, retains private evidence and prunes bulky local inputs. Do not manually
 delete an owner marker or dispatch journal while a retained job may still run.
 Use the registered client's observe/cancel operations and reconcile that handle.
+
+A Triton tensor submission can set `implementation.build.options.triton_compile_mode`
+to `simd` to request the pinned Ascend backend's SIMD compiler path. The option
+is part of the candidate identity. Every resulting binary must still pass the
+same static export and admission checks.

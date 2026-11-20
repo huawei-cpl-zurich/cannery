@@ -4,6 +4,7 @@ from pathlib import Path
 from types import ModuleType, SimpleNamespace
 
 import pytest
+import yaml
 from test_catlass_export import binary
 from test_tensor_spec_reader import tensor_files
 from test_tensor_submission_reader import tensor_files as submission_files
@@ -16,8 +17,13 @@ from cannery.registry.tensor_manifest import validate_tensor_spec
 from cannery.submissions.manifest import validate_tensor_submission
 
 
-def plan():
-    manifest = validate_tensor_submission(submission_files(), "candidate").manifest
+def plan(mode=None):
+    files = submission_files()
+    if mode is not None:
+        source = yaml.safe_load(files["candidate/submission.yaml"])
+        source["implementation"]["build"]["options"]["triton_compile_mode"] = mode
+        files["candidate/submission.yaml"] = yaml.safe_dump(source).encode()
+    manifest = validate_tensor_submission(files, "candidate").manifest
     return TritonTensorAdapter().build(
         manifest,
         validate_tensor_spec(tensor_files(), "spec"),
@@ -53,8 +59,8 @@ def compiler(tmp_path, monkeypatch):
     # CompiledKernel converts JSON cluster dimensions to a tuple on load.
     metadata["cluster_dims"] = tuple(metadata["cluster_dims"])
 
-    def compile_source(src, *, target):
-        controls["calls"].append((src, target))
+    def compile_source(src, *, target, **kwargs):
+        controls["calls"].append((src, target, kwargs))
         assert ascend_driver.NPUUtils().get_device_core() == (32, 64)
         assert list(registry.backends) == ["ascend"]
         assert registry.backends["ascend"].compiler is ascend_compiler.AscendBackend
@@ -131,10 +137,22 @@ def test_offline_driver_compiles_frozen_types_and_native_grid(compiler):
     assert "import cannery." not in plan().wrapper
     ns["compile_triton"](config, source, output)
     assert output.read_bytes() == b"host-library" and len(control["calls"]) == 1
-    args, target = control["calls"][0]
+    args, target, kwargs = control["calls"][0]
+    assert kwargs == {}
     assert target == ("npu", "Ascend950DT_9582", 0) and args.constexprs == {"OFFSET": 1}
     assert "void* sync; void* workspace;" in output.with_suffix(".cpp").read_text()
     assert control["commands"][0][-2:] == ["-o", str(output)]
+
+
+def test_simd_mode_passes_only_the_pinned_compiler_option(compiler):
+    ns, config, source, output, control, _, _ = compiler
+    exec(plan("simd").wrapper, ns)
+    # An explicit mode must still obey the existing export validation.
+    control["fault"] = "workspace"
+    with pytest.raises(ValueError):
+        ns["compile_triton"](config, source, output)
+    assert control["calls"][0][2] == {"options": {"compile_mode": "simd"}}
+    assert not output.exists() and not control["commands"]
 
 
 @pytest.mark.parametrize("fault", ["package", "compiler", "workspace", "unbound"])
