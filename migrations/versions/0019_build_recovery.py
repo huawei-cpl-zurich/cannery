@@ -20,7 +20,9 @@ def upgrade() -> None:
     op.execute("LOCK TABLE submission_builds IN ACCESS EXCLUSIVE MODE")
     op.create_table(
         "build_recoveries",
-        sa.Column("candidate_id", sa.Uuid(), sa.ForeignKey("candidates.id"), primary_key=True),
+        sa.Column(
+            "candidate_id", sa.Uuid(), sa.ForeignKey("submission_builds.id"), primary_key=True
+        ),
         sa.Column(
             "failed_attempt_id", sa.Uuid(), sa.ForeignKey("build_attempts.id"), nullable=False
         ),

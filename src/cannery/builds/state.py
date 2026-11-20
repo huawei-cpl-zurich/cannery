@@ -75,7 +75,7 @@ class BuildState(Base):
 class BuildRecovery(Base):
     __tablename__ = "build_recoveries"
 
-    candidate_id: Mapped[UUID] = mapped_column(ForeignKey("candidates.id"), primary_key=True)
+    candidate_id: Mapped[UUID] = mapped_column(ForeignKey("submission_builds.id"), primary_key=True)
     failed_attempt_id: Mapped[UUID] = mapped_column(ForeignKey("build_attempts.id"))
     previous_build: Mapped[dict[str, Any]] = mapped_column(
         JSON().with_variant(JSONB(), "postgresql")
