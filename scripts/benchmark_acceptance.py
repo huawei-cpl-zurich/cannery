@@ -321,16 +321,20 @@ for number in range(1,4):
  with engine.begin() as db:
   db.execute(update(BuildState).where(BuildState.id==cid).values(due_at=datetime.now(UTC)))
  claim=claim_build(engine,cid)
+ logs={'runtime-0':{'sha256':str(number)*64},'compile':{'sha256':'5'*64}}
+ if number==3:
+  logs.update({'runtime-9':{'sha256':'6'*64},'runtime-10':{'sha256':digest}})
  assert claim and finish_build(engine,claim,error='runtime_failed',retryable=True,
-  evidence={'logs':{'runtime-1':{'sha256':digest},'compile':{'sha256':'5'*64}}})
+  evidence={'logs':logs})
 assert claim_build(engine,cid) is None
 recover=text('SELECT recover_failed_build(:id,:digest)')
-try:
- with engine.begin() as db:db.execute(recover,{'id':cid,'digest':'5'*64})
-except DBAPIError:
- pass
-else:
- raise AssertionError('Incorrect log pin allowed recovery')
+for incorrect in ('1'*64,'3'*64,'5'*64,'6'*64):
+ try:
+  with engine.begin() as db:db.execute(recover,{'id':cid,'digest':incorrect})
+ except DBAPIError:
+  pass
+ else:
+  raise AssertionError('Incorrect log pin allowed recovery')
 with engine.begin() as db:
  assert db.scalar(recover,{'id':cid,'digest':digest})==cid
  archive=text("SELECT previous_build->>'attempts' FROM build_recoveries WHERE candidate_id=:id")

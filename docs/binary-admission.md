@@ -125,6 +125,23 @@ migration 0019 or later. Apply the migration, then replace or stop every older
 builder for the submission’s device class before opening the recovery window.
 Start a builder running the recovery-capable version so it can claim the job.
 
+Find the latest retained runtime log's artifact reference with this query:
+
+```sql
+SELECT log.value AS artifact
+FROM submission_builds AS job
+JOIN build_results AS result ON result.id = job.attempt_id
+CROSS JOIN LATERAL json_each(result.evidence->'logs') AS log
+WHERE job.id = '00000000-0000-0000-0000-000000000000'::uuid
+  AND log.key ~ '^runtime-[0-9]+$'
+ORDER BY length(log.key) DESC, log.key DESC
+LIMIT 1;
+```
+
+Use authorized [private artifact storage](private-artifacts.md) to retrieve the
+blob by its SHA-256 and verify its bytes before inspecting the log. Pass the
+verified SHA-256 from the artifact reference to the recovery operation.
+
 ```sql
 SELECT recover_failed_build(
   '00000000-0000-0000-0000-000000000000'::uuid,
