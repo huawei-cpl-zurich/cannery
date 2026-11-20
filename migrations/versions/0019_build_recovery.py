@@ -16,6 +16,8 @@ def upgrade() -> None:
     if not isinstance(schema, str):
         raise RuntimeError("No schema for build recovery migration")
     search_path = f"pg_catalog, {bind.dialect.identifier_preparer.quote(schema)}, pg_temp"
+    # Follow the worker lock order before taking foreign-key reference locks.
+    op.execute("LOCK TABLE submission_builds IN ACCESS EXCLUSIVE MODE")
     op.create_table(
         "build_recoveries",
         sa.Column("candidate_id", sa.Uuid(), sa.ForeignKey("candidates.id"), primary_key=True),
