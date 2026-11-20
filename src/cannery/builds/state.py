@@ -16,6 +16,7 @@ from sqlalchemy import (
     or_,
     select,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import Connection
 from sqlalchemy.orm import Mapped, Mapper, Session, mapped_column
 
@@ -53,7 +54,7 @@ class BuildState(Base):
     __tablename__ = "submission_builds"
     __table_args__ = (
         CheckConstraint("status IN ('queued','building','awaiting_validation','failed')"),
-        CheckConstraint("attempts >= 0 AND attempts <= 3"),
+        CheckConstraint("attempts BETWEEN 0 AND 4"),
     )
     id: Mapped[UUID] = mapped_column(ForeignKey("candidates.id"), primary_key=True)
     status: Mapped[str] = mapped_column(default="queued")
@@ -71,12 +72,26 @@ class BuildState(Base):
     error: Mapped[str | None]
 
 
+class BuildRecovery(Base):
+    __tablename__ = "build_recoveries"
+
+    candidate_id: Mapped[UUID] = mapped_column(ForeignKey("candidates.id"), primary_key=True)
+    failed_attempt_id: Mapped[UUID] = mapped_column(ForeignKey("build_attempts.id"))
+    previous_build: Mapped[dict[str, Any]] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql")
+    )
+    log_sha256: Mapped[str]
+    recovered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+@event.listens_for(BuildRecovery, "before_update")
+@event.listens_for(BuildRecovery, "before_delete")
 @event.listens_for(BuildAttempt, "before_update")
 @event.listens_for(BuildAttempt, "before_delete")
 @event.listens_for(BuildResult, "before_update")
 @event.listens_for(BuildResult, "before_delete")
 def immutable(
-    mapper: Mapper[Any], connection: Connection, target: BuildAttempt | BuildResult
+    mapper: Mapper[Any], connection: Connection, target: BuildAttempt | BuildResult | BuildRecovery
 ) -> None:
     raise BuildError("Build attempts and results are immutable")
 
@@ -146,7 +161,9 @@ def claim_build(
         if state.status == "queued":
             if aware(state.due_at) > now:
                 return None
-            if state.attempts >= 3:
+            if state.attempts >= 3 and (
+                state.attempts >= 4 or session.get(BuildRecovery, key) is None
+            ):
                 _terminal(session, state, "attempts_exhausted", now)
                 return None
             state.attempts += 1
