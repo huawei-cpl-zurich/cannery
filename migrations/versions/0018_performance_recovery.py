@@ -11,6 +11,11 @@ depends_on = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    schema = bind.scalar(sa.text("SELECT current_schema()"))
+    if not isinstance(schema, str):
+        raise RuntimeError("No schema for timing recovery migration")
+    search_path = f"pg_catalog, {bind.dialect.identifier_preparer.quote(schema)}, pg_temp"
     op.create_table(
         "performance_recoveries",
         sa.Column("job_key", sa.String(), sa.ForeignKey("performance_jobs.key"), primary_key=True),
@@ -21,8 +26,8 @@ def upgrade() -> None:
     )
     op.execute("""CREATE TRIGGER immutable_performance_recovery BEFORE UPDATE OR DELETE
         ON performance_recoveries FOR EACH ROW EXECUTE FUNCTION protect_performance_evidence()""")
-    op.execute("""CREATE OR REPLACE FUNCTION protect_performance_evidence() RETURNS trigger
-        LANGUAGE plpgsql SET search_path FROM CURRENT AS $$
+    op.execute(f"""CREATE OR REPLACE FUNCTION protect_performance_evidence() RETURNS trigger
+        LANGUAGE plpgsql SET search_path TO {search_path} AS $$
         BEGIN
           IF TG_TABLE_NAME <> 'performance_jobs' THEN
             RAISE EXCEPTION 'Terminal performance evidence is immutable';
@@ -66,8 +71,8 @@ def upgrade() -> None:
           END IF;
           RAISE EXCEPTION 'Terminal performance evidence is immutable';
         END $$""")
-    op.execute("""CREATE FUNCTION recover_expired_performance(submission_id uuid) RETURNS text
-        LANGUAGE plpgsql AS $$
+    op.execute(f"""CREATE FUNCTION recover_expired_performance(submission_id uuid) RETURNS text
+        LANGUAGE plpgsql SET search_path TO {search_path} AS $$
         DECLARE
           candidate performance_jobs%ROWTYPE;
           reference performance_jobs%ROWTYPE;
@@ -112,7 +117,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # A downgrade must not discard recovery history or weaken attempt provenance.
+    # Serialize the history check with concurrent recovery in the same lock order.
+    op.execute("LOCK TABLE performance_jobs, performance_recoveries IN ACCESS EXCLUSIVE MODE")
     op.execute("""DO $$ BEGIN
       IF EXISTS (SELECT FROM performance_recoveries) THEN
         RAISE EXCEPTION 'Cannot downgrade with retained timing recovery evidence';

@@ -218,6 +218,7 @@ engine=make_engine(Settings())
 from uuid import uuid4
 from sqlalchemy import text
 from sqlalchemy.exc import DBAPIError
+from time import monotonic,sleep
 from cannery.registry.models import Kernel,SpecVersion
 from cannery.submissions.models import Candidate,Submission
 sid,cid=uuid4(),uuid4()
@@ -245,9 +246,14 @@ with Session(engine) as db,db.begin():
   identity={},status='queued',attempts=0,deadline=datetime.now(UTC)+timedelta(minutes=30),
   due_at=finished))
 from cannery.benchmark.state import claim_job
-assert claim_job(engine,candidate) is None
-with Session(engine) as db:
- assert db.get(PerformanceJob,candidate).error=='reference_timing_failed'
+deadline=monotonic()+10
+while True:
+ assert claim_job(engine,candidate) is None
+ with Session(engine) as db:
+  if db.get(PerformanceJob,candidate).error=='reference_timing_failed':
+   break
+ assert monotonic()<deadline,'Candidate did not commit the blocked transition'
+ sleep(0.05)
 rejected("UPDATE performance_jobs SET status='queued' WHERE key=:key",{'key':candidate})
 with engine.begin() as db:
  assert db.scalar(text('SELECT recover_expired_performance(:id)'),{'id':cid})==candidate
